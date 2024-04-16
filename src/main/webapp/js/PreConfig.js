@@ -12,3 +12,5 @@ window.DRAWIO_LIGHTBOX_URL = null; // Replace with your lightbox URL, eg. https:
 window.DRAW_MATH_URL = 'math/es5';
 window.DRAWIO_CONFIG = null; // Replace with your custom draw.io configurations. For more details, https://www.drawio.com/doc/faq/configure-diagram-editor
 urlParams['sync'] = 'manual';
+urlParams['lang'] = 'zh'; // 国际化默认中文
+urlParams['offline'] = '1'; //本地模式
