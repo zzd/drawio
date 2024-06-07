@@ -38,17 +38,10 @@ window.DriveClient = function(editorUi, isExtAuth)
 		// Uses separate name for the viewer auth tokens
 		this.cookieName = 'gDriveViewerAuthInfo';
 		this.token = this.getPersistentToken();
-		
-		this.appId = window.DRAWIO_GOOGLE_VIEWER_APP_ID || '850530949725';
-		this.clientId = window.DRAWIO_GOOGLE_VIEWER_CLIENT_ID || '850530949725.apps.googleusercontent.com';
-		this.scopes = ['https://www.googleapis.com/auth/drive.readonly',
-			'https://www.googleapis.com/auth/userinfo.profile'];
 	}
-	else
-	{
-		this.appId = window.DRAWIO_GOOGLE_APP_ID || '671128082532';
-		this.clientId = window.DRAWIO_GOOGLE_CLIENT_ID || '671128082532-jhphbq6d0e1gnsus9mn7vf8a6fjn10mp.apps.googleusercontent.com';
-	}
+
+	this.appId = window.DRAWIO_GOOGLE_APP_ID || '671128082532';
+	this.clientId = window.DRAWIO_GOOGLE_CLIENT_ID || '671128082532-jhphbq6d0e1gnsus9mn7vf8a6fjn10mp.apps.googleusercontent.com';
 	
 	this.mimeTypes = this.xmlMimeType + ',application/mxe,application/mxr,' +
 		'application/vnd.jgraph.mxfile.realtime,application/vnd.jgraph.mxfile.rtlegacy';
@@ -1306,6 +1299,39 @@ DriveClient.prototype.getXmlFile = function(resp, success, error, ignoreMime, re
 };
 
 /**
+ * Returns the checksum stored in the properties of the given file.
+ */
+DriveClient.prototype.getStoredChecksum = function(file)
+{
+	var checksum = null;
+
+	if (file.desc != null && file.desc.properties != null)
+	{
+		for (var i = 0; i < file.desc.properties.length; i++)
+		{
+			if (file.desc.properties[i].key == 'checksum')
+			{
+				var temp = file.desc.properties[i].value;
+
+				if (temp != null && temp.length > 0)
+				{
+					var tokens = temp.split(':');
+
+					if (tokens.length == 2)
+					{
+						checksum = tokens[1];
+					}
+				}
+
+				break;
+			}
+		}
+	}
+
+	return checksum;
+};
+
+/**
  * Translates this point by the given vector.
  * 
  * @param {number} dx X-coordinate of the translation.
@@ -1649,6 +1675,11 @@ DriveClient.prototype.saveFile = function(file, revision, success, errFn, noChec
 													etag = resp.etag;
 												}
 
+												if (reasons.length == 0)
+												{
+													reasons.push(mxResources.get('unknownError'));
+												}
+
 												var temp = reasons.join(', ');
 
 												if (retryCount < this.staleEtagMaxRetries)
@@ -1674,11 +1705,16 @@ DriveClient.prototype.saveFile = function(file, revision, success, errFn, noChec
 													// Logs failed save
 													try
 													{
+														var oldChecksum = this.getStoredChecksum(file);
+
 														EditorUi.logError('Saving to Google Drive failed',
-															null, 'id-' + file.desc.id +
+															null, 'id-' + file.desc.id + 
 															'-from-' + head0 + '.' + mod0 + '-' + this.ui.hashValue(etag0) +
 															'-to-' + resp.headRevisionId + '.' + resp.modifiedDate + '-' +
-															this.ui.hashValue(resp.etag) + ((temp.length > 0) ? '-errors-' + temp : ''),
+															this.ui.hashValue(resp.etag) +
+															((oldChecksum != null) ? '-old-checksum_' + oldChecksum : '') +
+															((checksum != null) ? '-new-checksum_' + checksum : '') +
+															((temp.length > 0) ? '-errors-' + temp : ''),
 															'user-' + ((this.user != null) ? this.user.id : 'nouser') +
 															((file.sync != null) ? '-client_' + file.sync.clientId : '-nosync') +
 															'-retries-' + retryCount);
@@ -2003,7 +2039,7 @@ DriveClient.prototype.saveFile = function(file, revision, success, errFn, noChec
 						{
 							criticalError(e);
 						}
-					})))
+					}), 20))
 				{
 					// If-branch
 					doSave(null, null, file.constructor != DriveLibrary);
