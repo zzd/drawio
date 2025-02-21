@@ -1,3 +1,18 @@
+19-FEB-2025: 26.0.15
+
+- Adds default dark mode support for SVG images
+- Shows word wrap option for non-resizable cells [jgraph/drawio-desktop#1994]
+- Adds word wrapping to attributes section of entity shape [jgraph/drawio-desktop#1994]
+- [conf cloud] Fixes Aura compatibility [DID-14484]
+
+14-FEB-2025: 26.0.14
+
+- Fixes change of line height for wrapped text [jgraph/drawio#4902]
+- Adds support for older browsers with no light-dark colors
+- Improves compatibility of exported SVG
+- Improves handling of ignored stroke-widths in clipSvgDataUri
+- Fixes handling of single color values in SVG with editable CSS rules
+
 12-FEB-2025: 26.0.13
 
 - Adds appearance option in publish and embed dialogs
