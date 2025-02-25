@@ -1308,3 +1308,4 @@ diagEditOwnPgOnlyOpen=Het diagram kan alleen worden bewerkt vanaf de bovenliggen
 diagInTemps=draw.io diagrammen in sjablonen
 diagInTempsCantEdit=Diagrammen in paginasjablonen kunnen niet worden bewerkt. Ze kunnen alleen worden bewerkt op pagina's en blogposts.
 confDirectEditDraftLost=Deze Confluence-pagina bevat niet-gepubliceerde wijzigingen. Het bewerken van het diagram vanuit de paginaweergave kan gegevensverlies veroorzaken. Bewerk eerst de Confluence-pagina en bewerk vervolgens het diagram.
+confConfigSpacePerm=Note: If you recently migrated from DC app, please check draw.io Configuration space permissions such that all users can read and only admins can write. In addition, remove the page restrictions on "Configuration" and "Libraries" pages. You may need admin keys to access them. Also, please check the file "configuration.json" in the "Configuration" page is downloadable.

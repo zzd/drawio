@@ -1308,3 +1308,4 @@ diagEditOwnPgOnlyOpen=Le diagramme peut seulement être modifié à partir de la
 diagInTemps=Diagrammes draw.io dans les modèles
 diagInTempsCantEdit=Les diagrammes ne peuvent pas être modifiés dans un modèle de page. Ils peuvent seulement être modifiés dans les pages et les billets de blogue.
 confDirectEditDraftLost=This Confluence page has unpublished changes. Editing the diagram from page view may cause data loss. Please edit the Confluence page first and then edit the diagram.
+confConfigSpacePerm=Note: If you recently migrated from DC app, please check draw.io Configuration space permissions such that all users can read and only admins can write. In addition, remove the page restrictions on "Configuration" and "Libraries" pages. You may need admin keys to access them. Also, please check the file "configuration.json" in the "Configuration" page is downloadable.

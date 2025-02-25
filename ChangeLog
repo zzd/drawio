@@ -1,3 +1,8 @@
+21-FEB-2025: 26.0.16
+
+- Fixes colors in vsdx export [DID-14515]
+- Fixes background color option for selection text
+
 19-FEB-2025: 26.0.15
 
 - Adds default dark mode support for SVG images

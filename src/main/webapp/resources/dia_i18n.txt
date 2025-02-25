@@ -1308,3 +1308,4 @@ diagEditOwnPgOnlyOpen=diagEditOwnPgOnlyOpen
 diagInTemps=diagInTemps
 diagInTempsCantEdit=diagInTempsCantEdit
 confDirectEditDraftLost=confDirectEditDraftLost
+confConfigSpacePerm=confConfigSpacePerm

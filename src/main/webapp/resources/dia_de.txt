@@ -1308,3 +1308,4 @@ diagEditOwnPgOnlyOpen=Das verknüpfte Diagramm kann nur auf der Original-Seite b
 diagInTemps=draw.io Diagramme in Vorlagen
 diagInTempsCantEdit=Diagramme in Seitenvorlagen können nicht bearbeitet werden. Sie können nur auf Seiten und Blog-Posts bearbeitet werden.
 confDirectEditDraftLost=This Confluence page has unpublished changes. Editing the diagram from page view may cause data loss. Please edit the Confluence page first and then edit the diagram.
+confConfigSpacePerm=Note: If you recently migrated from DC app, please check draw.io Configuration space permissions such that all users can read and only admins can write. In addition, remove the page restrictions on "Configuration" and "Libraries" pages. You may need admin keys to access them. Also, please check the file "configuration.json" in the "Configuration" page is downloadable.
