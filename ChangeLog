@@ -1,3 +1,10 @@
+05-MAR-2025: 26.1.0
+
+- Tenant for OneDrive fix [jgraph/drawio#4905]
+- Fixes print to PDF export dialog size and button title
+- Fixed images in vsdx export with multiple pages and also image scale [DID-14515]
+- Removes vsdx export functionality
+
 21-FEB-2025: 26.0.16
 
 - Fixes colors in vsdx export [DID-14515]

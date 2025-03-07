@@ -823,34 +823,6 @@ mxStencilRegistry.allowEval = false;
 			this.loadArgs(argsObj)
 		})
 
-		var editorUi = this;
-		
-		electron.registerMsgListener('export-vsdx', (argsObj) =>
-		{
-			var file = new LocalFile(editorUi, argsObj.xml, '');
-			
-			editorUi.fileLoaded(file);
-
-			try
-			{
-				editorUi.saveData = function(filename, format, data, mimeType, base64Encoded)
-				{
-					electron.sendMessage('export-vsdx-finished', data);
-				};
-				
-				var expSuccess = new VsdxExport(editorUi).exportCurrentDiagrams();
-
-				if (!expSuccess)
-				{
-					electron.sendMessage('export-vsdx-finished', null);
-				}
-			}
-			catch (e)
-			{
-				electron.sendMessage('export-vsdx-finished', null);
-			}
-		})	
-
 		//We do some async stuff during app loading so we need to know exactly when loading is finished (it is not when onload is finished)
 		electron.sendMessage('app-load-finished', null);
 
