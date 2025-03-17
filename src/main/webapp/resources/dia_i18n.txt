@@ -1014,7 +1014,6 @@ character=character
 confAConfPageDesc=confAConfPageDesc
 confALibPageDesc=confALibPageDesc
 confATempPageDesc=confATempPageDesc
-working=working
 confAConfSpaceDesc=confAConfSpaceDesc
 confANoCustLib=confANoCustLib
 delFailed=delFailed

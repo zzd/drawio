@@ -1014,7 +1014,6 @@ character=Karakter
 confAConfPageDesc=Halaman ini memuat berkas konfigurasi draw.io (configuration.json) sebagai lampiran
 confALibPageDesc=Halaman ini memuat pustaka ubahan draw.io sebagai lampiran
 confATempPageDesc=Halaman ini memuat templat ubahan draw.io sebagai lampiran
-working=Sedang Bekerja
 confAConfSpaceDesc=Ruang ini dipakai untuk menyimpan berkas konfigurasi dan pustaka/templat ubahan draw.io
 confANoCustLib=Tidak Ada Pustaka Ubahan
 delFailed=Penghapusan gagal!

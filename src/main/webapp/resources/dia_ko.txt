@@ -1014,7 +1014,6 @@ character=문자
 confAConfPageDesc=이 페이지는 draw.io 환경설정 파일이 첨부되어 있습니다.
 confALibPageDesc=이 페이지는 draw.io 커스텀 라이브러리가 첨부되어 있습니다.
 confATempPageDesc=이 페이지는 draw.io 커스텀 템플릿이 첨부되어 있습니다.
-working=작업중
 confAConfSpaceDesc=이 공간은 draw.io 환경설정 파일과 커스텀 라이브러리/템플릿을 저장하기 위해 사용됩니다.
 confANoCustLib=커스텀 라이브러리가 없습니다.
 delFailed=삭제에 실패했습니다.

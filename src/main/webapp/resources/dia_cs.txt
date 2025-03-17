@@ -1014,7 +1014,6 @@ character=Znak
 confAConfPageDesc=Tato stránka obsahuje uživatelsky soubor s nastaveními pro draw.io v podobě přílohy
 confALibPageDesc=Tato stránka obsahuje uživatelsky určené knihovny pro draw.io v podobě příloh
 confATempPageDesc=Tato stránka obsahuje uživatelsky určené šablony pro draw.io v podobě příloh
-working=Pracuje se
 confAConfSpaceDesc=Tento prostor slouží k ukládání souborů s nastaveními pro draw.io a uživatelsky určené knihovny/šablony
 confANoCustLib=Žádné uživatelsky určené knihovny
 delFailed=Smazání se nezdařilo!

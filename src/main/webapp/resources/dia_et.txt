@@ -1014,7 +1014,6 @@ character=Sümbol
 confAConfPageDesc=See leht sisaldab manusena draw.io konfiguratsiooni faili
 confALibPageDesc=See leht sisaldab manustena kohandatud draw.io kogumikke
 confATempPageDesc=See leht sisaldab manustena kohandatud draw.io malle
-working=Toimetatakse
 confAConfSpaceDesc=Seda ruumi kasutatakse draw.io konfiguratsioonifailide ja kohandatud kogumike/ mallide salvestamiseks
 confANoCustLib=Kohandatud kogumikke pole
 delFailed=Kustutamine ei õnnestunud!

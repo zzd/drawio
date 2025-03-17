@@ -1014,7 +1014,6 @@ character=字符
 confAConfPageDesc=此页面包含 draw.io 配置文件 (configuration.json) 附件
 confALibPageDesc=此页面包含 draw.io 自定义库附件
 confATempPageDesc=此页面包含 draw.io 自定义模板附件
-working=Working
 confAConfSpaceDesc=此空间用于存储 draw.io 配置文件以及自定义库和模板
 confANoCustLib=没有自定义库
 delFailed=删除失败!

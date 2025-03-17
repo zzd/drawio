@@ -1014,7 +1014,6 @@ character=Simbols
 confAConfPageDesc=Šajā lapā kā pielikums ir draw.io konfigurācijas fails (configuration.json)
 confALibPageDesc=Šajā lapā kā pielikumi ir iekļautas draw.io pielāgotās bibliotēkas
 confATempPageDesc=Šajā lapā kā pielikumi ir iekļautas draw.io pielāgotas veidnes
-working=Darbojas
 confAConfSpaceDesc=Šī vieta tiek izmantota, lai saglabātu draw.io konfigurācijas failus un pielāgotas bibliotēkas/veidnes
 confANoCustLib=Nav pielāgotu bibliotēku
 delFailed=Dzēst neizdevās!

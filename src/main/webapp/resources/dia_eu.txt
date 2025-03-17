@@ -1014,7 +1014,6 @@ character=Karakterea
 confAConfPageDesc=Orri honek erantsita du draw.io ezarpenen (configuration.json) fitxategia
 confALibPageDesc=Orri honek erantsita du draw.io liburutegi pertsonalizatuak
 confATempPageDesc=Orri honek erantsita du draw.io txantiloi pertsonalizatuak
-working=Lanean
 confAConfSpaceDesc=Toki hau erabiltzen da gordetzeko draw.io ezarpenak eta libreria/txantiloi pertsonalizatuak
 confANoCustLib=Ez dago liburutegi pertsonalik
 delFailed=Huts egin du ezabatzean!

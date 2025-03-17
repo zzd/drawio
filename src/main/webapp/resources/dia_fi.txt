@@ -1014,7 +1014,6 @@ character=Merkki
 confAConfPageDesc=Tämä sivu sisältää liitteenä draw.io-määritystiedoston (configuration.json).
 confALibPageDesc=Tämä sivu sisältää liitteinä mukautettuja draw.io-kirjastoja
 confATempPageDesc=Tämä sivu sisältää mukautettuja draw.io-mallipohjia liitteinä
-working=Käynnissä
 confAConfSpaceDesc=Tätä tilaa käytetään draw.io-määritystiedostojen ja mukautettujen kirjastojen/mallipohjien tallentamiseen
 confANoCustLib=Ei mukautettuja kirjastoja
 delFailed=Poistaminen epäonnistui!

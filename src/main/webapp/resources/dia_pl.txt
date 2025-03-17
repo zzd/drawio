@@ -1014,7 +1014,6 @@ character=Znak
 confAConfPageDesc=Ta strona zawiera plik konfiguracyjny draw.io (configuration.json) jako załącznik
 confALibPageDesc=Ta strona zawiera niestandardowe biblioteki draw.io jako załączniki
 confATempPageDesc=Ta strona zawiera niestandardowe szablony draw.io jako załączniki
-working=Działanie
 confAConfSpaceDesc=Ta przestrzeń jest używana do przechowywania plików konfiguracyjnych draw.io oraz własnych bibliotek/szablonów.
 confANoCustLib=Brak własnych bibliotek
 delFailed=Kasowanie nie powiodło się!

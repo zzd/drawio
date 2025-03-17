@@ -1014,7 +1014,6 @@ character=字元
 confAConfPageDesc=This page contains draw.io configuration file (configuration.json) as attachment
 confALibPageDesc=This page contains draw.io custom libraries as attachments
 confATempPageDesc=This page contains draw.io custom templates as attachments
-working=Working
 confAConfSpaceDesc=This space is used to store draw.io configuration files and custom libraries/templates
 confANoCustLib=No Custom Libraries
 delFailed=刪除失敗！

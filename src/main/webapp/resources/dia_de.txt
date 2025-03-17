@@ -1014,7 +1014,6 @@ character=Zeichen
 confAConfPageDesc=Diese Seite enthält die draw.io Konfigurationsdatei (configuration.json) als Anhang
 confALibPageDesc=Diese Seite enthält benutzerdefinierte draw.io Bibliotheken als Anhänge.
 confATempPageDesc=Diese Seite enthält benutzerdefinierte draw.io Vorlagen als Anhänge.
-working=Wird ausgeführt
 confAConfSpaceDesc=Dieser Space wird verwendet, um die draw.io Konfiguration und benutzerdefinierte Bibliotheken/Vorlagen zu speichern.
 confANoCustLib=Keine benutzerdefinierten Bibliotheken
 delFailed=Löschen fehlgeschlagen
