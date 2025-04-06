@@ -223,7 +223,7 @@ mxStencilRegistry.allowEval = false;
 
 		var editorUi = this.editorUi;
 
-		editorUi.actions.put('useOffline', new Action(mxResources.get('useOffline') + '...', function()
+		editorUi.actions.put('useOffline', new Action('useOffline' + '...', function()
 		{
 			editorUi.openLink('https://www.draw.io/')
 		}));
@@ -964,8 +964,12 @@ mxStencilRegistry.allowEval = false;
 
 							file.addConflictStatus(null, mxUtils.bind(this, function()
 							{
-								file.ui.editor.setStatus(mxUtils.htmlEntities(
-									mxResources.get('updatingDocument')));
+								file.ui.updateStatus(mxUtils.bind(this, function()
+								{
+									file.ui.editor.setStatus(mxUtils.htmlEntities(
+										mxResources.get('updatingDocument')));
+								}));
+
 								file.synchronizeFile(mxUtils.bind(this, function()
 								{
 									file.handleFileSuccess(false);
@@ -1242,9 +1246,12 @@ mxStencilRegistry.allowEval = false;
 						if (file != null && file.fileObject != null && file.fileObject.path == path)
 						{
 							file.setEditable(false);
-							this.editor.setStatus('<div class="geStatusBox" title="' +
-								mxUtils.htmlEntities(mxResources.get('readOnly')) + '">' +
-								mxUtils.htmlEntities(mxResources.get('readOnly')) + '</div>');
+							this.updateStatus(mxUtils.bind(this, function()
+							{
+								this.editor.setStatus('<div class="geStatusBox" title="' +
+									mxUtils.htmlEntities(mxResources.get('readOnly')) + '">' +
+									mxUtils.htmlEntities(mxResources.get('readOnly')) + '</div>');
+							}));						
 						}
 					}
 				}));

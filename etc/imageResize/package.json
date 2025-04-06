@@ -10,8 +10,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "image-size": "^1.1.1",
-    "sharp": "^0.33.2",
+    "image-size": "^2.0.2",
+    "sharp": "^0.34.0",
     "yargs": "^17.7.2"
   }
 }

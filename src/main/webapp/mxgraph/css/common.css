@@ -139,6 +139,6 @@ td.mxPopupMenuIcon {
 	padding: 2px 4px 2px 4px;
 }
 .mxDisabled {
-	opacity: 0.2 !important;
+	opacity: 0.3 !important;
 	cursor:default !important;
 }

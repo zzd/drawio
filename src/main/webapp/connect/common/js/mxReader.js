@@ -567,7 +567,7 @@ DrawioViewer.prototype.addToolbarButton = function(toolbar, drawioButton)
 		}
 		mxEvent.addListener(button, 'mouseover', function(evt)
 		{
-			button.className += ' diagramly-reader-toolbar-button-hover';
+			button.classList.add('diagramly-reader-toolbar-button-hover');
 		});
 		mxEvent.addListener(button, 'mouseout', function(evt)
 		{

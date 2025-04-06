@@ -147,11 +147,19 @@ Draw.loadPlugin(function(ui) {
 		    	var state = codec.document.createElement('state');
 		    	state.appendChild(node);
 		    	tape =[mxUtils.getXml(state)];
-		    	ui.editor.setStatus('Recording started');
+
+				ui.updateStatus(mxUtils.bind(this, function()
+				{
+		    		ui.editor.setStatus('Recording started');
+				}));
 	    	}
 	    	else if (tape != null)
 	    	{
-	    		ui.editor.setStatus('Recording stopped');
+				ui.updateStatus(mxUtils.bind(this, function()
+				{
+	    			ui.editor.setStatus('Recording stopped');
+				}));
+				
 	    		var tmp = tape;
 	    		tape = null;
 

@@ -15,6 +15,13 @@
 	<meta name="msapplication-config" content="images/browserconfig.xml">
     <meta name="mobile-web-app-capable" content="yes">
 	<meta name="theme-color" content="#d89000">
+    <link rel="canonical" href="https://app.diagrams.net">
+	<link rel="manifest" href="images/manifest.json">
+	<link rel="icon" href="favicon.ico" sizes="any">
+	<link rel="shortcut icon" href="favicon.ico">
+    <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+    <link rel="stylesheet" type="text/css" href="styles/grapheditor.css">
+	<link rel="stylesheet" media="(forced-colors: active)" href="styles/high-contrast.css" id="high-contrast-stylesheet">
 	<script id="geBootstrap" type="text/javascript">
 		/**
 		 * URL Parameters and protocol description are here:
@@ -353,20 +360,7 @@
 			}
 		};
 	</script>
-    <link rel="icon" href="favicon.ico" sizes="any">
-    <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
-    <link rel="stylesheet" type="text/css" href="styles/grapheditor.css">
-	<link rel="stylesheet" media="(forced-colors: active)" href="styles/high-contrast.css" id="high-contrast-stylesheet">
-    <link rel="canonical" href="https://app.diagrams.net">
-	<link rel="manifest" href="images/manifest.json">
-	<link rel="shortcut icon" href="favicon.ico">
 	<style type="text/css">
-		body { overflow:hidden; }
-		div.picker { z-index: 10007; }
-		.geSidebarContainer .geTitle input {
-			font-size:8pt;
-			color:#606060;
-		}
 		.geBlock {
 			z-index:-3;
 			margin:100px;
@@ -380,50 +374,9 @@
 			margin-top:0px;
 			padding-top:0px;
 		}
-		.geEditor *:not(.geScrollable)::-webkit-scrollbar {
-		    width:10px;
-		    height:10px;
-		}
-		.geEditor ::-webkit-scrollbar-track {
-			background-clip:padding-box;
-			border:solid transparent;
-			border-width:1px;
-		}
-		.geEditor ::-webkit-scrollbar-corner {
-			background-color:transparent;
-		}
-		.geEditor ::-webkit-scrollbar-thumb {
-			background-clip:padding-box;
-			border:solid transparent;
-			border-radius:10px;
-		}
-		.geTemplate {
-			border:1px solid transparent;
-			display:inline-block;
-			_display:inline;
-			vertical-align:top;
-			border-radius:3px;
-			overflow:hidden;
-			font-size:14pt;
-			cursor:pointer;
-			margin:5px;
-		}
 	</style>
-	<!-- Workaround for binary XHR in IE 9/10, see App.loadUrl -->
-	<!--[if (IE 9)|(IE 10)]><!-->
-		<script type="text/vbscript">
-			Function mxUtilsBinaryToArray(Binary)
-				Dim i
-				ReDim byteArray(LenB(Binary))
-				For i = 1 To LenB(Binary)
-					byteArray(i-1) = AscB(MidB(Binary, i, 1))
-				Next
-				mxUtilsBinaryToArray = byteArray
-			End Function
-		</script>
-	<!--<![endif]-->
 </head>
-<body class="geEditor">
+<body class="geEditor geClassic">
 <div id="geInfo">
 	<div class="geBlock">
 		<h1>Flowchart Maker and Online Diagram Software</h1>
@@ -431,7 +384,7 @@
 			draw.io is free online diagram software. You can use it as a flowchart maker, network diagram software, to create UML online, as an ER diagram tool, 
 			to design database schema, to build BPMN online, as a circuit diagram maker, and more. draw.io can import .vsdx, Gliffy&trade; and Lucidchart&trade; files .
 		</p>
-		<h2 id="geStatus">Loading...</h2>
+		<h2 id="geStatus">Loading... <img src="images/spin.gif"/></h2>
 		<p>
 			Please ensure JavaScript is enabled.
 		</p>

@@ -1,3 +1,72 @@
+05-APR-2025: 26.2.8
+
+- Adds ALLOW_INTERNAL_10_NET=1 for 10.x.x.x proxy usage [jgraph/drawio#4966]
+- Adds try/catch for TENANT_ID exception [jgraph/drawio#4909]
+- Moves mermaid2drawio.js back into public build
+
+05-APR-2025: 26.2.7
+
+- [conf cloud] and GraphViewer. Removes tooltips config. Pages use file tooltips config [DID-14767]
+- Fixes filename and comments button for Conf Cloud
+
+04-APR-2025: 26.2.6
+
+- Updates DOMPurify from 3.2.4 to 3.2.5
+- Adds primaryColor option for custom shape properties
+- Adds mxUtils.getColorValue
+- [conf cloud] Adds support for live docs [DID-14520]
+- Adds Note shape in Misc sidebar
+- [conf cloud] Fixed migrated server custom libraries names [DID-14902]
+
+03-APR-2025: 26.2.5
+
+- Fixes Google Drive folder picker z-index
+- Fixes OneDrive folder picker size
+- [conf cloud] Fixes headers anchor [DID-14864]
+
+02-APR-2025: 26.2.4
+
+- Fixes possible NPE in Sidebar.disablePointerEvents
+- [conf cloud] Added support for imported Gliffy images with the added version prefix to the name [DID-14867]
+- Fixes possible NPE in ColorDialog
+
+01-APR-2025: 26.2.3
+
+- [conf cloud] Fixes viewer background
+
+31-MAR-2025: 26.2.2
+
+- Adds Tamil translations
+- Fixes Confluence cloud lightbox [DID-14879]
+
+31-MAR-2025: 26.2.1
+
+- [conf cloud] Fixes possible NPE in LinkDialog
+- Fixes updateUserElement is not a function
+- Fixes initial state of default theme in embed mode
+- Fixes background for Notion extension
+
+31-MAR-2025: 26.2.0
+
+- [conf cloud] Removes lucidchartObject from the imported diagram and Conf loaded diagrams [DID-14777]
+- [conf cloud] Added debug message to script load error [DID-14714]
+- Fixes background color in PNG export [jgraph/drawio-desktop#2049]
+- Adds styles to clipboard and default style [jgraph/drawio#4989]
+- Refactors editor CSS
+
+25-MAR-2025: 26.1.3
+
+- Fixes handling of duplicate IDs in mxCodec [DID-14777]
+- [conf cloud] Potential fix for link dialog size [DID-14793]
+
+24-MAR-2025: 26.1.2
+
+- Increases mermaid text size to 900k [jgraph/drawio#4761]
+- Jira Cloud: Replaced deprecated search APIs
+- Disables pusher.min.js loading in lockdown mode
+- [conf cloud] Potential fix to Gliffy import incorrect version pinning [DID-14749]
+- [conf cloud] Added sorting to attachments and anchors in link dialog [DID-14793]
+
 14-MAR-2025: 26.1.1
 
 - Adds fill-/strokeColorStyles for XML stencils

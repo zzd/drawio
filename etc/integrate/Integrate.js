@@ -5,7 +5,6 @@ mxStencilRegistry.allowEval = false;
 Graph.prototype.defaultPageVisible = false;
 Graph.prototype.defaultScrollbars = false;
 EditorUi.prototype.toolbarHeight = 0;
-EditorUi.prototype.footerHeight = 0;
 EditorUi.scratchpadHelpLink = null;
 
 // Enables action states

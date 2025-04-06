@@ -143,7 +143,7 @@ Draw.loadPlugin(function(ui) {
 			{
 				var button = document.createElement('button');
 				button.setAttribute('title', 'Click or Shift+Click to write data for all selected cells to the browser console');
-				button.style['float'] = 'none';
+				button.style.cssFloat = 'none';
 				mxUtils.write(button, 'Write to Console');
 
 				mxEvent.addListener(button, 'click', function(evt)

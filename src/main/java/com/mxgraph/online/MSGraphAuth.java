@@ -18,18 +18,23 @@ abstract public class MSGraphAuth extends AbsAuth
 	{
 		if (CONFIG == null)
 		{
-			String clientSecrets = SecretFacade.getSecret(CLIENT_SECRET_FILE_PATH, getServletContext()),
-					clientId = SecretFacade.getSecret(CLIENT_ID_FILE_PATH, getServletContext()),
-					tenantId = SecretFacade.getSecret(TENANT_ID_FILE_PATH, getServletContext());
+			String clientSecrets = SecretFacade.getSecret(CLIENT_SECRET_FILE_PATH, getServletContext());
+			String clientId = SecretFacade.getSecret(CLIENT_ID_FILE_PATH, getServletContext());
+			String tenantId = null;
 
+			try
+			{
+				tenantId = SecretFacade.getSecret(TENANT_ID_FILE_PATH, getServletContext());
+			} catch (Exception e) {}
+	
 			CONFIG = new Config(clientId, clientSecrets);
-
-			String tenantIdPathPart = (tenantId != null && !tenantId.isEmpty()) ? tenantId : "common";
+	
+			String tenantIdPathPart = (tenantId != null && !tenantId.trim().isEmpty()) ? tenantId.trim() : "common";
 			CONFIG.AUTH_SERVICE_URL = "https://login.microsoftonline.com/" + tenantIdPathPart + "/oauth2/v2.0/token";
-
+	
 			CONFIG.REDIRECT_PATH = "/microsoft";
 		}
-
+	
 		return CONFIG;
 	}
 
