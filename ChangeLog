@@ -1,3 +1,36 @@
+23-APR-2025: 26.2.15
+
+- Internal build
+
+22-APR-2025: 26.2.14
+
+- Fixes NPE in VSDX import
+- Fixes initial sidebar width for Firefox
+- Adds urlParam, enableSW, to force enable service worker
+- Adds missing jira cloud viewer html to SW
+
+16-APR-2025: 26.2.13
+
+- Adds missing Exit Group and Home menu items [jgraph/drawio#5021]
+
+11-APR-2025: 26.2.12
+
+- Fixes build error
+
+11-APR-2025: 26.2.11
+
+- Moves Mermaid menu from Advanced to Insert menu
+- [conf cloud] Adds option to Gliffy mass import to check current page when linked diagrams fail [DID-14921]
+- [vsdx]: Partial fix for themed fill color[DID-14963]
+
+10-APR-2025: 26.2.10
+
+- [conf cloud] Fixed diagrams in custom templates [DID-14800]
+
+07-APR-2025: 26.2.9
+
+- [conf cloud] Fixed migrated server custom libraries names for Conf v8.x [DID-14902]
+
 05-APR-2025: 26.2.8
 
 - Adds ALLOW_INTERNAL_10_NET=1 for 10.x.x.x proxy usage [jgraph/drawio#4966]

@@ -15,3 +15,7 @@ node drawImageResize.js --file=path/to/your/file.drawio --width=200
 To resize all images to 40% their current width:
 
 node drawImageResize.js --file=path/to/your/file.drawio --percentage=40
+
+To resize all images to 40% of original size but no less than 300px:
+
+node drawImageResize.js --file=path/to/your/file.drawio --percentage=40 --width=300

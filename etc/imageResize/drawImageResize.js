@@ -2,7 +2,7 @@ const fs = require('fs');
 const sharp = require('sharp');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
-const sizeOf = require('image-size');
+const { imageSize } = require('image-size');
 
 const argv = yargs(hideBin(process.argv)).options({
   file: { type: 'string', demandOption: true, describe: 'The path to the .drawio file' },
@@ -10,36 +10,47 @@ const argv = yargs(hideBin(process.argv)).options({
   width: { type: 'number', demandOption: false, describe: 'The width to resize the images to' }
 }).argv;
 
-const resizeImage = async (base64Image, percentage, width) =>
-{
-  console.log(`Resizing image...`);
-  // Adjust the regex to match the new end character ";" instead of ","
-  const matches = base64Image.match(/^data:image\/(jpeg|png),(.*);$/);
-  if (!matches) return null;
-
-  const imageBuffer = Buffer.from(matches[2], 'base64');
-  const dimensions = sizeOf(imageBuffer);
-  
-  console.log(`width = ${width}`);
-  console.log(`percentage = ${percentage}`);
-
-  if (percentage && !width)
+const resizeImage = async (base64Image, percentage, minWidth) =>
   {
-    // Width isn't passed in, use percentage
-  	width = Math.floor(dimensions.width * (percentage / 100));
-  	console.log(`dimensions.width = ${dimensions.width}`);
-  }
-  console.log(`width = ${width}`);
-  return sharp(imageBuffer)
-    .resize({ width: width, withoutEnlargement: true })
-    .toBuffer()
-    .then(resizedBuffer =>
+    console.log(`Resizing image...`);
+    const matches = base64Image.match(/^data:image\/(jpeg|png),(.*);$/);
+    if (!matches) return null;
+  
+    const imageBuffer = Buffer.from(matches[2], 'base64');
+    const dimensions = imageSize(imageBuffer);
+  
+    let targetWidth;
+  
+    if (percentage)
     {
-      console.log(`Image resized to ${percentage}% of its original size.`);
-      // Ensure to append ";" at the end after re-encoding to base64
-      return `data:image/${matches[1]},` + resizedBuffer.toString('base64') + ';';
-    });
-};
+      const calculatedWidth = Math.floor(dimensions.width * (percentage / 100));
+      console.log(`Original width: ${dimensions.width}, Percentage resize: ${percentage}%, Calculated width: ${calculatedWidth}`);
+  
+      // Enforce minimum width if provided
+      targetWidth = minWidth ? Math.max(calculatedWidth, minWidth) : calculatedWidth;
+    }
+    else if (minWidth)
+    {
+      targetWidth = minWidth;
+      console.log(`Using minimum width directly: ${minWidth}`);
+    }
+    else
+    {
+      console.log(`No resizing parameters provided`);
+      return null;
+    }
+  
+    console.log(`Final target width: ${targetWidth}`);
+  
+    return sharp(imageBuffer)
+      .resize({ width: targetWidth, withoutEnlargement: true })
+      .toBuffer()
+      .then(resizedBuffer =>
+      {
+        console.log(`Image resized to width: ${targetWidth}px`);
+        return `data:image/${matches[1]},` + resizedBuffer.toString('base64') + ';';
+      });
+  };
 
 const processDrawioFile = async (filePath, percentage, width) =>
 {

@@ -44,6 +44,7 @@
 	grid-template-columns: min-content min-content 1fr min-content;
 }
 
+html:has(.geFullscreen),
 .geEditor,
 .mxWindow,
 .geDialogTitle,
@@ -751,7 +752,8 @@ div.geTemplatePreview {
 }
 
 .geTemplate .geGenerateDiagramForm .geButton.geRoundButton {
-	margin: -6px -6px 0 0;
+    margin: -6px -6px 0 0;
+    padding: 2px !important;
 }
 
 .geDarkMode .geTemplate {
@@ -1551,6 +1553,11 @@ a.geStatus>div {
 	flex-grow: 0;
 }
 
+.mxPopupMenuItem:empty:has(+ .mxPopupMenuItem:empty),
+.mxPopupMenuItem:empty + .mxPopupMenuItem:empty {
+	display: none;
+}
+
 .mxPopupMenuIcon>img.geButton:empty {
 	width: 22px;
 }
@@ -1635,7 +1642,9 @@ a.geStatus>div {
 	position: relative;
 }
 
-.geFormatSection *:empty:not(input) {
+.geFormatSection *:empty:not(input),
+.geToolbarContainer *:not(input) {
+	-webkit-user-select: none;
 	user-select: none;
 }
 
@@ -1703,6 +1712,10 @@ a.geStatus>div {
 	display: flex;
 	height: 32px;
 	z-index: 1;
+}
+
+.geMinimal .geTabContainer .geZoomInput {
+	margin-left: auto;
 }
 
 .geTabContainer .geZoomInput {
