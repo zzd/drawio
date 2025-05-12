@@ -47,6 +47,8 @@ public class Xml2Js
 
 		if (list != null)
 		{
+			Arrays.sort(list);
+
 			for (File f : list)
 			{
 				if (f.isDirectory())

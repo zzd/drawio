@@ -1,3 +1,26 @@
+08-MAY-2025: 27.0.2
+
+- Changes cache url for app.diagrams.net
+- Builds xml2js
+
+07-MAY-2025: 27.0.1
+
+- Sorts xml2js file list deterministically
+
+07-MAY-2025: 27.0.0
+
+- Disables splash screen by default
+
+06-MAY-2025: 26.3.0
+
+- Improves XML parsing with invalid characters [DID-15090]
+- Renames Network libraries
+- AWS update
+- Updated Mermaid to v11.6.0
+- Fixes SVG output of mermaid in some special cases [#drawio-5046]
+- Fixes tab selection after label change [jgraph/drawio#5050]
+- Requires forceMigration=1 to run www.draw.io migration
+
 23-APR-2025: 26.2.15
 
 - Internal build
