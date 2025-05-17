@@ -1,3 +1,16 @@
+13-MAY-2025: 27.0.5
+
+- Skips service worker install on first load
+
+12-MAY-2025: 27.0.4
+
+- Fixes image export background [jgraph/drawio-desktop#2091]
+- Adds warning for plantuml deprecation
+
+09-MAY-2025: 27.0.3
+
+- Moves bootstrap and main code to external JS files
+
 08-MAY-2025: 27.0.2
 
 - Changes cache url for app.diagrams.net
