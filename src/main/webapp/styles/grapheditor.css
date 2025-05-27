@@ -1089,18 +1089,42 @@ div.geFormatContainer {
     top: 16px;
 }
 
-html body div.geSmallBanner {
-	background-color: #F2931E;
-	background: linear-gradient(#F2931E 0px, #F08707 100%);
-	border: 1px solid #F08707;
-	color: #000;
+html body div.geBtn.geSmallBanner {
+	border-radius: 20px;
+	font-size: inherit;
+	padding: 6px 12px 6px 20px;
+	display: flex;
+	height: auto;
+	bottom: 4px;
 }
 
-html body div.geSmallBanner:hover:not([disabled]) {
-	background-color: #ffb75e;
-	background: linear-gradient(#ffb75e 0px, #F2931E 100%);
-	border: 1px solid #F08707;
-	color: #000;
+.geSpinnerStatus {
+	position: absolute;
+    white-space: nowrap;
+    border-radius: 6px;
+	color: #ffffff;
+	background: #4B4243;
+	transform: translate(-50%, -50%);
+    box-shadow: light-dark(#dddddd, transparent) 2px 2px 3px 0px;
+	padding: 6px 10px;
+	font-size: 9pt;
+    z-index: 2000000000;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+	cursor: default;
+}
+
+.geSmallBanner .geLibraryButton {
+	background-color: light-dark(var(--primary-hover-color), var(--dark-active-accent-color));
+	filter: brightness(0.9);
+	margin-left: 6px;
+	opacity: 0.5;
+}
+
+.geSmallBanner .geLibraryButton:hover {
+	background-color: light-dark(var(--primary-hover-color), var(--dark-active-accent-color));
+	opacity: 1;
 }
 
 .geAlert {

@@ -1,3 +1,21 @@
+23-MAY-2025: 27.0.9
+
+- Uses per-cell container for inputs/selects in property rows [jgraph/draw#5086]
+
+22-MAY-2025: 27.0.8
+
+- Fixes possible notification NPE
+
+22-MAY-2025: 27.0.7
+
+- Restricts notifications to own diagrams.net domains [jgraph/docker-drawio#187]
+- [conf cloud] Removes blank and smart templates from Confluence Template diagrams [DID-14800]
+- [conf cloud] Fixes editor hang in Template editor [DID-14800]
+
+16-MAY-2025: 27.0.6
+
+- Fixes paste location to use position of mouse [drawio-desktop#2096]
+
 13-MAY-2025: 27.0.5
 
 - Skips service worker install on first load
