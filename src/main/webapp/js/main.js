@@ -1,15 +1,18 @@
 /**
  * Main
  */
-if (urlParams['dev'] != '1' && typeof document.createElement('canvas').getContext === "function")
+if (typeof AJS === 'undefined') // conf insists on pulling in this file into batch.js for atlas-debug
 {
-	window.addEventListener('load', function()
+	if (urlParams['dev'] != '1' && typeof document.createElement('canvas').getContext === "function")
 	{
-		mxWinLoaded = true;
-		checkAllLoaded();
-	});
-}
-else
-{
-	App.main();
+		window.addEventListener('load', function()
+		{
+			mxWinLoaded = true;
+			checkAllLoaded();
+		});
+	}
+	else
+	{
+		App.main();
+	}
 }

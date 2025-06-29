@@ -1,3 +1,41 @@
+16-JUN-2025: 27.1.6
+
+- Hides dark mode toggle in unsupported browsers
+- Updates SAP library preview
+- Service worker optimizations
+
+13-JUN-2025: 27.1.5
+
+- [conf cloud] Fallback for more info call failing [DID-15438]
+- [jira cloud] Fixing Jira re-indexing [DID-14930]
+- Fixes CSS issues in Atlas theme [jgraph/drawio#5119]
+- Updates SAP shapes
+- Adds app.diagrams.net specific service worker
+
+04-JUN-2025: 27.1.4
+
+- [conf cloud] Removed upload option from embed diagram macro
+- Adds ge prefix for panel-color and dark-panel-color CSS variable
+- Fixes editing of property values [jgraph/drawio#5102]
+
+02-JUN-2025: 27.1.3
+
+- Lowers specificity of generic CSS selectors
+- Fixes handling of transparent background in explore mode
+
+30-MAY-2025: 27.1.2
+
+- Makes certain css selectors less generic [DID-15398]
+
+28-MAY-2025: 27.1.1
+
+- [conf cloud] Fixed permissions check for diagram edit [DID-15344]
+
+28-MAY-2025: 27.1.0
+
+- Refactors GCP2 shapes [jgraph/draw#5006]
+- [conf cloud] Making Gliffy version pinning optional (off by default) [DID-15346]
+
 23-MAY-2025: 27.0.9
 
 - Uses per-cell container for inputs/selects in property rows [jgraph/draw#5086]

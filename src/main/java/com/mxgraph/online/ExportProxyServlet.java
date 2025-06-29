@@ -22,7 +22,7 @@ import com.mxgraph.online.Utils.SizeLimitExceededException;
 @SuppressWarnings("serial")
 public class ExportProxyServlet extends HttpServlet
 {
-	private final String[] supportedServices = {"EXPORT_URL", "PLANTUML_URL", "VSD_CONVERT_URL", "EMF_CONVERT_URL"};
+	private final String[] supportedServices = {"EXPORT_URL", "PLANTUML_URL", "EMF_CONVERT_URL"};
 
 	private void doRequest(String method, HttpServletRequest request,
 			HttpServletResponse response) throws ServletException, IOException
