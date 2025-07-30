@@ -10,7 +10,7 @@ about: Create a report to help us improve
 * [ ] I agree to follow the [Code of Conduct](https://github.com/jgraph/drawio/blob/dev/CODE_OF_CONDUCT.md) that this project adheres to.
 * [ ] I have searched the issue tracker for a feature request that matches the one I want to file, without success.
 
-You must agree to search and the code of conduct. You must fill in this entire template. If you delete part/all or miss parts out your issue will be closed.
+You must search the issue tracker and agree to the code of conduct. You must fill in this entire template. If you delete part/all or miss parts out your issue will be closed.
 
 If you are technical, you should report bugs along the lines of https://marker.io/blog/how-to-write-bug-report. If you are not technical, we will make allowances, please try to make an effort to understand the process.
 

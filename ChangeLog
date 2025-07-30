@@ -1,3 +1,73 @@
+25-JUL-2025: 28.0.7
+
+- Fixes zoom out icon in draft dialog [jgraph/drawio-desktop#2154]
+- Fixes clipboard.read is not a function
+- [conf cloud] Fixes page IDs import, page is not found [DID-15536]
+
+17-JUL-2025: 28.0.6
+
+- Fixes missing File menu option
+
+16-JUL-2025: 28.0.5
+
+- [conf cloud] Stops converting server macro with aspectHash to embed macro [DID-15703]
+- Add LC case for UserImage2Block shape [DID-15706]
+- Fixes mermaid colors in dark mode [DID-15734]
+
+12-JUL-2025: 28.0.4
+
+- Adds pages option to export URL dialog
+- Handles backgroundColor in HTML to SVG
+- Adds resizing for plantuml and mermaid edit dialog
+- Removes image option in plantuml dialog
+
+11-JUL-2025: 28.0.3
+
+- Activates convert HTML to SVG and removes feature flag
+
+11-JUL-2025: 28.0.2
+
+- Conf Cloud: Handled incorrect return value from convert-ids-to-types API [DID-15536]
+
+10-JUL-2025: 28.0.1
+
+- Adds some HTML to SVG conversion
+
+10-JUL-2025: 28.0.0
+
+- Fixes possible ClipboardItem.supports is not a function
+- Fixes possible overflow for sidebars on small screens
+- Fixes Alt+Click in sidebar and shape picker [jgraph/drawio#4720]
+- Fixes possible NPE in mxGraph.intersects
+- Removes Twitter and Facebook button in Embed dialog [DID-15625]
+- Enables PlantUML menu option if URL was customized [DID-15625]\
+- Adds gapi-stealth URL parameter for stealth mode with Google Drive [DID-15625]
+- Adds resizing for metadata dialog [jgraph/drawio#375,jgraph/drawio#5142]
+- Hides Publish and Embed menu when offline [DID-15625]
+- Hides Publish and Embed menu when offline in Minimal theme [DID-15625]
+- Updates icon cache
+
+30-JUN-2025: 27.2.0
+
+- Adds copy as SVG, improves handling of clipboard data
+- Fixes theme buttons on touch devices
+- Fixes justifyfull [jgraph/drawio#526]
+- Fixes enter keystroke in omni search box
+- Fixes use of generic font-families [jgraph/drawio#4998]
+- Fixes window tooltips i18n [jgraph/drawio#4654]
+- Adds shadows option for print and PDF export, uses CSS filter for global shadow [jgraph/drawio-desktop#2133]
+- Fixes floating panels on mobile [jgraph/drawio#5134]
+- Fixes exported SVG image sizes [jgraph/drawio#4814]
+- Fixes diagram insert position in Notion extension [jgraph/drawio#5123]
+- Fixes disabled dark mode in Firefox 140
+- Adds miterlimit property for shapes [jgraph/drawio#4706]
+- Fixes PDF title and page numbers [jgraph/drawio-desktop#2130,jgraph/drawio#4102]
+- Adds experimental pipe shape, improves edge style panel [jgraph/drawio#5144]
+- Fixes miter limit default value
+- Adds support for SVG background images with dark mode
+- Fixes offsets in image export [jgraph/drawio#5122]
+- Fixes possible NPE in Find dialog [jgraph/drawio#5143]
+
 16-JUN-2025: 27.1.6
 
 - Hides dark mode toggle in unsupported browsers
