@@ -7,13 +7,18 @@ As well as running this project, we run a production-grade deployment of the dia
 License
 -----------------
 
-The minified code authored by us in this repo is licensed under an Apache v2 license, but the sources to build those files are not in this repo. This is not an open source project. We do not accept PRs unless one of the maintainers specifically says it's OK (basically never).
+The minified code authored by us in this repo is licensed under an Apache v2 license, but not all the sources to build those files are in this repo. This is not an open source project. We do not accept PRs.
 
 The JGraph provided icons and diagram templates are licensed under the [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Additional terms may also apply where the icons are originally defined by a third-party copyright holder. We have checked in all cases that the original license allows use in this project. Also see the terms for using the draw.io logo below.
 
 Additional minified JavaScript files and Java libraries are used in this project. All of the licenses are deemed compatible with the Apache 2.0, nothing is GPL or AGPL, due diligence is performed on all third-party code.
 
 We make no copyright claim on the content you create with this software, regardless of the copyright of individual icons used in such content.
+
+PRs and use of gen AI
+---------------------
+
+This entire project is written by humans only and written by the core team only. There have been various reasons for this historically, but the key reason from 2024 is that we have no way to determine whether PRs are also human written.
 
 Scope of the Project
 --------------------

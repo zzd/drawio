@@ -1,3 +1,18 @@
+16-SEP-2025: 28.2.3
+
+- Adds dropbox.com to connect-src CSP
+
+15-SEP-2025: 28.2.2
+
+- Fixes error dialog when panning into shapes panel [jgraph/drawio#5263]
+- Changes notification URL to support diagrams.net and draw.io
+- Registers service worker with enableSW=1 URL parameter
+
+11-SEP-2025: 28.2.1
+
+- Adds gliffy shape mappings [DID-16199]
+- Rack cabinet shape layout bugfix [jgraph/drawio#4823]
+
 05-SEP-2025: 28.2.0
 
 - Adds gliffy stencil mappings [DID-16201]

@@ -42,7 +42,9 @@ window.SAVE_URL = window.SAVE_URL || window.DRAWIO_SERVER_URL + 'save';
 window.OPEN_URL = window.OPEN_URL || window.DRAWIO_SERVER_URL + 'import';
 window.PROXY_URL = window.PROXY_URL || window.DRAWIO_SERVER_URL + 'proxy';
 window.DRAWIO_VIEWER_URL = window.DRAWIO_VIEWER_URL || null;
-window.NOTIFICATIONS_URL = window.NOTIFICATIONS_URL || window.DRAWIO_SERVER_URL + 'notifications';
+window.NOTIFICATIONS_URL = window.NOTIFICATIONS_URL || ((/.*\.draw\.io$/.test(window.location.hostname)) ||
+	(/.*\.diagrams\.net$/.test(window.location.hostname)) ?
+	window.DRAWIO_SERVER_URL + 'notifications' : null);
 window.RT_WEBSOCKET_URL = window.RT_WEBSOCKET_URL || ('wss://' + ((window.location.hostname == 'test.draw.io') ?
 	'app.diagrams.net' : window.location.hostname) + '/rt');
 

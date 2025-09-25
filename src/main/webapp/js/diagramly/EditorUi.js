@@ -4049,7 +4049,7 @@
 					graph.getRubberband().execute(evt);
 					graph.getRubberband().reset();
 				}
-				else
+				else if (evt != null && mxEvent.getSource(evt).classList.contains('geLibraryButton'))
 				{
 					this.showError(mxResources.get('error'), mxResources.get('nothingIsSelected'), mxResources.get('ok'));
 				}

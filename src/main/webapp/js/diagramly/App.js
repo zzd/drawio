@@ -769,7 +769,7 @@ App.main = function(callback, createUi)
 						}
 						// Skips service worker install on first load
 						else if (!Editor.isSettingsEnabled() || (mxSettings.settings != null &&
-							!mxSettings.settings.isNew))
+							!mxSettings.settings.isNew) || urlParams['enableSW'] == '1')
 						{
 							EditorUi.debug('App.main', 'Installing service worker');
 							navigator.serviceWorker.register('service-worker.js');
@@ -6410,7 +6410,7 @@ App.prototype.updateButtonContainer = function()
  */
 App.prototype.fetchAndShowNotification = function(target, subtarget)
 {
-	if (this.fetchingNotif || !this.isOwnGDriveDomain())
+	if (this.fetchingNotif || NOTIFICATIONS_URL == null)
 	{
 		return;	
 	}
@@ -6447,7 +6447,7 @@ App.prototype.fetchAndShowNotification = function(target, subtarget)
 	}
 	catch(e) {} //Ignore
 	
-	if ((cachedNotif == null || cachedNotif.ts + 24 * 60 * 60 * 1000 < Date.now()) && this.isOwnGDriveDomain()) //Cache for one day
+	if ((cachedNotif == null || cachedNotif.ts + 24 * 60 * 60 * 1000 < Date.now())) //Cache for one day
 	{
 		this.fetchingNotif = true;
 		//Fetch all notifications and store them, then filter client-side
