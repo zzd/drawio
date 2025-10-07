@@ -82,7 +82,7 @@ var mxUtils =
 	 * 
 	 * Regular expression for parsing light-dark CSS values.
 	 */
-	lightDarkColorRegex: /light-dark\(\s*(#[0-9a-fA-F]{3,6}|rgba?\([^)]+\)|var\([^)]+\)|[a-zA-Z]+)\s*,\s*(#[0-9a-fA-F]{3,6}|rgba?\([^)]+\)|var\([^)]+\)|[a-zA-Z]+)\s*\)/,
+	lightDarkColorRegex: /light-dark\(\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|var\([^)]+\)|[a-zA-Z]+)\s*,\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|var\([^)]+\)|[a-zA-Z]+)\s*\)/,
 
 	/**
 	 * Variable: varColorRegex
@@ -2237,6 +2237,7 @@ var mxUtils =
 		var r = 0;
 		var g = 0;
 		var b = 0;
+		var a = 1;
 
 		if (color.toLowerCase() == 'transparent')
 		{
@@ -2254,6 +2255,7 @@ var mxUtils =
 		r = rgb.r;
 		g = rgb.g;
 		b = rgb.b;
+		a = rgb.a;
 
 		// Inverts colors
 		function invert(num)
@@ -2304,10 +2306,11 @@ var mxUtils =
 		var R = clamp(matrix[0] * r + matrix[1] * g + matrix[2] * b);
 		var G = clamp(matrix[3] * r + matrix[4] * g + matrix[5] * b);
 		var B = clamp(matrix[6] * r + matrix[7] * g + matrix[8] * b);
-		
-		return '#' + (1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1);
+
+		return '#' + (1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1) +
+			(a < 1 ? ('0' + Math.round(a * 255).toString(16)).slice(-2) : '');
 	},
-		
+	
 	/**
 	 * Function: addAlphaToColor
 	 * 
@@ -2321,7 +2324,7 @@ var mxUtils =
 		{
 			var rgb = mxUtils.parseColor(color);
 			color = 'rgba(' + rgb.r + ',' + rgb.g + ',' +
-				rgb.b + ',' + alpha + ')';
+				rgb.b + ',' + (rgb.a * alpha) + ')';
 		}
 
 		return color;
@@ -4201,7 +4204,7 @@ var mxUtils =
 		{
 			if (mxUtils.isRgbColor(color))
 			{
-				var rgb = color.replace(/[^\d,]/g, '').split(',');
+				var rgb = color.replace(/[^\d,.]/g, '').split(',');
 				var r = parseInt(rgb[0]);
 				var g = parseInt(rgb[1]);
 				var b = parseInt(rgb[2]);
@@ -4285,7 +4288,10 @@ var mxUtils =
 		return (rgb != null) ? '#' +
 			('0' + rgb.r.toString(16)).slice(-2) +
 			('0' + rgb.g.toString(16)).slice(-2) +
-			('0' + rgb.b.toString(16)).slice(-2) : color;
+			('0' + rgb.b.toString(16)).slice(-2) +
+			(rgb.a < 1 ?
+				('0' + Math.round(rgb.a * 255).toString(16)).slice(-2) : '') :
+				color;
 	},
 	
 	/**
@@ -4318,6 +4324,11 @@ var mxUtils =
 					if (mxUtils.canvasContext.fillStyle != mxUtils.validInvalidColor)
 					{
 						result = mxUtils.canvasContext.fillStyle;
+
+						if (mxUtils.isRgbColor(result))
+						{
+							result = mxUtils.rgba2hex(result);
+						}
 					}
 					else if (color.length > 1 && color.charAt(0) == '#')
 					{

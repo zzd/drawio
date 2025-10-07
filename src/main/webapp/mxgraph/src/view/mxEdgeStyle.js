@@ -1067,8 +1067,6 @@ var mxEdgeStyle =
 	OrthConnector: function(state, sourceScaled, targetScaled, controlHints, result)
 	{
 		var graph = state.view.graph;
-		var sourceEdge = source == null ? false : graph.getModel().isEdge(source.cell);
-		var targetEdge = target == null ? false : graph.getModel().isEdge(target.cell);
 
 		var pts = mxEdgeStyle.scalePointArray(state.absolutePoints, state.view.scale);
 		var source = mxEdgeStyle.scaleCellState(sourceScaled, state.view.scale);
@@ -1113,7 +1111,7 @@ var mxEdgeStyle =
 		}
 
 		if (tooShort || (mxEdgeStyle.orthPointsFallback && (controlHints != null &&
-				controlHints.length > 0)) || sourceEdge || targetEdge)
+				controlHints.length > 0)))
 		{
 			mxEdgeStyle.SegmentConnector(state, sourceScaled, targetScaled, controlHints, result);
 			
@@ -1239,7 +1237,11 @@ var mxEdgeStyle =
 			currentTerm = p0;
 		}
 
-		var constraint = [ [0.5, 0.5] , [0.5, 0.5] ];
+		var constraint = [ [0.5, 0.5], [0.5, 0.5] ];
+
+		// The only assumed cases for the below is an unattached end, source/target has no dims in that case.
+		if (!source) constraint[0] = [0, 0];   // use top-left corner (= exact p0)
+		if (!target) constraint[1] = [0, 0];   // use top-left corner (= exact pe)
 
 		for (var i = 0; i < 2; i++)
 		{

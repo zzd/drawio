@@ -55,7 +55,7 @@ Format.wireEdgeImage = Graph.createSvgImage(20, 22, '<path transform="translate(
 	'<path transform="translate(4,0)" stroke-dashoffset="8" stroke-dasharray="8 8" stroke-width="3.5" d="M 0 10 L 34 10" stroke="green" fill="black"/>', 42, 20);
 Format.arrowImage = Graph.createSvgImage(20, 22, '<path transform="translate(4,3)" stroke-width="2.5" d="M 0 6 L 24 6 L 24 2 L 32 8 L 24 14 L 24 10 L 0 10 Z" stroke="black" fill="none"/>', 42, 20);
 Format.simpleArrowImage = Graph.createSvgImage(20, 22, '<path transform="translate(4,3)" stroke-width="2.5" d="M 0 6 L 4 6 L 4 10 L 0 10 Z M 7 6 L 18 6 L 18 2 L 25 8 L 18 14 L 18 10 L 7 10 Z M 28 6 L 28 6 L 32 6 L 32 10 L 28 10 Z" stroke="black" fill="none"/>', 42, 20);
-Format.straightImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="4.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 4 26 L 26 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
+Format.straightImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 4 26 L 26 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
 Format.orthogonalImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 L 2 14 L 28 14 L 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
 Format.horizontalElbowImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,3)rotate(270,0,0)scale(-1,1)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 L 2 14 L 28 14 L 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z M 14 11 L 14 5 M 14 3 L 16 5 L 12 5 Z M 14 17 L 14 23 M 14 25 L 16 23 L 12 23 Z" stroke="black" fill="none"/>', 36, 36);
 Format.verticalElbowImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 L 2 14 L 28 14 L 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z M 14 11 L 14 5 M 14 3 L 16 5 L 12 5 Z M 14 17 L 14 23 M 14 25 L 16 23 L 12 23 Z" stroke="black" fill="none"/>', 36, 36);
@@ -4979,6 +4979,34 @@ StyleFormatPanel.prototype.getCustomColors = function()
 /**
  * Adds the label menu items to the given menu and parent.
  */
+StyleFormatPanel.prototype.addDashPattern = function(elt, pattern)
+{
+	var tokens = pattern.split(' ');
+
+	if (tokens.length >= 2)
+	{
+		var sum = 0;
+
+		for (var i = 0; i < tokens.length; i++)
+		{
+			sum += parseInt(tokens[i]);
+		}
+		
+		var img = Graph.createSvgImage(sum, 1, '<line transform="translate(0,1)" x1="0" y1="0" x2="' + sum +
+			'" y2="0" stroke-dasharray="' + pattern + '" stroke-width="2" stroke="black"/>', sum, 1);
+		elt.style.backgroundImage = 'url(' + img.src + ')';
+		elt.style.backgroundSize = sum + 'px 1px';
+		elt.style.backgroundRepeat = 'repeat-x';
+	}
+	else
+	{
+		elt.style.borderBottomStyle = pattern;
+	}
+};
+
+/**
+ * Adds the label menu items to the given menu and parent.
+ */
 StyleFormatPanel.prototype.addStroke = function(container)
 {
 	var panel = this;
@@ -5087,23 +5115,8 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	var addItem = mxUtils.bind(this, function(menu, width, pattern, keys, values)
 	{
 		var item = this.editorUi.menus.styleChange(menu, '', keys, values, '', null);
-			var pat = document.createElement('div');
-		var tokens = pattern.split(' ');
-
-		if (tokens.length == 2)
-		{
-			var len = parseInt(tokens[0]) + parseInt(tokens[1]);
-			var fill = parseInt(tokens[0]) / len * 100;
-			pat.style.borderBottomStyle = 'none';
-			pat.style.backgroundImage = 'linear-gradient(to right, ' +
-				'black ' + fill + '%, transparent 0%)';
-			pat.style.backgroundSize = len + 'px 1px';
-		}
-		else
-		{
-			pat.style.borderBottomStyle = pattern;
-		}
-		
+		var pat = document.createElement('div');
+		this.addDashPattern(pat, pattern);
 		item.firstChild.firstChild.className = 'geStyleMenuItem';
 		item.firstChild.firstChild.style.width = width + 'px';
 		item.firstChild.firstChild.appendChild(pat);
@@ -5117,6 +5130,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 		addItem(menu, 110, 'dashed', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN], ['1', null]).setAttribute('title', mxResources.get('dashed') + ' (1)');
 		addItem(menu, 110, '8 8', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN], ['1', '8 8']).setAttribute('title', mxResources.get('dashed') + ' (2)');
 		addItem(menu, 110, '12 12', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN], ['1', '12 12']).setAttribute('title', mxResources.get('dashed') + ' (3)');
+		addItem(menu, 110, '8 4 1 4', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN], ['1', '8 4 1 4']).setAttribute('title', mxResources.get('dashed') + ' (4)');
 		addItem(menu, 110, 'dotted', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN], ['1', '1 1']).setAttribute('title', mxResources.get('dotted') + ' (1)');
 		addItem(menu, 110, '1 2', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN], ['1', '1 2']).setAttribute('title', mxResources.get('dotted') + ' (2)');
 		addItem(menu, 110, '1 4', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN], ['1', '1 4']).setAttribute('title', mxResources.get('dotted') + ' (3)');
@@ -5155,6 +5169,8 @@ StyleFormatPanel.prototype.addStroke = function(container)
 			['1', '8 8']).setAttribute('title', mxResources.get('dashed') + ' (2)');
 		addItem(menu, 40, '12 12', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN],
 			['1', '12 12']).setAttribute('title', mxResources.get('dashed') + ' (3)');
+		addItem(menu, 40, '8 4 1 4', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN],
+			['1', '8 4 1 4']).setAttribute('title', mxResources.get('dashed') + ' (4)');
 		addItem(menu, 40, 'dotted', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN],
 			['1', '1 1']).setAttribute('title', mxResources.get('dotted') + ' (1)');
 		addItem(menu, 40, '1 2', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN],
@@ -5603,15 +5619,8 @@ StyleFormatPanel.prototype.addStroke = function(container)
 
 			if (tokens.length >= 2)
 			{
-				var len = parseInt(tokens[0]) + parseInt(tokens[1]);
-				var fill = parseInt(tokens[0]) / len * 100;
-
 				solid.style.borderBottom = '1px solid transparent';
-				solid.style.backgroundImage = 'linear-gradient(to right, ' +
-					'black ' + fill + '%, transparent 0%)';
-				solid.style.backgroundPosition = 'bottom left';
-				solid.style.backgroundSize = len +'px 1px';
-				solid.style.backgroundRepeat = 'repeat-x';
+				this.addDashPattern(solid, pat);
 			}
 			else
 			{
@@ -6641,11 +6650,7 @@ DiagramStylePanel.prototype.addGraphStyles = function(div)
 				}));
 			}
 			
-			// Workaround for broken cache in IE11
-			if (!mxClient.IS_IE && !mxClient.IS_IE11)
-			{
-				this.format.cachedStyleEntries[index] = panel;
-			}
+			this.format.cachedStyleEntries[index] = panel;
 		}
 		
 		entries.appendChild(panel);

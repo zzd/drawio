@@ -1320,3 +1320,4 @@ confPublishErr=Beste eguneratze batek zure argitalpenarekin gatazka izan du, sai
 confACacheMapping=Cache page IDs mapping
 confARemImpPages=Remember imported pages
 delCachedData=Delete Cached Data
+k15tPagesError=Error retrieving Scroll pages. Is Scroll Versions installed?

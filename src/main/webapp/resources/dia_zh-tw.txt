@@ -1320,3 +1320,4 @@ confPublishErr=另一個更新與您的發佈衝突，請再次嘗試該操作
 confACacheMapping=Cache page IDs mapping
 confARemImpPages=Remember imported pages
 delCachedData=Delete Cached Data
+k15tPagesError=Error retrieving Scroll pages. Is Scroll Versions installed?

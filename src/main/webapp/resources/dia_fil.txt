@@ -1320,3 +1320,4 @@ confPublishErr=May ibang update na nagka-conflict sa iyong publish, pakisubukang
 confACacheMapping=Cache page IDs mapping
 confARemImpPages=Remember imported pages
 delCachedData=Delete Cached Data
+k15tPagesError=Error retrieving Scroll pages. Is Scroll Versions installed?

@@ -17,41 +17,6 @@ App = function(editor, container, lightbox)
 		(urlParams['lightbox'] == '1' || (uiTheme == 'min' &&
 		urlParams['chrome'] != '0')));
 	
-	// Logs unloading of window with modifications for Google Drive file
-	if (!mxClient.IS_CHROMEAPP && !EditorUi.isElectronApp)
-	{
-		window.onunload = mxUtils.bind(this, function()
-		{
-			var file = this.getCurrentFile();
-			
-			if (file != null && file.isModified())
-			{
-				var evt = {category: 'DISCARD-FILE-' + file.getHash(),
-					action: ((file.savingFile) ? 'saving' : '') +
-					((file.savingFile && file.savingFileTime != null) ? '_' +
-						Math.round((Date.now() - file.savingFileTime.getTime()) / 1000) : '') +
-					((file.saveLevel != null) ? ('-sl_' + file.saveLevel) : '') +
-					'-age_' + ((file.ageStart != null) ? Math.round((Date.now() - file.ageStart.getTime()) / 1000) : 'x') +
-					((this.editor.autosave) ? '' : '-nosave') +
-					((file.isAutosave()) ? '' : '-noauto') +
-					'-open_' + ((file.opened != null) ? Math.round((Date.now() - file.opened.getTime()) / 1000) : 'x') +
-					'-save_' + ((file.lastSaved != null) ? Math.round((Date.now() - file.lastSaved.getTime()) / 1000) : 'x') +
-					'-change_' + ((file.lastChanged != null) ? Math.round((Date.now() - file.lastChanged.getTime()) / 1000) : 'x') +
-					'-alive_' + Math.round((Date.now() - App.startTime.getTime()) / 1000),
-					label: (file.sync != null) ? ('client_' + file.sync.clientId) : 'nosync'};
-					
-				if (file.constructor == DriveFile && file.desc != null && this.drive != null)
-				{
-					evt.label += ((this.drive.user != null) ? ('-user_' + this.drive.user.id) : '-nouser') + '-rev_' +
-						file.desc.headRevisionId + '-mod_' + file.desc.modifiedDate + '-size_' + file.getSize() +
-						'-mime_' + file.desc.mimeType;
-				}
-
-				// EditorUi.logEvent(evt);
-			}
-		});
-	}
-
 	// Logs changes to autosave
 	this.editor.addListener('autosaveChanged', mxUtils.bind(this, function()
 	{

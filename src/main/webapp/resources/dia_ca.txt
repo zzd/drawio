@@ -1320,3 +1320,4 @@ confPublishErr=Una altra actualització ha entrat en conflicte amb la vostra pub
 confACacheMapping=Cache page IDs mapping
 confARemImpPages=Remember imported pages
 delCachedData=Delete Cached Data
+k15tPagesError=Error retrieving Scroll pages. Is Scroll Versions installed?

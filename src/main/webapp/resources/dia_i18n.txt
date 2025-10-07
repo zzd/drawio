@@ -1320,3 +1320,4 @@ confPublishErr=confPublishErr
 confACacheMapping=confACacheMapping
 confARemImpPages=confARemImpPages
 delCachedData=delCachedData
+k15tPagesError=k15tPagesError

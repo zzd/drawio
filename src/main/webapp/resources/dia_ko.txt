@@ -1320,3 +1320,4 @@ confPublishErr=다른 업데이트가 게시와 충돌했습니다. 작업을 �
 confACacheMapping=Cache page IDs mapping
 confARemImpPages=Remember imported pages
 delCachedData=Delete Cached Data
+k15tPagesError=Error retrieving Scroll pages. Is Scroll Versions installed?

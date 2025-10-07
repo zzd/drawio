@@ -1370,7 +1370,7 @@ GraphViewer.prototype.addToolbar = function()
 				fadeThead2 = null;
 			}
 			
-			toolbar.style.display = '';
+			toolbar.style.display = 'flex';
 			mxUtils.setOpacity(toolbar, opacity || 30);
 		});
 		

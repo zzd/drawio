@@ -1,3 +1,15 @@
+24-SEP-2025: 28.2.5
+
+- Fixes handling of alpha values in inverted colors [DID-16387]
+
+22-SEP-2025: 28.2.4
+
+- Adds support for HEX colors with transparency
+- Adds dash-dot line pattern [jgraph/drawio-desktop#2184]
+- [conf cloud] Adds option to build page IDs mapping manually using DB files [DID-15536]
+- Fixes possible NPE for VSDX import [jgraph/drawio#3507]
+- Changes unconnected terminal dims to [0,0] [jgraph/drawio#5242]
+
 16-SEP-2025: 28.2.3
 
 - Adds dropbox.com to connect-src CSP

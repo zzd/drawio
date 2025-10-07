@@ -1320,3 +1320,4 @@ confPublishErr=ඔබේ ප්‍රකාශනය සමඟ වෙනත් �
 confACacheMapping=Cache page IDs mapping
 confARemImpPages=Remember imported pages
 delCachedData=Delete Cached Data
+k15tPagesError=Error retrieving Scroll pages. Is Scroll Versions installed?

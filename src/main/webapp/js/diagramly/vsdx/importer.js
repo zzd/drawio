@@ -4774,7 +4774,7 @@ var com;
                             case 102:
                             case 103:
                                 var index = quickStyleLineMatrix - 100;
-                                if (lineStyles === this.lineStyles) {
+                                if (lineStyles === this.lineStyles && this.variantLineIdx[this.themeVariantStl] != null) {
                                     lineStyle = this.lineStyles[this.variantLineIdx[this.themeVariantStl][index] - 1];
                                 }
                                 else {

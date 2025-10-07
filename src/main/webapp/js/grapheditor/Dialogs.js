@@ -64,6 +64,7 @@ var ColorPicker = function()
 	cross.style.top = '-8px';
 
 	var currentHsv = [0, 0, 1];
+	var currentAlpha = 1;
 	
 	function hsv2rgb(h, s, v)
 	{
@@ -172,7 +173,9 @@ var ColorPicker = function()
 			var color = '#' +
 				('0' + Math.round(rgb[0] * 255).toString(16)).slice(-2) +
 				('0' + Math.round(rgb[1] * 255).toString(16)).slice(-2) +
-				('0' + Math.round(rgb[2] * 255).toString(16)).slice(-2);
+				('0' + Math.round(rgb[2] * 255).toString(16)).slice(-2) +
+				(currentAlpha < 1 ?
+					('0' + Math.round(currentAlpha * 255).toString(16)).slice(-2) : '');
 
 			if (quiet != true)
 			{
@@ -215,7 +218,9 @@ var ColorPicker = function()
 			this.fromString('#' +
 				('0' + Math.floor(temp[0] * 255).toString(16)).slice(-2) +
 				('0' + Math.floor(temp[1] * 255).toString(16)).slice(-2) +
-				('0' + Math.floor(temp[2] * 255).toString(16)).slice(-2));
+				('0' + Math.floor(temp[2] * 255).toString(16)).slice(-2) +
+				(currentAlpha < 1 ?
+					('0' + Math.round(currentAlpha * 255).toString(16)).slice(-2) : ''));
 		}
 		else if (sliderActive)
 		{
@@ -288,6 +293,7 @@ var ColorPicker = function()
 		}
 
 		currentHsv[2] = hsv[2];
+		currentAlpha = rgb.a;
 		update(quiet);
 	};
 
@@ -358,7 +364,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	var darkInput = document.createElement('input');
 	darkInput.style.textOverflow = 'ellipsis';
 	darkInput.style.margin = '0 4px';
-	darkInput.style.maxWidth = '60px';
+	darkInput.style.maxWidth = '70px';
 	darkInput.style.width = '100%';
 
 	var darkSelect = document.createElement('select');
