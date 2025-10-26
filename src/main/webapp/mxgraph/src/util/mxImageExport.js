@@ -196,6 +196,17 @@ mxImageExport.prototype.drawText = function(state, canvas)
 		shape.node = canvas.root;
 		canvas.save();
 
+		var off = shape.getSvgScreenOffset();
+
+		if (off != 0)
+		{
+			shape.node.setAttribute('transform', 'translate(' + off + ',' + off + ')');
+		}
+		else
+		{
+			shape.node.removeAttribute('transform');
+		}
+
 		shape.beforePaint(canvas);
 		shape.paint(canvas);
 		shape.afterPaint(canvas);

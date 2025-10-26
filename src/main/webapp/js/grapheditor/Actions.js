@@ -112,7 +112,8 @@ Actions.prototype.init = function()
 	this.addAction('editDiagram...', function()
 	{
 		var dlg = new EditDiagramDialog(ui);
-		ui.showDialog(dlg.container, 620, 420, true, false);
+		ui.showDialog(dlg.container, 620, 420, true, false,
+			null, null, null, new mxRectangle(0, 0, 440, 280));
 		dlg.init();
 	}).isEnabled = isGraphEnabled;
 	this.addAction('pageSetup...', function() { ui.showDialog(new PageSetupDialog(ui).container, 320, 240, true, true); }).isEnabled = isGraphEnabled;

@@ -289,6 +289,12 @@
 	Editor.pasteAtMousePointer = true;
 
 	/**
+	 * Specifies the default text style.
+	 */
+	Editor.defaultTextStyle = 'text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;' +
+		'align=center;verticalAlign=middle;rounded=0;';
+	
+	/**
 	 * Specifies if ChatGPT should be enabled. Default is true only
 	 * on app.diagrams.net (including test and preprod).
 	 */
@@ -674,13 +680,13 @@
         {name: 'fixDash', dispName: 'Fixed Dash', type: 'bool', defVal: false},
         {name: 'container', dispName: 'Container', type: 'bool', getDefaultValue: function(state, format)
         {
-        	var cell = (state.vertices.length == 1 && state.edges.length == 0) ? state.vertices[0] : null;
+        	var cell = (state.vertices.length > 0 && state.edges.length == 0) ? state.vertices[0] : null;
         	var graph = format.editorUi.editor.graph;
 
 			return cell != null && graph.isSwimlane(cell);
 		}, isVisible: function(state, format)
         {
-    		return state.vertices.length == 1 && state.edges.length == 0;
+    		return state.vertices.length > 0 && state.edges.length == 0;
         }},
         {name: 'dropTarget', dispName: 'Drop Target', type: 'bool', getDefaultValue: function(state, format)
         {
@@ -912,10 +918,10 @@
 		'#\n' +
 		'## ---- CSV below this line. First line are column names. ----\n' +
 		'name,position,id,location,manager,email,fill,stroke,refs,url,image\n' +
-		'Tessa Miller,CFO,emi,Office 1,,me@example.com,default,#6c8ebf,,https://www.draw.io,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-3-128.png\n' +
-		'Edward Morrison,Brand Manager,emo,Office 2,Tessa Miller,me@example.com,default,#82b366,,https://www.draw.io,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-10-3-128.png\n' +
-		'Alison Donovan,System Admin,rdo,Office 3,Tessa Miller,me@example.com,default,#82b366,"emo,tva",https://www.draw.io,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-2-128.png\n' +
-		'Evan Valet,HR Director,tva,Office 4,Tessa Miller,me@example.com,default,#82b366,,https://www.draw.io,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-9-2-128.png\n';
+		'Tessa Miller,CFO,emi,Office 1,,me@example.com,default,#6c8ebf,,https://app.diagrams.net,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-3-128.png\n' +
+		'Edward Morrison,Brand Manager,emo,Office 2,Tessa Miller,me@example.com,default,#82b366,,https://app.diagrams.net,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-10-3-128.png\n' +
+		'Alison Donovan,System Admin,rdo,Office 3,Tessa Miller,me@example.com,default,#82b366,"emo,tva",https://app.diagrams.net,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-2-128.png\n' +
+		'Evan Valet,HR Director,tva,Office 4,Tessa Miller,me@example.com,default,#82b366,,https://app.diagrams.net,https://cdn3.iconfinder.com/data/icons/user-avatars-1/512/users-9-2-128.png\n';
 
 	/**
 	 * Capability check for canvas API
@@ -4154,6 +4160,9 @@
 			{
 				try
 				{
+					svgRoot.style.setProperty('-webkit-font-smoothing', 'antialiased');
+					svgRoot.style.setProperty('-moz-osx-font-smoothing', 'grayscale');
+					
 					var img = new Image();
 					
 					img.onload = mxUtils.bind(this, function()
@@ -5635,18 +5644,19 @@
 					inp.value = pValue;
 					inp.style.borderWidth = '0px';
 
-					if (pName == 'id')
+					if (pName == 'id' || pName == 'shape')
 					{
 						row.firstChild.innerHTML = '';
 						row.firstChild.setAttribute('colspan', '2');
 
 						inp.style.flexGrow = '1';
 						inp.style.marginLeft = '4px';
-						inp.style.textAlign = 'center';
+						inp.style.textAlign = pName == 'id' ?
+							'center' : 'left';
 						inp.setAttribute('title', pValue);
 
 						var div = document.createElement('div');
-						mxUtils.write(div, mxResources.get('id'));
+						mxUtils.write(div, mxResources.get(pName) + ':');
 						div.style.display = 'inline-flex';
 						div.style.alignItems = 'center';
 						div.style.width = '100%';
@@ -5873,19 +5883,25 @@
 			{
 				grid.appendChild(createPropertyRow('id', mxUtils.htmlEntities(cellId),
 					{dispName: 'id', type: 'readOnly'}, true, false));
+				
+				if (state.style != null && state.style.shape != null)
+				{
+					grid.appendChild(createPropertyRow('shape', mxUtils.htmlEntities(state.style.shape),
+						{dispName: 'shape', type: 'readOnly'}, true, false));
+				}
 			}
 			
 			for (var key in properties)
 			{
 				var prop = properties[key];
-
+				
+				if (typeof(prop.isVisible) == 'function')
+				{
+					if (!prop.isVisible(state, this)) continue;
+				}
+				
 				if (!prop.primary)
 				{
-					if (typeof(prop.isVisible) == 'function')
-					{
-						if (!prop.isVisible(state, this)) continue;
-					}
-					
 					var pValue = (prop.getValue != null) ? prop.getValue(state, this) : (state.style[key] != null? mxUtils.htmlEntities(state.style[key] + '') :
 						((prop.getDefaultValue != null) ? prop.getDefaultValue(state, this) : prop.defVal)); //or undefined if defVal is undefined
 
@@ -5906,9 +5922,12 @@
 						
 						for (var i = 0; i < dependentProps.length; i++)
 						{
-							var propVal = state.style[dependentProps[i]];
-							dependentPropsDefVal.push(properties[dependentProps[i]].subDefVal);
-							dependentPropsVals.push(propVal != null? propVal.split(',') : []);
+							if (properties[dependentProps[i]] != null)
+							{
+								var propVal = state.style[dependentProps[i]];
+								dependentPropsDefVal.push(properties[dependentProps[i]].subDefVal);
+								dependentPropsVals.push(propVal != null? propVal.split(',') : []);
+							}
 						}
 						
 						prop.dependentPropsDefVal = dependentPropsDefVal;

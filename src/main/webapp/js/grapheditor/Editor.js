@@ -223,6 +223,7 @@ Editor.swapImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My
 Editor.copyImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjRweCIgdmlld0JveD0iMCAtOTYwIDk2MCA5NjAiIHdpZHRoPSIyNHB4IiBmaWxsPSIjMDAwMDAwIj48cGF0aCBkPSJNNzYwLTIwMEgzMjBxLTMzIDAtNTYuNS0yMy41VDI0MC0yODB2LTU2MHEwLTMzIDIzLjUtNTYuNVQzMjAtOTIwaDI4MGwyNDAgMjQwdjQwMHEwIDMzLTIzLjUgNTYuNVQ3NjAtMjAwWk01NjAtNjQwdi0yMDBIMzIwdjU2MGg0NDB2LTM2MEg1NjBaTTE2MC00MHEtMzMgMC01Ni41LTIzLjVUODAtMTIwdi01NjBoODB2NTYwaDQ0MHY4MEgxNjBabTE2MC04MDB2MjAwLTIwMCA1NjAtNTYwWiIvPjwvc3ZnPg==';
 Editor.doubleArrowUpImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjRweCIgdmlld0JveD0iMCAtOTYwIDk2MCA5NjAiIHdpZHRoPSIyNHB4IiBmaWxsPSIjMDAwMDAwIj48cGF0aCBkPSJtMjk2LTIyNC01Ni01NiAyNDAtMjQwIDI0MCAyNDAtNTYgNTYtMTg0LTE4My0xODQgMTgzWm0wLTI0MC01Ni01NiAyNDAtMjQwIDI0MCAyNDAtNTYgNTYtMTg0LTE4My0xODQgMTgzWiIvPjwvc3ZnPg==';
 Editor.doubleArrowDownImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjRweCIgdmlld0JveD0iMCAtOTYwIDk2MCA5NjAiIHdpZHRoPSIyNHB4IiBmaWxsPSIjMDAwMDAwIj48cGF0aCBkPSJNNDgwLTIwMCAyNDAtNDQwbDU2LTU2IDE4NCAxODMgMTg0LTE4MyA1NiA1Ni0yNDAgMjQwWm0wLTI0MEwyNDAtNjgwbDU2LTU2IDE4NCAxODMgMTg0LTE4MyA1NiA1Ni0yNDAgMjQwWiIvPjwvc3ZnPg==';
+Editor.opacityImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjRweCIgdmlld0JveD0iMCAtOTYwIDk2MCA5NjAiIHdpZHRoPSIyNHB4IiBmaWxsPSIjMWYxZjFmIj48cGF0aCBkPSJNNDgwLTEyMHEtMTMzIDAtMjI2LjUtOTJUMTYwLTQzNnEwLTY1IDI1LTEyMS41VDI1NC02NThsMjI2LTIyMiAyMjYgMjIycTQ0IDQ0IDY5IDEwMC41VDgwMC00MzZxMCAxMzItOTMuNSAyMjRUNDgwLTEyMFpNMjQyLTQwMGg0NzRxMTItNzItMTMuNS0xMjNUNjUwLTYwMEw0ODAtNzY4IDMxMC02MDBxLTI3IDI2LTUzIDc3dC0xNSAxMjNaIi8+PC9zdmc+';
 
 /**
  * All fill styles supported by rough.js.
@@ -449,6 +450,31 @@ Editor.extractGraphModelFromPng = function(data)
 	}
 	
 	return result;
+};
+
+/**
+ * Parses a camel case name with an optional trailing number and returns a
+ * user-friendly label.
+ */
+Editor.getLabelForStylename = function(name)
+{
+	var m = name.match(/^([A-Za-z]*)(\d*)$/);
+
+	if (m != null && m.length > 1)
+	{
+		var words = mxUtils.trim(m[1]
+			.replace(/([a-z])([A-Z])/g, '$1 $2')
+			.replace(/\b\w/g, function(token)
+			{
+				return token.toUpperCase();
+			})
+			.replace(/Color[s]?/g, ''));
+		var num = (m[2].length > 0 ?
+			' (' +  m[2] + ')' : '');
+		name = mxUtils.trim(words + num);
+	}
+	
+	return name;
 };
 
 /**

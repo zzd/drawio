@@ -1672,6 +1672,7 @@ Menus.prototype.addPopupMenuArrangeItems = function(menu, cell, evt)
 Menus.prototype.addPopupMenuCellItems = function(menu, cell, evt)
 {
 	var graph = this.editorUi.editor.graph;
+	var ss = this.editorUi.getSelectionState();
 	var state = graph.view.getState(cell);
 	
 	if (state != null)
@@ -1679,51 +1680,56 @@ Menus.prototype.addPopupMenuCellItems = function(menu, cell, evt)
 		// Adds reset waypoints option if waypoints exist
 		var geo = graph.getModel().getGeometry(cell);
 		var hasWaypoints = geo != null && geo.points != null && geo.points.length > 0;
-		
-		if (this.isShowStyleItems() && graph.getSelectionCount() == 1 &&
-			graph.getModel().isEdge(cell))
+		menu.addSeparator();
+
+		if (this.isShowStyleItems() && ss.vertices.length == 0 && ss.edges.length > 0)
 		{
-			menu.addSeparator();
 			this.addSubmenu('line', menu);
-		}
 
-		if (graph.getModel().isEdge(cell) && mxUtils.getValue(state.style, mxConstants.STYLE_EDGE, null) != 'entityRelationEdgeStyle' &&
-			mxUtils.getValue(state.style, mxConstants.STYLE_SHAPE, null) != 'arrow')
-		{
-			var handler = graph.selectionCellsHandler.getHandler(cell);
-			var isWaypoint = false;
-			
-			if (hasWaypoints && handler instanceof mxEdgeHandler && handler.bends != null && handler.bends.length > 2)
+			if (mxUtils.getValue(state.style, mxConstants.STYLE_EDGE, null) != 'entityRelationEdgeStyle' &&
+				mxUtils.getValue(state.style, mxConstants.STYLE_SHAPE, null) != 'arrow')
 			{
-				var index = handler.getHandleForEvent(graph.updateMouseEvent(new mxMouseEvent(evt)));
-
-				// Ignores ghosted and virtual waypoints
-				if (index > 0 && index < handler.bends.length - 1 &&
-					(handler.bends[index] == null ||
-					handler.bends[index].node == null ||
-					handler.bends[index].node.style.opacity == ''))
+				if (this.isShowCellEditItems() && ss.vertices.length == 0 && ss.edges.length > 0)
 				{
-					// Configures removeWaypoint action before execution
-					// Using trigger parameter is cleaner but have to find waypoint here anyway.
-					var rmWaypointAction = this.editorUi.actions.get('removeWaypoint');
-					rmWaypointAction.handler = handler;
-					rmWaypointAction.index = index;
+					this.addMenuItem(menu, 'turn', null, evt, null, mxResources.get('reverse'));
+				}
+				
+				if (graph.getSelectionCount() == 1)
+				{	
+					var handler = graph.selectionCellsHandler.getHandler(cell);
+					var isWaypoint = false;
+					
+					if (hasWaypoints && handler instanceof mxEdgeHandler &&
+						handler.bends != null && handler.bends.length > 2)
+					{
+						var index = handler.getHandleForEvent(
+							graph.updateMouseEvent(new mxMouseEvent(evt)));
 
-					isWaypoint = true;
+						// Ignores ghosted and virtual waypoints
+						if (index > 0 && index < handler.bends.length - 1 &&
+							(handler.bends[index] == null ||
+							handler.bends[index].node == null ||
+							handler.bends[index].node.style.opacity == ''))
+						{
+							// Configures removeWaypoint action before execution
+							// Using trigger parameter is cleaner but have to find waypoint here anyway.
+							var rmWaypointAction = this.editorUi.actions.get('removeWaypoint');
+							rmWaypointAction.handler = handler;
+							rmWaypointAction.index = index;
+
+							isWaypoint = true;
+						}
+					}
+					
+					this.addMenuItems(menu, [(isWaypoint) ? 'removeWaypoint' : 'addWaypoint'], null, evt);
 				}
 			}
-			
-			if (this.isShowCellEditItems())
-			{
-				this.addMenuItem(menu, 'turn', null, evt, null, mxResources.get('reverse'));
-			}
-			
-			this.addMenuItems(menu, [(isWaypoint) ? 'removeWaypoint' : 'addWaypoint'], null, evt);
 		}
 
-		if (graph.getSelectionCount() == 1 && this.isShowCellEditItems() && 
+		if (this.isShowCellEditItems() &&
+			((ss.vertices.length == 0 && ss.edges.length > 0) ||
 			(hasWaypoints || (graph.getModel().isVertex(cell) &&
-			graph.getModel().getEdgeCount(cell) > 0)))
+			graph.getModel().getEdgeCount(cell) > 0))))
 		{
 			this.addMenuItems(menu, ['clearWaypoints'], null, evt);
 		}

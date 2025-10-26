@@ -33,12 +33,12 @@
 		window.location.hostname != 'test.draw.io';
 	
 	/**
-	 * Protocol and hostname to use for embedded files. Default is https://www.draw.io
+	 * Protocol and hostname to use for embedded files.
 	 */
 	EditorUi.drawHost = window.DRAWIO_BASE_URL;
 	
 	/**
-	 * Protocol and hostname to use for embedded files. Default is https://www.draw.io
+	 * Protocol and hostname to use for embedded files.
 	 */
 	EditorUi.lightboxHost = window.DRAWIO_LIGHTBOX_URL;
 	
@@ -4462,9 +4462,12 @@
 						this.handleError(e);	
 					}
 				}
-			}), null, mxResources.get('close'), null, null, null, true, null, null, helpLink, buttons, elt);
+			}), null, mxResources.get('close'), null, null,
+			null, true, null, null, helpLink, buttons, elt);
 		
-		this.showDialog(dlg.container, 660, 480, true, false);
+		var w = (buttons != null && buttons.length > 2) ? 500 : 440;
+		this.showDialog(dlg.container, 660, 480, true, false,
+			null, null, null, new mxRectangle(0, 0, w, 280));
 		dlg.init();
 	};
 
@@ -7365,8 +7368,7 @@
 			includeCurrentPageOption.setAttribute('value', 'currentPage');
 			mxUtils.write(includeCurrentPageOption, mxResources.get('currentPage'));
 			includeSelect.appendChild(includeCurrentPageOption);
-
-
+			
 			if (pageCount > 1)
 			{
 				include.style.marginBottom = '12px';
@@ -7409,24 +7411,34 @@
 		cb5.style.marginBottom = '16px';
 		cb5.style.marginRight = '8px';
 		cb5.setAttribute('type', 'checkbox');
+		cb5.id = 'geCheckbox-' + Editor.guid();
 
 		var cb7 = document.createElement('input');
 		cb7.style.marginBottom = '16px';
 		cb7.style.marginRight = '8px';
 		cb7.setAttribute('type', 'checkbox');
+		cb7.id = 'geCheckbox-' + Editor.guid();
 		
 		if (embedOption)
 		{
 			cb5.checked = (this.lastEmbedImages != null) ?
 				this.lastEmbedImages : true;
 			div.appendChild(cb5);
-			mxUtils.write(div, mxResources.get('embedImages'));
+
+			var lbl = document.createElement('label');
+			mxUtils.write(lbl, mxResources.get('embedImages'));
+			lbl.setAttribute('for', cb5.id);
+			div.appendChild(lbl);
 			mxUtils.br(div);
 
 			cb7.checked = (this.lastEmbedFonts != null) ?
 				this.lastEmbedImages : true;
 			div.appendChild(cb7);
-			mxUtils.write(div, mxResources.get('embedFonts'));
+
+			var lbl = document.createElement('label');
+			mxUtils.write(lbl, mxResources.get('embedFonts'));
+			lbl.setAttribute('for', cb7.id);
+			div.appendChild(lbl);
 			mxUtils.br(div);
 			
 			height += 50;

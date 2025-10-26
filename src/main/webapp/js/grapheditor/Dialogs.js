@@ -421,7 +421,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	var swapBtn = document.createElement('img');
 	swapBtn.setAttribute('title', mxResources.get('swap'));
 	swapBtn.className = 'geAdaptiveAsset';
-	swapBtn.style.marginLeft = '4px';
+	swapBtn.style.marginLeft = '6px';
 	swapBtn.style.width = '16px';
 	swapBtn.style.height = '16px';
 	swapBtn.style.cursor = 'pointer';
@@ -429,28 +429,32 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 
 	mxEvent.addListener(swapBtn, 'click', function(evt)
 	{
-		toggleDarkColor(true);
+		toggleDarkColor(true, false);
 		darkSelect.value = 'custom';
+		setDefaultSelected(false);
+		
 		var tmp = input.value;
 		input.value = darkInput.value;
 		darkInput.value = tmp;
+
 		updateInputColors();
+		currentInput.focus();
 		mxEvent.consume(evt);
 	});
 
 	advancedDiv.appendChild(swapBtn);
 
-	var copyBtn = document.createElement('img');
+	var copyBtn = swapBtn.cloneNode();
 	copyBtn.setAttribute('title', mxResources.get('copy'));
-	copyBtn.className = 'geAdaptiveAsset';
-	copyBtn.style.marginLeft = '4px';
-	copyBtn.style.width = '16px';
-	copyBtn.style.height = '16px';
-	copyBtn.style.cursor = 'pointer';
+	copyBtn.style.marginLeft = '2px';
 	copyBtn.src = Editor.doubleArrowUpImage;
 
 	mxEvent.addListener(copyBtn, 'click', function(evt)
 	{
+		toggleDarkColor(true, false);
+		darkSelect.value = 'custom';
+		setDefaultSelected(false);
+
 		if (currentInput == darkInput)
 		{
 			input.value = darkInput.value;
@@ -460,13 +464,45 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 			darkInput.value = input.value;
 		}
 		
-		toggleDarkColor(true);
-		darkSelect.value = 'custom';
 		updateInputColors();
+		currentInput.focus();
 		mxEvent.consume(evt);
 	});
 
 	advancedDiv.appendChild(copyBtn);
+
+	var opacityBtn = copyBtn.cloneNode();
+	opacityBtn.setAttribute('title', mxResources.get('opacity'));
+	opacityBtn.src = Editor.opacityImage;
+
+	mxEvent.addListener(opacityBtn, 'click', function(evt)
+	{
+		var rgb = mxUtils.parseColor('#' + currentInput.value);
+		var opacity = String(Math.floor(Math.max(0, Math.min(rgb.a * 100, 100))));
+
+		editorUi.prompt(mxResources.get('opacity') + ' (0-100)', opacity, function(newValue)
+		{
+			if (!isNaN(newValue) && newValue !== '' &&
+				newValue >= 0 && newValue <= 100)
+			{
+				setDefaultSelected(false);
+				
+				input.value = mxUtils.rgba2hex(mxUtils.addAlphaToColor(
+					'#' + input.value, newValue / 100, true)).
+						substring(1).toUpperCase();
+				darkInput.value = mxUtils.rgba2hex(mxUtils.addAlphaToColor(
+					'#' + darkInput.value, newValue / 100, true)).
+						substring(1).toUpperCase();
+				
+				updateInputColors();
+				currentInput.focus();
+			}
+		});
+		
+		mxEvent.consume(evt);
+	});
+
+	advancedDiv.appendChild(opacityBtn);
 
 	function updateCollapseIcon()
 	{
@@ -482,12 +518,16 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 
 	updateCollapseIcon();
 
-	function toggleDarkColor(show)
+	function toggleDarkColor(show, transferFocus)
 	{
 		if (show || darkColorDiv.style.display == 'none')
 		{
 			darkColorDiv.style.display = 'flex';
-			darkInput.focus();
+
+			if (transferFocus !== false)
+			{
+				darkInput.focus();
+			}
 		}
 		else
 		{
@@ -539,7 +579,8 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		}
 		else
 		{
-			input.style.color = (mxUtils.isDarkColor(input.style.background)) ?
+			input.style.color =
+				(mxUtils.isDarkColor(input.style.background)) ?
 				'#ffffff' : '#000000';
 		}
 	};
@@ -552,41 +593,47 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 
 	function setDefaultSelected(selected)
 	{
-		if (selected)
+		if (useDefault != selected)
 		{
-			if (singleColorMode && cssDefaultColor != null)
+			if (selected)
 			{
-				input.value = cssDefaultColor.light.substring(1).toUpperCase();
-				selected = false;
+				if (singleColorMode && cssDefaultColor != null)
+				{
+					input.value = cssDefaultColor.light.substring(1).toUpperCase();
+					selected = false;
+				}
+				else
+				{
+					input.value = '';
+					darkInput.value = '';
+					darkSelect.value = 'automatic';
+					input.setAttribute('placeholder', mxResources.get('useBlackAndWhite'));
+					darkInput.setAttribute('title', mxResources.get('useBlackAndWhite'));
+					input.setAttribute('title', mxResources.get('useBlackAndWhite'));
+				}
 			}
 			else
 			{
-				input.value = '';
-				darkInput.value = '';
-				darkSelect.value = 'automatic';
-				input.setAttribute('placeholder', mxResources.get('useBlackAndWhite'));
-				darkInput.setAttribute('title', mxResources.get('useBlackAndWhite'));
-				input.setAttribute('title', mxResources.get('useBlackAndWhite'));
-			}
-		}
-		else
-		{
-			if (input.value == '' && cssDefaultColor != null)
-			{	
-				input.value = cssDefaultColor.light.substring(1).toUpperCase();
-			}
+				if (input.value == '' && cssDefaultColor != null)
+				{	
+					input.value = cssDefaultColor.light.substring(1).toUpperCase();
+				}
 
-			input.removeAttribute('placeholder');
-			input.removeAttribute('title');
+				input.removeAttribute('placeholder');
+				input.removeAttribute('title');
 
-			if (darkInput.value == '' && cssDefaultColor != null)
-			{
-				darkInput.value = cssDefaultColor.dark.substring(1).toUpperCase();
+				if (darkInput.value == '' && cssDefaultColor != null)
+				{
+					darkInput.style.background = cssDefaultColor.dark;
+					var style = mxUtils.getCurrentStyle(darkInput);
+					darkInput.value = mxUtils.rgba2hex(style.backgroundColor).
+						substring(1).toUpperCase();
+				}
+
+				darkInput.removeAttribute('placeholder');
+				darkInput.removeAttribute('title');
+				selected = false;
 			}
-
-			darkInput.removeAttribute('placeholder');
-			darkInput.removeAttribute('title');
-			selected = false;
 		}
 
 		useDefault = selected;
@@ -606,7 +653,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		}
 	});
 
-	mxEvent.addListener(darkSelect, 'change', function()
+	mxEvent.addListener(darkSelect, 'change', function(evt)
 	{
 		if (darkSelect.value == 'automatic')
 		{
@@ -616,21 +663,12 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		else
 		{
 			setDefaultSelected(false);
-
-			if (!mxUtils.isVarColor(darkInput.value))
-			{
-				darkInput.value = (useDefault && cssDefaultColor != null) ?
-					cssDefaultColor.dark.substring(1).toUpperCase() :
-					darkInput.value = mxUtils.rgba2hex(mxUtils.
-						getInverseColor('#' + input.value)).
-						substring(1).toUpperCase();
-			}
-
 			darkInput.focus();
 			selectInput();
 		}
 
 		updateInputColors();
+		mxEvent.consume(evt);
 	});
 
 	function inputChanged(elt)
@@ -1546,8 +1584,8 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 	buttons.style.whiteSpace = 'nowrap';
 	buttons.style.alignItems = 'center';
 	buttons.style.justifyContent = 'end';
-	buttons.style.bottom = '0px';
-	buttons.style.height = '60px';
+	buttons.style.bottom = '10px';
+	buttons.style.height = '50px';
 	buttons.style.textAlign = 'right';
 	buttons.style.paddingTop = '14px';
 	buttons.style.boxSizing = 'border-box';
@@ -1689,7 +1727,9 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 var EditDiagramDialog = function(editorUi)
 {
 	var div = document.createElement('div');
-	div.style.textAlign = 'right';
+	div.style.position = 'absolute';
+	div.style.inset = '10px';
+
 	var textarea = document.createElement('textarea');
 	textarea.setAttribute('wrap', 'off');
 	textarea.setAttribute('spellcheck', 'false');
@@ -1698,9 +1738,11 @@ var EditDiagramDialog = function(editorUi)
 	textarea.setAttribute('autocapitalize', 'off');
 	textarea.style.overflow = 'auto';
 	textarea.style.resize = 'none';
-	textarea.style.width = '600px';
-	textarea.style.height = '360px';
-	textarea.style.marginBottom = '16px';
+	textarea.style.position = 'absolute';
+	textarea.style.top = '20px';
+	textarea.style.bottom = '76px';
+	textarea.style.left = '20px';
+	textarea.style.right = '20px';
 
 	var snapshot = editorUi.getDiagramSnapshot();
 	textarea.value = mxUtils.getPrettyXml(snapshot.node);
@@ -1748,15 +1790,27 @@ var EditDiagramDialog = function(editorUi)
 		textarea.addEventListener('drop', handleDrop, false);
 	}
 	
+	var buttons = document.createElement('div');
+	buttons.style.display = 'flex';
+	buttons.style.whiteSpace = 'nowrap';
+	buttons.style.alignItems = 'center';
+	buttons.style.justifyContent = 'end';
+	buttons.style.position = 'absolute';
+	buttons.style.height = '36px';
+	buttons.style.bottom = '24px';
+	buttons.style.left = '20px';
+	buttons.style.right = '20px';
+
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
 		editorUi.hideDialog();
 	});
+
 	cancelBtn.className = 'geBtn';
 	
 	if (editorUi.editor.cancelFirst)
 	{
-		div.appendChild(cancelBtn);
+		buttons.appendChild(cancelBtn);
 	}
 	
 	var select = document.createElement('select');
@@ -1790,7 +1844,7 @@ var EditDiagramDialog = function(editorUi)
 		select.appendChild(newOption);
 	}
 	
-	div.appendChild(select);
+	buttons.appendChild(select);
 
 	var okBtn = mxUtils.button(mxResources.get('ok'), function()
 	{
@@ -1867,13 +1921,14 @@ var EditDiagramDialog = function(editorUi)
 		}
 	});
 	okBtn.className = 'geBtn gePrimaryBtn';
-	div.appendChild(okBtn);
+	buttons.appendChild(okBtn);
 	
 	if (!editorUi.editor.cancelFirst)
 	{
-		div.appendChild(cancelBtn);
+		buttons.appendChild(cancelBtn);
 	}
 
+	div.appendChild(buttons);
 	this.container = div;
 };
 

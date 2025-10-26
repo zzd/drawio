@@ -76,7 +76,7 @@ if (urlParams['dev'] != '1')
             // Redirects apex, drive and rt to www
             if (host === 'draw.io' || host === 'rt.draw.io' || host === 'drive.draw.io')
             {
-                host = 'www.draw.io';
+                host = 'app.diagrams.net';
             }
             
             var href = proto + '//' + host + window.location.href.substring(

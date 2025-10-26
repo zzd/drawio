@@ -12345,11 +12345,10 @@ if (typeof mxVertexHandler !== 'undefined')
 					((hasShadow && border == 0) ? 5 : 0);
 				var h = Math.max(1, Math.ceil(bounds.height * s) + 2 * border) +
 					((hasShadow && border == 0) ? 5 : 0);
-				var tmp = (crisp) ? -0.5 : 0;
 				
 				// Converts CSS background color as it is excluded from the filter
 				var cssBackground = mxUtils.getLightDarkColor(background);
-				var root = Graph.createSvgNode(tmp, tmp, w, h, cssBackground);
+				var root = Graph.createSvgNode(0, 0, w, h, cssBackground);
 				var svgDoc = root.ownerDocument;
 
 				// Adds background as an additional rectangle for

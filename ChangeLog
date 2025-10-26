@@ -1,3 +1,38 @@
+23-OCT-2025 28.2.8
+
+- Hides inactive virtual bends for entity relations
+- Fixes preview button in smart template section
+- Fixes possible NPE for dependent properties
+- Improves search for fully qualified shape names
+- Fixes color picker for valid shape colors
+- Fixes watch new file handles, adds desktopAutoSync switch (beta) [jgraph/drawio-desktop#2227]
+- Fixes possible stale draft in desktop
+- Adds open recent in simple UI for desktop [jgraph/drawio-desktop#2221]
+
+14-OCT-2025: 28.2.7
+
+- Adds support for animations on multiple pages [jgraph/drawio#5262]
+- Fixes q.getStatus is not a function in OneDriveClient
+- Fixes possible a.split is not a function in StyleFormatPanel
+
+13-OCT-2025: 28.2.6
+
+- [conf cloud] Notifies user when app is uninstalled in case of forge migration
+- Makes some Cisco stencils multi-color flexible
+- Fixes blurry image export [jgraph/drawio-desktop#2209]
+- Adds copy marker option [jgraph/drawio#5280]
+- Fixes inconsistent default text styles and sizes [jgraph/drawio#4818]
+- Enables bulk modification of container property
+- Shows shape name in cell properties [jgraph/drawio#5288]
+- AWS shapes update
+- Adds opacity option in color dialog [jgraph/drawio#5256]
+- Fixes text wrapping for process shape with fixed size [jgraph/drawio#5296]
+- Uses single quotes for font names with spaces [jgraph/drawio-desktop#2214]
+- Fixes click handling on SVG embed option labels
+- Disasbles convert label option for unformatted text
+- Fixes property panel in min UI [jgraph/drawio-desktop#2176]
+- Fixes context menu for multiple selected edges [jgraph/drawio#4791]
+
 24-SEP-2025: 28.2.5
 
 - Fixes handling of alpha values in inverted colors [DID-16387]

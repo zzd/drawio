@@ -2961,15 +2961,21 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 
 		var preview = document.createElement('div');
 		preview.style.top = '86px'
-		preview.style.left = '2px';
-		preview.style.right = '2px';
-		preview.style.bottom = '2px';
+		preview.style.left = '0';
+		preview.style.right = '0';
+		preview.style.bottom = '0';
+		preview.style.margin = '0';
+		preview.style.borderRadius = '0';
+		preview.style.width = 'auto';
+		preview.style.height = 'auto';
 		preview.style.position = 'absolute';
 		preview.style.border = '1px solid #424242';
+		preview.className = 'geTemplate';
 
 		var previewText = document.createElement('div');
 		previewText.style.boxSizing = 'border-box';
-		previewText.style.position = 'relative';
+		previewText.style.position = 'absolute';
+		previewText.style.fontSize = '14px';
 		previewText.style.textAlign = 'center';
 		previewText.style.top = '50%';
 
@@ -3052,8 +3058,8 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 						img.src = 'data:image/svg+xml;base64,' +
 							imageData.substring(imageData.indexOf(',') + 1);
 						img.style.cursor = 'pointer';
-						img.style.width = '100%';
-						img.style.height = '100%';
+						img.style.width = '95%';
+						img.style.height = '95%';
 						preview.appendChild(img);
 
 						var xml = editorUi.createMermaidXml(mermaidData,
@@ -6370,7 +6376,7 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
     		if (data.docs[0].mimeType == 'application/mxe' || (data.docs[0].mimeType != null &&
     			data.docs[0].mimeType.substring(0, 23) == 'application/vnd.jgraph.'))
     		{
-				href = 'https://www.draw.io/#G' + data.docs[0].id;
+				href = 'https://app.diagrams.net/#G' + data.docs[0].id;
     		}
     		else if (data.docs[0].mimeType == 'application/vnd.google-apps.folder')
     		{
@@ -11192,8 +11198,7 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 						if (cells.length > 0)
 						{
 							editorUi.sidebar.createThumb(cells, ew, eh, wrapper, null,
-								true, false, null, null, (Editor.isDarkMode()) ?
-								'#2a252f' : '#ffffff');
+								true, false, null, null, graph.shapeBackgroundColor);
 							
 							// Needs inline block on SVG for delete icon to appear on same line
 							wrapper.firstChild.style.display = 'inline-block';

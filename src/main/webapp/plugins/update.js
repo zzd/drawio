@@ -29,7 +29,7 @@
  * or tooltip of the cell.
  * 
  * Example: <object label="Hello, %var1%!" var1="World" tooltip=
- * 		"Click <a href=\"https://www.draw.io\">here</a>" placeholders="1">
+ * 		"Click <a href=\"https://app.diagrams.net\">here</a>" placeholders="1">
  * 
  * - An optional replace-value attribute that contains 1 can be specified to
  * replace the value of the cell. Default is to add the attributes of the XML
@@ -259,7 +259,7 @@ Draw.loadPlugin(function(editorUi)
 								Math.round(Math.random() * 100) + '" placeholders="1">');
 							update.setAttribute('style', cell.prevStyle + ';fillColor=red;gradientColor=white;');
 							update.setAttribute('icon', JSON.stringify({tooltip: 'Alert', align: 'right',
-								valign: 'top', image: {src: 'https://www.draw.io/mxgraph/images/warning.gif', width: 26, height: 26}}));
+								valign: 'top', image: {src: 'https://app.diagrams.net/mxgraph/images/warning.gif', width: 26, height: 26}}));
 //							update.setAttribute('geometry', JSON.stringify({dx: (Math.random() * 100) - 50,
 //								y: cell.geometry.y + (Math.random() * 100) - 50, dh: (Math.random() * 100) - 50}));
 							status.appendChild(update);
@@ -280,7 +280,7 @@ Draw.loadPlugin(function(editorUi)
 							update.setAttribute('id', cell.id);
 							update.setAttribute('style', cell.prevStyle + ';fillColor=#d4e1f5;gradientColor=white;');
 							update.setAttribute('value',
-								'<object tooltip="Click <a href=\"https://www.draw.io\">here</a>">');
+								'<object tooltip="Click <a href=\"https://app.diagrams.net\">here</a>">');
 							update.setAttribute('icon', '');
 							status.appendChild(update);
 						}						

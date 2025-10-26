@@ -1780,14 +1780,24 @@
 			var w = rect.width;
 			var h = rect.height;
 			var r = new mxRectangle(rect.x, rect.y, w, h);
-	
-			var inset = w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'size', this.size))));
-	
-			if (this.isRounded)
+
+			var isFixedSize = mxUtils.getValue(this.style, 'fixedSize', this.fixedSize);
+			var inset = parseFloat(mxUtils.getValue(this.style, 'size', this.size));
+			
+			if (isFixedSize)
 			{
-				var f = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE,
-					mxConstants.RECTANGLE_ROUNDING_FACTOR * 100) / 100;
-				inset = Math.max(inset, Math.min(w * f, h * f));
+				inset = Math.max(0, Math.min(w, inset * this.scale));
+			}
+			else
+			{
+				inset = w * Math.max(0, Math.min(1, inset));
+
+				if (this.isRounded)
+				{
+					var f = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE,
+						mxConstants.RECTANGLE_ROUNDING_FACTOR * 100) / 100;
+					inset = Math.max(inset, Math.min(w * f, h * f));
+				}
 			}
 			
 			r.x += Math.round(inset);

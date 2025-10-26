@@ -1161,61 +1161,148 @@ BaseFormatPanel.prototype.createColorOption = function(label, getColorFn, setCol
 /**
  * 
  */
-BaseFormatPanel.prototype.createCellColorOption = function(label, colorKey, defaultColor,
+BaseFormatPanel.prototype.createArrayCellColorOption = function(label, colorKey, defaultColor,
 	callbackFn, setStyleFn, defaultColorValue, undefinedValue)
 {
 	var ui = this.editorUi;
 	var editor = ui.editor;
 	var graph = editor.graph;
-	
-	return this.createColorOption(label, function()
+	var style = graph.getCellStyle(graph.getSelectionCell(), false);
+	var value = (style != null) ? ((style[colorKey] != null) ?
+		style[colorKey] : undefinedValue) : null;
+	var values = (value != null) ? mxUtils.parseColorList(value) : [];
+	var div = document.createElement('div');
+
+	for (var i = 0; i < values.length; i++)
+	{
+		(mxUtils.bind(this, function(index)
+		{
+			div.appendChild(this.createColorOption(label + ' (' + (index + 1) + ')', function()
+			{
+				return values[i];
+			}, function(color)
+			{
+				graph.getModel().beginUpdate();
+				try
+				{
+					var cells = ui.getSelectionState().cells;
+					values[index] = color;
+					var temp = values.join(',');
+					graph.setCellStyles(colorKey, temp, cells);
+
+					if (setStyleFn != null)
+					{
+						setStyleFn(color);
+					}
+					
+					ui.fireEvent(new mxEventObject('styleChanged', 'keys', [colorKey],
+						'values', [temp], 'cells', cells));
+				}
+				finally
+				{
+					graph.getModel().endUpdate();
+				}
+			}, defaultColor || mxConstants.NONE,
+			{
+				install: function(apply)
+				{
+					this.listener = function()
+					{
+						var style = graph.getCellStyle(graph.getSelectionCell(), false);
+
+						if (style != null)
+						{
+							var value = (style != null) ? ((style[colorKey] != null) ?
+								style[colorKey] : undefinedValue) : null;
+							values = (value != null) ?
+								mxUtils.parseColorList(value) : [];
+							apply(values[i], true);
+						}
+					};
+					
+					graph.getModel().addListener(mxEvent.CHANGE, this.listener);
+				},
+				destroy: function()
+				{
+					graph.getModel().removeListener(this.listener);
+				}
+			}, callbackFn, null, defaultColorValue));
+		}))(i);
+	}
+
+	return div;
+};
+
+/**
+ * 
+ */
+BaseFormatPanel.prototype.createCellColorOption = function(label, colorKey, defaultColor,
+	callbackFn, setStyleFn, defaultColorValue, undefinedValue, allowArrays)
+{
+	var ui = this.editorUi;
+	var editor = ui.editor;
+	var graph = editor.graph;
+
+	function getValue()
 	{
 		var style = graph.getCellStyle(graph.getSelectionCell(), false);
 		
 		return (style != null) ? ((style[colorKey] != null) ?
 			style[colorKey] : undefinedValue) : null;
-	}, function(color)
-	{
-		graph.getModel().beginUpdate();
-		try
-		{
-			var cells = ui.getSelectionState().cells;
-			graph.setCellStyles(colorKey, color, cells);
+	};
 
-			if (setStyleFn != null)
-			{
-				setStyleFn(color);
-			}
-			
-			ui.fireEvent(new mxEventObject('styleChanged', 'keys', [colorKey],
-				'values', [color], 'cells', cells));
-		}
-		finally
-		{
-			graph.getModel().endUpdate();
-		}
-	}, defaultColor || mxConstants.NONE,
-	{
-		install: function(apply)
-		{
-			this.listener = function()
-			{
-				var style = graph.getCellStyle(graph.getSelectionCell(), false);
+	var value = getValue();
 
-				if (style != null)
+	if (value != null && allowArrays && mxUtils.parseColorList(value).length > 1)
+	{
+		return this.createArrayCellColorOption(label, colorKey, defaultColor,
+			callbackFn, setStyleFn, defaultColorValue, undefinedValue);
+	}
+	else
+	{
+		return this.createColorOption(label, getValue, function(color)
+		{
+			graph.getModel().beginUpdate();
+			try
+			{
+				var cells = ui.getSelectionState().cells;
+				graph.setCellStyles(colorKey, color, cells);
+
+				if (setStyleFn != null)
 				{
-					apply((style[colorKey] != null) ? style[colorKey] :
-						undefinedValue, true);
+					setStyleFn(color);
 				}
-			};
-			
-			graph.getModel().addListener(mxEvent.CHANGE, this.listener);
-		},
-		destroy: function()
+				
+				ui.fireEvent(new mxEventObject('styleChanged', 'keys', [colorKey],
+					'values', [color], 'cells', cells));
+			}
+			finally
+			{
+				graph.getModel().endUpdate();
+			}
+		}, defaultColor || mxConstants.NONE,
 		{
-			graph.getModel().removeListener(this.listener);
-		}
-	}, callbackFn, null, defaultColorValue);
+			install: function(apply)
+			{
+				this.listener = function()
+				{
+					var style = graph.getCellStyle(graph.getSelectionCell(), false);
+
+					if (style != null)
+					{
+						apply((style[colorKey] != null) ? style[colorKey] :
+							undefinedValue, true);
+					}
+				};
+				
+				graph.getModel().addListener(mxEvent.CHANGE, this.listener);
+			},
+			destroy: function()
+			{
+				graph.getModel().removeListener(this.listener);
+			}
+		}, callbackFn, null, defaultColorValue);
+	}
 };
 
 /**
@@ -3476,10 +3563,11 @@ TextFormatPanel.prototype.addFont = function(container)
 	extraPanel.appendChild(htmlOpt);
 
 	var state = graph.view.getState(graph.getSelectionCell());
+	var formatted = mxUtils.getValue(ss.style, 'html', 0) == '1';
 	
-	if ((graph.getSelectionCount() > 1 && ss.style['convertToSvg'] == '1') ||
+	if (formatted && ((graph.getSelectionCount() > 1 && ss.style['convertToSvg'] == '1') ||
 		(graph.getSelectionCount() == 1 && state != null && state.text != null &&
-		state.text.node != null && state.text.node.getElementsByTagName('foreignObject').length == 0))
+		state.text.node != null && state.text.node.getElementsByTagName('foreignObject').length == 0)))
 	{
 		wwOpt.style.opacity = '0.5';
 		wwOpt.getElementsByTagName('input')[0].setAttribute('disabled', 'disabled');
@@ -3488,6 +3576,12 @@ TextFormatPanel.prototype.addFont = function(container)
 	var convertToSvg = this.createCellOption(mxResources.get('lblToSvg'), 'convertToSvg', '0');
 	convertToSvg.style.fontWeight = 'bold';
 	extraPanel.appendChild(convertToSvg);
+	
+	if (!formatted)
+	{
+		convertToSvg.style.opacity = '0.5';
+		convertToSvg.getElementsByTagName('input')[0].setAttribute('disabled', 'disabled');
+	}
 
 	if (!ui.isOffline() || mxClient.IS_CHROMEAPP || EditorUi.isElectronApp)
 	{
@@ -4719,8 +4813,8 @@ StyleFormatPanel.prototype.addFill = function(container)
 	// Adds gradient direction option
 	var gradientSelect = document.createElement('select');
 	gradientSelect.style.position = 'absolute';
-	gradientSelect.style.left = '72px';
-	gradientSelect.style.width = '90px';
+	gradientSelect.style.left = '76px';
+	gradientSelect.style.width = '86px';
 	
 	var fillStyleSelect = gradientSelect.cloneNode(false);
 	
@@ -4898,15 +4992,23 @@ StyleFormatPanel.prototype.addFill = function(container)
 	
 	container.appendChild(fillPanel);
 	container.appendChild(gradientPanel);
-	
+
+	// Makes sure every color key appeary only once
+	var ignoredColors = {};
+
 	// Adds custom colors
 	var custom = this.getCustomColors();
 	
 	for (var i = 0; i < custom.length; i++)
 	{
-		container.appendChild(this.createCellColorOption(custom[i].title,
-			custom[i].key, custom[i].defaultValue, null, null,
-				custom[i].defaultColorValue));
+		if (!ignoredColors[custom[i].key])
+		{
+			ignoredColors[custom[i].key] = true;
+			container.appendChild(this.createCellColorOption(custom[i].title,
+				custom[i].key, custom[i].defaultValue, null, null,
+				custom[i].defaultColorValue, custom[i].undefinedColor,
+				true));
+		}
 	}
 
 	// Adds custom colors from fill-/strokeColorStyles
@@ -4920,15 +5022,19 @@ StyleFormatPanel.prototype.addFill = function(container)
 			
 			for (var i = 0; i < tokens.length; i++)
 			{
-				var label = tokens[i].replace(/([a-z])([A-Z])/g, '$1 $2');
-				var defaultValue = (defaultTokens != null) ? defaultTokens[
-					mxUtils.mod(i, defaultTokens.length)] : null;
-				var actualDefault = (defaultValue != null) ?
-					defaultValue : 'default';
-				container.appendChild(this.createCellColorOption(
-					label.charAt(0).toUpperCase() + label.substring(1),
-					tokens[i], actualDefault, null, null,
-					defaultColor, defaultValue));
+				if (!ignoredColors[tokens[i]])
+				{
+					ignoredColors[tokens[i]] = true;
+					var defaultValue = (defaultTokens != null) ?
+						defaultTokens[mxUtils.mod(i,
+							defaultTokens.length)] : null;
+					var actualDefault = (defaultValue != null) ?
+						defaultValue : 'default';
+					container.appendChild(this.createCellColorOption(
+						Editor.getLabelForStylename(tokens[i]),
+						tokens[i], actualDefault, null, null,
+						defaultColor, defaultValue, true));
+				}
 			}
 		}
 	});
@@ -4946,7 +5052,9 @@ StyleFormatPanel.prototype.addFill = function(container)
  */
 StyleFormatPanel.prototype.getCustomColors = function()
 {
-	var ss = this.editorUi.getSelectionState();
+	var ui = this.editorUi;
+	var graph = ui.editor.graph;
+	var ss = ui.getSelectionState();
 	var result = [];
 
 	if (ss.customProperties != null)
@@ -4955,16 +5063,25 @@ StyleFormatPanel.prototype.getCustomColors = function()
 		{
 			var prop = ss.customProperties[key];
 
-			if (prop != null && prop.type == 'color' && prop.primary)
+			if (prop != null && prop.primary &&
+				(prop.type == 'color' || prop.subType == 'color') &&
+				(typeof(prop.isVisible) !== 'function' ||
+				prop.isVisible(ss, this)))
 			{
+				var defaultColor = (prop.subType == 'color') ?
+					prop.subDefVal : prop.defVal;
+				defaultColor = (defaultColor != null) ?
+					defaultColor : graph.shapeBackgroundColor;
 				result.push({title: prop.dispName,
-					defaultValue: (prop.defVal == null) ?
-					'#000000' : prop.defVal,
+					defaultValue: defaultColor,
+					defaultColorValue: (prop.defaultColor != null) ?
+						prop.defaultColor : defaultColor,
+					undefinedColor: prop.undefinedColor,
 					key: prop.name});
 			}
 		}
 	}
-	
+
 	if (ss.swimlane)
 	{
 		var graph = this.editorUi.editor.graph;
@@ -5022,7 +5139,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 		colorPanel.style.display = 'none';
 	}
 	
-	// Adds gradient direction option
+	// Adds path style option
 	var styleSelect = document.createElement('select');
 	styleSelect.style.position = 'absolute';
 	styleSelect.style.left = '72px';
@@ -5159,6 +5276,8 @@ StyleFormatPanel.prototype.addStroke = function(container)
 			null, null, null, true, Format.wireEdgeImage.src)).setAttribute('title', 'Wire');
 	})), '', null, altStylePanel);
 
+	edgeShape.setAttribute('title', mxResources.get('connection'));
+
 	var altPattern = ui.toolbar.addMenu(new Menu(mxUtils.bind(this, function(menu)
 	{
 		addItem(menu, 40, 'solid', [mxConstants.STYLE_DASHED, mxConstants.STYLE_DASH_PATTERN],
@@ -5271,11 +5390,29 @@ StyleFormatPanel.prototype.addStroke = function(container)
 		}
 	})), '', null, stylePanel2);
 
+	edgeStyle.setAttribute('title', mxResources.get('waypoints'));
+
 	var lineStart = ui.toolbar.addMenu(new Menu(mxUtils.bind(this, function(menu)
 	{
 		if (ss.style.shape == 'connector' || ss.style.shape == 'flexArrow' || ss.style.shape == 'filledEdge' ||
 			ss.style.shape == 'wire' || ss.style.shape == 'pipe')
 		{
+			// Copies other marker
+			var otherMarker = mxUtils.getValue(ss.style, mxConstants.STYLE_ENDARROW, mxConstants.NONE);
+			var otherFill = mxUtils.getValue(ss.style, 'endFill', '1');
+
+			if (otherMarker != mxConstants.NONE &&
+				(mxUtils.getValue(ss.style, mxConstants.STYLE_STARTARROW, mxConstants.NONE) != otherMarker ||
+				mxUtils.getValue(ss.style, 'startSize', '1') != mxUtils.getValue(ss.style, 'endSize', '1') ||
+				mxUtils.getValue(ss.style, 'startFill', '1') != otherFill))
+			{
+				Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '',
+					[mxConstants.STYLE_STARTARROW, 'startFill', 'startSize'],
+					[otherMarker, otherFill, mxUtils.getValue(ss.style, 'endSize')], null, null, false,
+						ui.getImageForMarker(otherMarker, otherFill, ss.style.shape, ss.style.shape))).
+							setAttribute('title', mxResources.get('copy'));
+			}
+			
 			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_STARTARROW, 'startFill'],
 				[mxConstants.NONE, 0], null, null, false, Format.noMarkerImage.src)).setAttribute('title', mxResources.get('none'));
 			
@@ -5375,6 +5512,22 @@ StyleFormatPanel.prototype.addStroke = function(container)
 		if (ss.style.shape == 'connector' || ss.style.shape == 'flexArrow' || ss.style.shape == 'filledEdge' ||
 			ss.style.shape == 'wire' || ss.style.shape == 'pipe')
 		{
+			// Copies other marker
+			var otherMarker = mxUtils.getValue(ss.style, mxConstants.STYLE_STARTARROW, mxConstants.NONE);
+			var otherFill = mxUtils.getValue(ss.style, 'startFill', '1');
+
+			if (otherMarker != mxConstants.NONE &&
+				(mxUtils.getValue(ss.style, mxConstants.STYLE_ENDARROW, mxConstants.NONE) != otherMarker ||
+				mxUtils.getValue(ss.style, 'endSize', '1') != mxUtils.getValue(ss.style, 'startSize', '1') ||
+				mxUtils.getValue(ss.style, 'endFill', '1') != otherFill))
+			{
+				Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '',
+					[mxConstants.STYLE_ENDARROW, 'endFill', 'endSize'],
+					[otherMarker, otherFill, mxUtils.getValue(ss.style, 'startSize')], null, null, false,
+						ui.getImageForMarker(otherMarker, otherFill, ss.style.shape, ss.style.shape)),
+							'scaleX(-1)').setAttribute('title', mxResources.get('copy'));
+			}
+			
 			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_ENDARROW, 'endFill'],
 				[mxConstants.NONE, 0], null, null, false, Format.noMarkerImage.src)).setAttribute('title', mxResources.get('none'));
 			
@@ -5639,51 +5792,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 		
 		if (edgeStyleDiv != null)
 		{
-			var es = mxUtils.getValue(ss.style, mxConstants.STYLE_EDGE, null);
-			
-			if (mxUtils.getValue(ss.style, mxConstants.STYLE_NOEDGESTYLE, null) == '1')
-			{
-				es = null;
-			}
-			
-			if (es == 'orthogonalEdgeStyle' && mxUtils.getValue(ss.style, mxConstants.STYLE_CURVED, null) == '1')
-			{
-				edgeStyleDiv.style.backgroundImage = 'url(' + Format.curvedImage.src + ')';
-			}
-			else if (es == 'straight' || es == 'none' || es == null)
-			{
-				edgeStyleDiv.style.backgroundImage = 'url(' + Format.straightImage.src + ')';
-			}
-			else if (es == 'entityRelationEdgeStyle')
-			{
-				edgeStyleDiv.style.backgroundImage = 'url(' + Format.entityImage.src + ')';
-			}
-			else if (es == 'elbowEdgeStyle')
-			{
-				if (mxUtils.getValue(ss.style, mxConstants.STYLE_ELBOW, null) == 'vertical')
-				{
-					edgeStyleDiv.style.backgroundImage = 'url(' + Format.verticalElbowImage.src + ')';
-				}
-				else
-				{
-					edgeStyleDiv.style.backgroundImage = 'url(' + Format.horizontalElbowImage.src + ')';
-				}
-			}
-			else if (es == 'isometricEdgeStyle')
-			{
-				if (mxUtils.getValue(ss.style, mxConstants.STYLE_ELBOW, null) == 'vertical')
-				{
-					edgeStyleDiv.style.backgroundImage = 'url(' + Format.verticalIsometricImage.src + ')';
-				}
-				else
-				{
-					edgeStyleDiv.style.backgroundImage = 'url(' + Format.horizontalIsometricImage.src + ')';
-				}
-			}
-			else
-			{
-				edgeStyleDiv.style.backgroundImage = 'url(' + Format.orthogonalImage.src + ')';
-			}
+			edgeStyleDiv.style.backgroundImage = 'url(' + ui.getImageForEdgeStyle(ss.style) + ')';
 		}
 		
 		// Updates icon for edge shape
@@ -5691,34 +5800,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 		
 		if (edgeShapeDiv != null)
 		{
-			if (ss.style.shape == 'link')
-			{
-				edgeShapeDiv.style.backgroundImage = 'url(' + Format.linkEdgeImage.src + ')';
-			}
-			else if (ss.style.shape == 'flexArrow')
-			{
-				edgeShapeDiv.style.backgroundImage = 'url(' + Format.arrowImage.src + ')';
-			}
-			else if (ss.style.shape == 'arrow')
-			{
-				edgeShapeDiv.style.backgroundImage = 'url(' + Format.simpleArrowImage.src + ')';
-			}
-			else if (ss.style.shape == 'filledEdge')
-			{
-				edgeShapeDiv.style.backgroundImage = 'url(' + Format.filledEdgeImage.src + ')';
-			}
-			else if (ss.style.shape == 'pipe')
-			{
-				edgeShapeDiv.style.backgroundImage = 'url(' + Format.pipeEdgeImage.src + ')';
-			}
-			else if (ss.style.shape == 'wire')
-			{
-				edgeShapeDiv.style.backgroundImage = 'url(' + Format.wireEdgeImage.src + ')';
-			}
-			else
-			{
-				edgeShapeDiv.style.backgroundImage = 'url(' + Format.connectionImage.src + ')';
-			}
+			edgeShapeDiv.style.backgroundImage = 'url(' + ui.getImageForEdgeShape(ss.style) + ')';
 		}
 		
 		if (ss.edges.length == ss.cells.length)
@@ -6013,8 +6095,10 @@ StyleFormatPanel.prototype.addEffects = function(div)
 			for (var key in ss.customProperties)
 			{
 				var prop = ss.customProperties[key];
-				
-				if (prop != null && prop.type == 'bool' && prop.primary)
+
+				if (prop != null && prop.type == 'bool' && prop.primary &&
+					(typeof(prop.isVisible) !== 'function' ||
+					prop.isVisible(ss, this)))
 				{
 					addOption(prop.dispName, key, prop.defVal ? '1' : '0');
 				}

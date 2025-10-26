@@ -3548,8 +3548,7 @@
 			if (graph.isEnabled() && !graph.isCellLocked(graph.getDefaultParent()))
 			{
     			graph.startEditingAtCell(insertVertex('Text', 60, 30, graph.appendFontSize(
-					'text;strokeColor=none;align=center;fillColor=none;html=1;verticalAlign=middle;' +
-					'whiteSpace=wrap;rounded=0;', graph.vertexFontSize), (evt != null &&
+					Editor.defaultTextStyle, graph.vertexFontSize), (evt != null &&
 					!mxEvent.isControlDown(evt) && !mxEvent.isMetaDown(evt) &&
 					graph.isMouseInsertPoint()) ? graph.getInsertPoint() : null));
 			}
@@ -3868,7 +3867,7 @@
 							else
 							{
 								window.geOpenWindow(((mxClient.IS_CHROMEAPP) ?
-									'https://www.draw.io/' : 'https://' + location.host + '/') +
+									'https://app.diagrams.net/' : 'https://' + location.host + '/') +
 									window.location.search + '#U' + encodeURIComponent(fileUrl));
 							}
 						}
@@ -4690,8 +4689,10 @@
 			
 			if (mxClient.IS_CHROMEAPP || EditorUi.isElectronApp)
 			{
-				editorUi.menus.addMenuItems(menu, ['new', 'open', '-',
-					'synchronize', 'properties', '-',
+				editorUi.menus.addMenuItems(menu, ['new', 'open'], parent);
+				editorUi.menus.addSubmenu('openRecent', menu, parent);
+				editorUi.menus.addMenuItems(menu,
+					['-', 'synchronize', 'properties', '-',
 					'save', 'saveAs', '-'], parent);
 			}
 			else if (editorUi.mode == App.MODE_ATLAS)

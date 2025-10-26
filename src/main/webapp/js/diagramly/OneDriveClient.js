@@ -251,7 +251,7 @@ OneDriveClient.prototype.authenticate = function(success, error, failOnAuth)
 		}
 		else if (error != null)
 		{
-			error(req);
+			error({message: mxResources.get('error') + ' ' + req.getStatus()});
 		}
 	}), error);
 };
@@ -1528,7 +1528,7 @@ OneDriveClient.prototype.pickFile = function(fn, acceptAllFiles)
 	
 	var errorFn = mxUtils.bind(this, function(e)
 	{
-		this.ui.showError(mxResources.get('error'), e && e.message? e.message : e);
+		this.ui.showError(mxResources.get('authFailed'), e && e.message? e.message : e);
 	});
 	
 	var odOpenDlg = this.inlinePicker? this.createInlinePicker(fn, null, acceptAllFiles) :
@@ -1589,7 +1589,7 @@ OneDriveClient.prototype.pickFile = function(fn, acceptAllFiles)
 					odOpenDlg();							
 				})).container, 300, 140, true, true);
 			}
-		}), errorFn);
+		}), errorFn)
 	}
 	else
 	{
