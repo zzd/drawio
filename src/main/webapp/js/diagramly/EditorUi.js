@@ -27,7 +27,8 @@
 	 */
 	EditorUi.enableLogging = urlParams['stealth'] != '1' && urlParams['lockdown'] != '1' &&
 		(/.*\.draw\.io$/.test(window.location.hostname) ||
-		/.*\.diagrams\.net$/.test(window.location.hostname)) &&
+		/.*\.diagrams\.net$/.test(window.location.hostname) ||
+		/.*\.cdn\.prod\.atlassian-dev\.net$/.test(window.location.hostname)) && // Forge app
 		window.location.hostname != 'https://preprod.diagrams.net/' &&
 		window.location.hostname != 'support.draw.io' &&
 		window.location.hostname != 'test.draw.io';
@@ -123,10 +124,6 @@
 	EditorUi.defaultMermaidConfig = {
 		theme:'neutral',
 		arrowMarkerAbsolute:false,
-	    flowchart:
-	    {
-	    	htmlLabels:false
-	    },
 	    sequence:
 	    {
 	    	diagramMarginX:50,
@@ -15501,7 +15498,7 @@
 					if (mxClient.IS_GC)
 					{
 						css += '@media print {\n' +
-							'.MathJax svg { shape-rendering: crispEdges; }\n' +
+							'  .MathJax svg { shape-rendering: crispEdges; }\n' +
 							'}\n';
 					}
 					
