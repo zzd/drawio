@@ -3793,6 +3793,8 @@ var LayersWindow = function(editorUi, x, y, w, h)
 			ldiv.style.borderWidth = '0px 0px 1px 0px';
 			ldiv.style.borderStyle = 'solid';
 			ldiv.style.whiteSpace = 'nowrap';
+			ldiv.style.cursor = 'move';
+			ldiv.setAttribute('draggable', 'true');
 			ldiv.setAttribute('title', label  +
 				' (' + child.getId() + ')');
 			newLayerDivs.put(child, ldiv);
@@ -3809,7 +3811,6 @@ var LayersWindow = function(editorUi, x, y, w, h)
 			div.style.display = 'flex';
 			div.style.alignItems = 'center';
 			div.style.flexGrow = '1';
-			ldiv.appendChild(div);
 
 			mxEvent.addListener(cb, 'click', function(evt)
 			{
@@ -3980,6 +3981,7 @@ var LayersWindow = function(editorUi, x, y, w, h)
 
 			div.appendChild(btn);
 			div.appendChild(title);
+			ldiv.appendChild(div);
 			
 			mxEvent.addListener(ldiv, 'dblclick', function(evt)
 			{
