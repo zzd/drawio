@@ -49,7 +49,7 @@ EditorUi.initMinimalTheme = function()
 			{
 				var x = Math.max(10, ui.diagramContainer.clientWidth - 248);
 				var y = 60;
-				var h = Math.min(566, graph.container.clientHeight - 10);
+				var h = Math.min(600, graph.container.clientHeight - 10);
 
 				ui.formatWindow = new WrapperWindow(ui, '', x, y, 240, h,
 					function(container)
@@ -401,8 +401,8 @@ EditorUi.initMinimalTheme = function()
 		
 		this.sidebar = this.createSidebar(this.sidebarContainer);
 		
-		if (iw >= 1000 || urlParams['clibs'] != null || urlParams['libs'] != null ||
-			urlParams['search-shapes'] != null)
+		if (urlParams['sidebar'] != '0' && (iw >= 1000 || urlParams['clibs'] != null || urlParams['libs'] != null ||
+			urlParams['search-shapes'] != null))
 		{
 			toggleShapes(this, true);
 			
@@ -413,7 +413,7 @@ EditorUi.initMinimalTheme = function()
 			}
 		}
 		
-		if (EditorUi.windowed && iw >= 1000)
+		if (this.formatEnabled && EditorUi.windowed && iw >= 1000)
 		{
 			toggleFormat(this, true);
 			this.formatWindow.window.setVisible(true);
@@ -663,7 +663,7 @@ EditorUi.initMinimalTheme = function()
 		ui.container.appendChild(menubar);
 		ui.updateTabContainer();
 
-		if (!EditorUi.windowed && iw >= 1000)
+		if (this.formatEnabled && !EditorUi.windowed && iw >= 1000)
 		{
 			toggleFormat(this, true);
 		}

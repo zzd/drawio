@@ -914,6 +914,11 @@ mxEdgeHandler.prototype.isCustomHandleEvent = function(me)
  */
 mxEdgeHandler.prototype.mouseDown = function(sender, me)
 {
+	if (mxEvent.isMouseEvent(me.getEvent()) && !mxEvent.isLeftMouseButton(me.getEvent()))
+	{
+		return;
+	}
+
 	if (this.graph.isCellEditable(this.state.cell))
 	{
 		var handle = this.getHandleForEvent(me);

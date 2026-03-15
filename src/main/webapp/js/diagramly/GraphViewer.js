@@ -299,11 +299,26 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 						}
 						
 						var graphGetGlobalVariable = this.graph.getGlobalVariable;
+						var cachedFileVars = null;
+
+						try
+						{
+							var varsStr = self.xmlNode.getAttribute('vars');
+
+							if (varsStr != null && varsStr.length > 0)
+							{
+								cachedFileVars = JSON.parse(varsStr);
+							}
+						}
+						catch (e)
+						{
+							// ignore
+						}
 
 						this.graph.getGlobalVariable = function(name)
 						{
 							var diagram = diagrams[self.currentPage];
-							
+
 							if (name == 'page')
 							{
 								return diagram.getAttribute('name') || 'Page-' + (self.currentPage + 1);
@@ -316,8 +331,15 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 							{
 								return diagrams.length;
 							}
-							
-							return graphGetGlobalVariable.apply(this, arguments);
+
+							var val = graphGetGlobalVariable.apply(this, arguments);
+
+							if (val == null && cachedFileVars != null)
+							{
+								val = cachedFileVars[name];
+							}
+
+							return val;
 						};
 					}
 				}

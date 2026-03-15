@@ -1483,7 +1483,7 @@ Graph.colorStyles = [mxConstants.STYLE_FONTCOLOR,
  */
 Graph.textStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'fontStyle',
 	'textOpacity', 'labelBorderColor', 'labelBackgroundColor', 'autosize', 'resizable',
-	'horizontal', 'textDirection'];
+	'horizontal', 'textDirection', 'autosizeText'];
 
 /**
  * Styles that are used for edges.
@@ -3354,6 +3354,7 @@ Graph.prototype.init = function(container)
 
 		return !this.isSpecialColor(state.style[mxConstants.STYLE_FILLCOLOR]) &&
 			mxUtils.getValue(state.style, 'lineShape', null) != '1' &&
+			shape != 'mxgraph.basic.arc' &&
 			(this.model.isVertex(state.cell) ||
 			shape == 'arrow' || shape == 'pipe' || shape == 'wire' ||
 			shape == 'filledEdge' || shape == 'flexArrow' ||
@@ -3455,7 +3456,25 @@ Graph.prototype.init = function(container)
 	{
 		return mxUtils.getValue(state.style, mxConstants.STYLE_AUTOSIZE, null) == '1';
 	};
-	
+
+	/**
+	 * Returns true if the given state has autosizeText enabled.
+	 */
+	Graph.prototype.isAutosizeTextState = function(state)
+	{
+		return mxUtils.getValue(state.style, 'autosizeText', null) == '1';
+	};
+
+	/**
+	 * Returns true if the given cell has autosizeText enabled.
+	 */
+	Graph.prototype.isAutosizeTextCell = function(cell)
+	{
+		var style = this.getCurrentCellStyle(cell);
+
+		return style != null && style['autosizeText'] == '1';
+	};
+
 	/**
 	 * Returns information about the current selection.
 	 */
@@ -4970,6 +4989,47 @@ Graph.prototype.createVertexWipeAnimation = function(state, wipeIn)
 	
 	thread = window.setInterval(animate, delay);
 	animate();
+};
+
+/**
+ * Runs the animations step by step with a callback for each frame,
+ * allowing async frame capture (e.g. for animated export).
+ */
+Graph.prototype.executeAnimationsStepped = function(animations, steps, frameCallback, doneCallback)
+{
+	steps = (steps != null) ? steps : 30;
+	var step = 0;
+
+	var nextFrame = mxUtils.bind(this, function()
+	{
+		if (step <= steps)
+		{
+			for (var i = 0; i < animations.length; i++)
+			{
+				animations[i].execute(step, steps);
+			}
+
+			frameCallback(step, steps, function()
+			{
+				step++;
+				nextFrame();
+			});
+		}
+		else
+		{
+			for (var i = 0; i < animations.length; i++)
+			{
+				animations[i].stop();
+			}
+
+			if (doneCallback != null)
+			{
+				doneCallback();
+			}
+		}
+	});
+
+	nextFrame();
 };
 
 /**
@@ -6922,28 +6982,37 @@ Graph.prototype.fitPages = function(pageCount, ignoreHeight)
  * 
  * Sets the current visible rectangle of the window in graph coordinates.
  */
-Graph.prototype.fitWindow = function(bounds, border)
+Graph.prototype.fitWindow = function(bounds, border, maxScale, zoomOutOnly)
 {
 	border = (border != null) ? border : 10;
 	
 	var cw = this.container.clientWidth - border;
 	var ch = this.container.clientHeight - border;
 	var scale = Math.floor(20 * Math.min(cw / bounds.width, ch / bounds.height)) / 20;
-	this.zoomTo(scale);
 
-	if (mxUtils.hasScrollbars(this.container))
+	if (maxScale != null)
 	{
-		// Call to zoom above may trigger an asynchronous update of the scrollbars
-		// as setting scrollTop/-Left is executed asynchronously so the code below
-		// ensures that the final state of the scrollbars is as intended.
-		window.setTimeout(mxUtils.bind(this, function()
+		scale = Math.min(scale, maxScale);
+	}
+
+	if (!zoomOutOnly || scale < maxScale)
+	{
+		this.zoomTo(scale);
+
+		if (mxUtils.hasScrollbars(this.container))
 		{
-			var t = this.view.translate;
-			this.container.scrollLeft = (bounds.x + t.x) * this.view.scale -
-				Math.max((cw - bounds.width * this.view.scale) / 2 + border / 2, 0);
-			this.container.scrollTop = (bounds.y + t.y) * this.view.scale -
-				Math.max((ch - bounds.height * this.view.scale) / 2 + border / 2, 0);
-		}), 0);
+			// Call to zoom above may trigger an asynchronous update of the scrollbars
+			// as setting scrollTop/-Left is executed asynchronously so the code below
+			// ensures that the final state of the scrollbars is as intended.
+			window.setTimeout(mxUtils.bind(this, function()
+			{
+				var t = this.view.translate;
+				this.container.scrollLeft = (bounds.x + t.x) * this.view.scale -
+					Math.max((cw - bounds.width * this.view.scale) / 2 + border / 2, 0);
+				this.container.scrollTop = (bounds.y + t.y) * this.view.scale -
+					Math.max((ch - bounds.height * this.view.scale) / 2 + border / 2, 0);
+			}), 0);
+		}
 	}
 };
 
@@ -8084,6 +8153,305 @@ HoverIcons.prototype.setCurrentState = function(state)
 };
 
 /**
+ * Floating toolbar that appears when a single edge is selected,
+ * providing quick access to edge style changes.
+ */
+InlineToolbar = function(editorUi)
+{
+	this.editorUi = editorUi;
+	this.graph = editorUi.editor.graph;
+	this.init();
+};
+
+/**
+ * Size of the icon button in pixels.
+ */
+InlineToolbar.prototype.iconSize = 24;
+
+/**
+ * Offset from the cell midpoint in pixels.
+ */
+InlineToolbar.prototype.offset = 16;
+
+/**
+ * Current cell state.
+ */
+InlineToolbar.prototype.currentState = null;
+
+/**
+ * Initializes the toolbar icon and event listeners.
+ */
+InlineToolbar.prototype.init = function()
+{
+	this.icon = document.createElement('div');
+	this.icon.style.position = 'absolute';
+	this.icon.style.width = this.iconSize + 'px';
+	this.icon.style.height = this.iconSize + 'px';
+	this.icon.style.backgroundSize = '16px';
+	this.icon.style.backgroundRepeat = 'no-repeat';
+	this.icon.style.backgroundPosition = 'center';
+	this.icon.style.cursor = 'pointer';
+	this.icon.style.display = 'none';
+	this.icon.style.zIndex = 1;
+	this.icon.style.borderRadius = '3px';
+	this.icon.style.backgroundColor = 'rgba(255,255,255,0.9)';
+	this.icon.style.border = '1px solid #d0d0d0';
+	this.icon.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)';
+	this.icon.className = 'geAdaptiveAsset';
+	this.icon.setAttribute('title', mxResources.get('line'));
+
+	// Append immediately so it's always in the DOM
+	this.graph.container.appendChild(this.icon);
+
+	// Prevent mousedown from deselecting the edge
+	mxEvent.addListener(this.icon, 'mousedown', mxUtils.bind(this, function(evt)
+	{
+		if (this.graph.isEnabled())
+		{
+			mxEvent.consume(evt);
+		}
+	}));
+
+	// Show menu on click
+	mxEvent.addListener(this.icon, 'click', mxUtils.bind(this, function(evt)
+	{
+		if (this.graph.isEnabled())
+		{
+			this.showMenu(evt);
+			mxEvent.consume(evt);
+		}
+	}));
+
+	this.selectionHandler = mxUtils.bind(this, function()
+	{
+		this.updateSelection();
+	});
+
+	this.repaintHandler = mxUtils.bind(this, function()
+	{
+		this.repaint();
+	});
+
+	this.modelHandler = mxUtils.bind(this, function()
+	{
+		this.updateSelection();
+	});
+
+	this.hideHandler = mxUtils.bind(this, function()
+	{
+		this.hide();
+	});
+
+	this.graph.selectionModel.addListener(mxEvent.CHANGE, this.selectionHandler);
+	this.graph.model.addListener(mxEvent.CHANGE, this.modelHandler);
+	this.graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, this.repaintHandler);
+	this.graph.view.addListener(mxEvent.TRANSLATE, this.repaintHandler);
+	this.graph.view.addListener(mxEvent.SCALE, this.repaintHandler);
+	this.graph.view.addListener(mxEvent.DOWN, this.repaintHandler);
+	this.graph.view.addListener(mxEvent.UP, this.repaintHandler);
+	this.graph.addListener(mxEvent.ROOT, this.repaintHandler);
+	this.graph.addListener(mxEvent.ESCAPE, this.selectionHandler);
+	this.graph.addListener(mxEvent.START_EDITING, this.hideHandler);
+	mxEvent.addListener(this.graph.container, 'scroll', this.repaintHandler);
+};
+
+/**
+ * Updates visibility based on the current selection.
+ */
+InlineToolbar.prototype.updateSelection = function()
+{
+	var cells = this.graph.getSelectionCells();
+	var state = null;
+
+	if (cells.length == 1 && this.graph.model.isEdge(cells[0]) &&
+		this.graph.isEnabled() && !this.graph.isCellLocked(cells[0]))
+	{
+		state = this.graph.view.getState(cells[0]);
+	}
+
+	if (state != null)
+	{
+		this.currentState = state;
+		this.show();
+	}
+	else
+	{
+		this.currentState = null;
+		this.hide();
+	}
+};
+
+/**
+ * Computes the midpoint along the edge path.
+ */
+InlineToolbar.prototype.getEdgeMidpoint = function(state)
+{
+	var pts = state.absolutePoints;
+
+	if (pts == null || pts.length < 2)
+	{
+		return null;
+	}
+
+	// Compute total path length
+	var totalLength = 0;
+	var segments = [];
+
+	for (var i = 1; i < pts.length; i++)
+	{
+		if (pts[i] != null && pts[i - 1] != null)
+		{
+			var dx = pts[i].x - pts[i - 1].x;
+			var dy = pts[i].y - pts[i - 1].y;
+			var len = Math.sqrt(dx * dx + dy * dy);
+			segments.push(len);
+			totalLength += len;
+		}
+		else
+		{
+			segments.push(0);
+		}
+	}
+
+	// Find point at half-length
+	var halfLength = totalLength / 2;
+	var accumulated = 0;
+
+	for (var i = 0; i < segments.length; i++)
+	{
+		if (accumulated + segments[i] >= halfLength)
+		{
+			var remaining = halfLength - accumulated;
+			var ratio = (segments[i] > 0) ? remaining / segments[i] : 0;
+			var p1 = pts[i];
+			var p2 = pts[i + 1];
+
+			if (p1 != null && p2 != null)
+			{
+				return new mxPoint(
+					p1.x + (p2.x - p1.x) * ratio,
+					p1.y + (p2.y - p1.y) * ratio
+				);
+			}
+
+			break;
+		}
+
+		accumulated += segments[i];
+	}
+
+	// Fallback: midpoint of first and last
+	var first = pts[0];
+	var last = pts[pts.length - 1];
+
+	if (first != null && last != null)
+	{
+		return new mxPoint((first.x + last.x) / 2, (first.y + last.y) / 2);
+	}
+
+	return null;
+};
+
+/**
+ * Shows the toolbar icon.
+ */
+InlineToolbar.prototype.show = function()
+{
+	this.updateIcon();
+	this.icon.style.display = 'block';
+	this.repaint();
+};
+
+/**
+ * Hides the toolbar icon.
+ */
+InlineToolbar.prototype.hide = function()
+{
+	this.icon.style.display = 'none';
+};
+
+/**
+ * Updates the icon image to match the current cell style.
+ */
+InlineToolbar.prototype.updateIcon = function()
+{
+	if (this.currentState != null)
+	{
+		var style = this.graph.getCurrentCellStyle(this.currentState.cell);
+		var src = this.editorUi.getImageForEdgeStyle(style);
+
+		if (style[mxConstants.STYLE_SHAPE] == 'arrow')
+		{
+			src = Format.straightImage.src;
+		}
+
+		this.icon.style.backgroundImage = 'url(' + src + ')';
+	}
+};
+
+/**
+ * Repositions the icon at the cell midpoint.
+ */
+InlineToolbar.prototype.repaint = function()
+{
+	if (this.currentState != null && this.icon.style.display != 'none')
+	{
+		// Refresh state in case cell was deleted or edge changed
+		var state = this.graph.view.getState(this.currentState.cell);
+
+		if (state != null)
+		{
+			this.currentState = state;
+			this.updateIcon();
+			var mid = this.getEdgeMidpoint(state);
+
+			if (mid != null)
+			{
+				// absolutePoints are in view coordinates, adjust for container scroll
+				var x = mid.x - this.iconSize / 2;
+				var y = mid.y - this.iconSize - this.offset;
+
+				this.icon.style.left = Math.round(x) + 'px';
+				this.icon.style.top = Math.round(y) + 'px';
+			}
+		}
+	}
+};
+
+/**
+ * Shows the popup menu for the current selection.
+ */
+InlineToolbar.prototype.showMenu = function(evt)
+{
+	var editorUi = this.editorUi;
+	editorUi.hideCurrentMenu();
+
+	editorUi.showPopupMenu(mxUtils.bind(this, function(menu, parent)
+	{
+		editorUi.menus.addMenu('line', menu, parent);
+	}), mxEvent.getClientX(evt), mxEvent.getClientY(evt), evt);
+};
+
+/**
+ * Removes all listeners and DOM elements.
+ */
+InlineToolbar.prototype.destroy = function()
+{
+	this.graph.selectionModel.removeListener(this.selectionHandler);
+	this.graph.model.removeListener(this.modelHandler);
+	this.graph.view.removeListener(this.repaintHandler);
+	this.graph.removeListener(this.selectionHandler);
+	this.graph.removeListener(this.repaintHandler);
+	this.graph.removeListener(this.hideHandler);
+	mxEvent.removeListener(this.graph.container, 'scroll', this.repaintHandler);
+
+	if (this.icon.parentNode != null)
+	{
+		this.icon.parentNode.removeChild(this.icon);
+	}
+};
+
+/**
  * Returns true if the given cell is a table.
  */
 Graph.prototype.removeTextStyleForCell = function(cell, removeCellStyles)
@@ -8881,7 +9249,7 @@ TableLayout.prototype.execute = function(parent)
 	{
 		recurse = (recurse != null) ? recurse : true;
 		var state = this.getState(cell);
-		
+
 		// Forces repaint if jumps change on a valid edge
 		if (state != null && recurse && this.graph.model.isEdge(state.cell) &&
 			state.style != null && state.style[mxConstants.STYLE_CURVED] != 1 &&
@@ -8889,9 +9257,141 @@ TableLayout.prototype.execute = function(parent)
 		{
 			this.graph.cellRenderer.redraw(state, false, this.isRendering());
 		}
-		
+
+		// Updates link and tooltip overlays before redraw in base call
+		if (state != null && state.invalid)
+		{
+			if (this.graph.showLinkIcons)
+			{
+				var link = this.graph.getLinkForCell(cell);
+				var hasLink = link != null && link.length > 0;
+				var hasOverlay = false;
+
+				if (cell.overlays != null)
+				{
+					for (var i = 0; i < cell.overlays.length; i++)
+					{
+						if (cell.overlays[i].isLinkOverlay)
+						{
+							hasOverlay = true;
+							break;
+						}
+					}
+				}
+
+				if (hasLink && !hasOverlay)
+				{
+					var overlay = this.graph.createLinkOverlay(cell);
+
+					if (overlay != null)
+					{
+						if (cell.overlays == null)
+						{
+							cell.overlays = [];
+						}
+
+						cell.overlays.push(overlay);
+					}
+				}
+				else if (!hasLink && hasOverlay)
+				{
+					for (var i = cell.overlays.length - 1; i >= 0; i--)
+					{
+						if (cell.overlays[i].isLinkOverlay)
+						{
+							cell.overlays.splice(i, 1);
+						}
+					}
+
+					if (cell.overlays.length == 0)
+					{
+						cell.overlays = null;
+					}
+				}
+			}
+			else if (cell.overlays != null)
+			{
+				for (var i = cell.overlays.length - 1; i >= 0; i--)
+				{
+					if (cell.overlays[i].isLinkOverlay)
+					{
+						cell.overlays.splice(i, 1);
+					}
+				}
+
+				if (cell.overlays.length == 0)
+				{
+					cell.overlays = null;
+				}
+			}
+
+			if (this.graph.showTooltipIcons)
+			{
+				var tooltip = this.graph.convertValueToTooltip(cell);
+				var hasTooltip = tooltip != null && tooltip.length > 0;
+				var hasTooltipOverlay = false;
+
+				if (cell.overlays != null)
+				{
+					for (var i = 0; i < cell.overlays.length; i++)
+					{
+						if (cell.overlays[i].isTooltipOverlay)
+						{
+							hasTooltipOverlay = true;
+							break;
+						}
+					}
+				}
+
+				if (hasTooltip && !hasTooltipOverlay)
+				{
+					var overlay = this.graph.createTooltipOverlay(cell);
+
+					if (overlay != null)
+					{
+						if (cell.overlays == null)
+						{
+							cell.overlays = [];
+						}
+
+						cell.overlays.push(overlay);
+					}
+				}
+				else if (!hasTooltip && hasTooltipOverlay)
+				{
+					for (var i = cell.overlays.length - 1; i >= 0; i--)
+					{
+						if (cell.overlays[i].isTooltipOverlay)
+						{
+							cell.overlays.splice(i, 1);
+						}
+					}
+
+					if (cell.overlays.length == 0)
+					{
+						cell.overlays = null;
+					}
+				}
+			}
+			else if (cell.overlays != null)
+			{
+				for (var i = cell.overlays.length - 1; i >= 0; i--)
+				{
+					if (cell.overlays[i].isTooltipOverlay)
+					{
+						cell.overlays.splice(i, 1);
+					}
+				}
+
+				if (cell.overlays.length == 0)
+				{
+					cell.overlays = null;
+				}
+			}
+		}
+
 		state = mxGraphViewValidateCellState.apply(this, arguments);
-		
+
 		// Adds to the list of edges that may intersect with later edges
 		if (state != null && recurse && this.graph.model.isEdge(state.cell) &&
 			state.style != null && state.style[mxConstants.STYLE_CURVED] != 1)
@@ -8899,7 +9399,7 @@ TableLayout.prototype.execute = function(parent)
 			// LATER: Reuse jumps for valid edges
 			this.validEdges.push(state);
 		}
-		
+
 		return state;
 	};
 
@@ -10936,6 +11436,205 @@ if (typeof mxVertexHandler !== 'undefined')
 		}
 
 		/**
+		 * Computes available space for an autosizeText label given style,
+		 * explicit width/height and optional state (for folding image).
+		 * Returns {availW, availH} or null if non-positive.
+		 */
+		Graph.prototype.getAutosizeTextAvailableSpace = function(style, w, h, state)
+		{
+			var dx = 0;
+			var dy = 0;
+
+			if ((state != null && this.getImage(state) != null) ||
+				style[mxConstants.STYLE_IMAGE] != null)
+			{
+				if (style[mxConstants.STYLE_SHAPE] == mxConstants.SHAPE_LABEL)
+				{
+					if (style[mxConstants.STYLE_VERTICAL_ALIGN] == mxConstants.ALIGN_MIDDLE)
+					{
+						dx += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_IMAGE_WIDTH,
+							mxLabel.prototype.imageSize));
+					}
+
+					if (style[mxConstants.STYLE_ALIGN] != mxConstants.ALIGN_CENTER)
+					{
+						dy += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_IMAGE_HEIGHT,
+							mxLabel.prototype.imageSize));
+					}
+				}
+			}
+
+			dx += 2 * parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING, 2));
+			dx += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_LEFT, 2));
+			dx += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_RIGHT, 2));
+
+			dy += 2 * parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING, 2));
+			dy += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_TOP, 2));
+			dy += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_BOTTOM, 2));
+
+			if (state != null)
+			{
+				var image = this.getFoldingImage(state);
+
+				if (image != null)
+				{
+					dx += image.width + 8;
+				}
+			}
+
+			var isHorizontal = mxUtils.getValue(style, mxConstants.STYLE_HORIZONTAL, true);
+			var availW = (isHorizontal ? w : h) - dx;
+			var availH = (isHorizontal ? h : w) - dy;
+
+			if (availW <= 0 || availH <= 0)
+			{
+				return null;
+			}
+
+			return {availW: availW, availH: availH};
+		};
+
+		/**
+		 * Binary search for the largest font size (6..84) such that the
+		 * given HTML value string fits within availW x availH.
+		 */
+		Graph.prototype.computeAutosizeTextFontSize = function(value, availW, availH, fontFamily, fontStyle, wrap)
+		{
+			var lo = 1;
+			var hi = 84;
+			var textW = wrap ? availW : null;
+
+			// For wrapped text, prepare each word on its own line to measure
+			// the widest unbreakable word (handles single-line text without spaces)
+			var wordsValue = null;
+
+			if (wrap)
+			{
+				var plainText = value.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '');
+				var words = plainText.split(/[\s\n]+/);
+				var filtered = [];
+
+				for (var i = 0; i < words.length; i++)
+				{
+					if (words[i].length > 0)
+					{
+						filtered.push(mxUtils.htmlEntities(words[i], false));
+					}
+				}
+
+				if (filtered.length > 0)
+				{
+					wordsValue = filtered.join('<br>');
+				}
+			}
+
+			while (lo < hi)
+			{
+				var mid = Math.ceil((lo + hi) / 2);
+				var size = mxUtils.getSizeForString(value, mid, fontFamily, textW, fontStyle);
+
+				var fits = wrap ? (size.height <= availH) :
+					(size.width <= availW && size.height <= availH);
+
+				// For wrapped text, also ensure the widest word fits within the width
+				if (fits && wrap && wordsValue != null)
+				{
+					var wordsSize = mxUtils.getSizeForString(wordsValue, mid, fontFamily, null, fontStyle);
+
+					if (wordsSize.width > availW)
+					{
+						fits = false;
+					}
+				}
+
+				if (fits)
+				{
+					lo = mid;
+				}
+				else
+				{
+					hi = mid - 1;
+				}
+			}
+
+			return Math.max(6, lo);
+		};
+
+		/**
+		 * Updates the font size of the given cell so that its label fits within
+		 * the cell bounds. Uses binary search over font sizes 1..999.
+		 */
+		Graph.prototype.updateAutosizeTextFontSize = function(cell)
+		{
+			var state = this.view.getState(cell);
+
+			if (state == null)
+			{
+				state = this.view.createState(cell);
+			}
+
+			var style = state.style;
+			var geo = this.getCellGeometry(cell);
+
+			if (geo == null || this.model.isEdge(cell))
+			{
+				return;
+			}
+
+			var value = this.cellRenderer.getLabelValue(state);
+
+			if (value == null || value.length == 0)
+			{
+				return;
+			}
+
+			var space = this.getAutosizeTextAvailableSpace(style, geo.width, geo.height, state);
+
+			if (space == null)
+			{
+				return;
+			}
+
+			// Prepare label value for measurement
+			if (!this.isHtmlLabel(cell))
+			{
+				value = mxUtils.htmlEntities(value, false);
+			}
+
+			value = value.replace(/\n/g, '<br>');
+
+			var fontFamily = style[mxConstants.STYLE_FONTFAMILY] || mxConstants.DEFAULT_FONTFAMILY;
+			var fontStyle = style[mxConstants.STYLE_FONTSTYLE];
+			var wrap = style[mxConstants.STYLE_WHITE_SPACE] == 'wrap';
+
+			var fontSize = this.computeAutosizeTextFontSize(value, space.availW, space.availH,
+				fontFamily, fontStyle, wrap);
+
+			this.setCellStyles(mxConstants.STYLE_FONTSIZE, fontSize, [cell]);
+		};
+
+		/**
+		 * Overrides cellsResized to update font size for cells with autosizeText enabled.
+		 */
+		Graph.prototype.cellsResized = function(cells, bounds, recurse)
+		{
+			var result = mxGraph.prototype.cellsResized.apply(this, arguments);
+
+			if (cells != null)
+			{
+				for (var i = 0; i < cells.length; i++)
+				{
+					if (this.model.isVertex(cells[i]) && this.isAutosizeTextCell(cells[i]))
+					{
+						this.updateAutosizeTextFontSize(cells[i]);
+					}
+				}
+			}
+
+			return result;
+		};
+
+		/**
 		 * Turns the given cells and returns the changed cells.
 		 */
 		Graph.prototype.turnShapes = function(cells, backwards)
@@ -11261,6 +11960,11 @@ if (typeof mxVertexHandler !== 'undefined')
 				}
 
 				mxGraph.prototype.cellLabelChanged.apply(this, arguments);
+
+				if (this.isAutosizeTextCell(cell))
+				{
+					this.updateAutosizeTextFontSize(cell);
+				}
 			}
 			finally
 			{
@@ -11355,7 +12059,77 @@ if (typeof mxVertexHandler !== 'undefined')
 		{
 			this.setAttributeForCell(cell, 'link', link);
 		};
-		
+
+		/**
+		 * Creates a link overlay for the given cell.
+		 */
+		Graph.prototype.createLinkOverlay = function(cell)
+		{
+			var link = this.getLinkForCell(cell);
+
+			if (link != null && link.length > 0)
+			{
+				var tip = this.getLinkOverlayTooltip(link);
+				var overlay = new mxCellOverlay(
+					new mxImage(Editor.lightDarkLinkImage, 16, 16), tip,
+					mxConstants.ALIGN_RIGHT, mxConstants.ALIGN_TOP,
+					new mxPoint(8, -8));
+				overlay.isLinkOverlay = true;
+
+				var graph = this;
+				overlay.addListener(mxEvent.CLICK, function(sender, evt)
+				{
+					graph.setSelectionCell(evt.getProperty('cell'));
+				});
+
+				return overlay;
+			}
+
+			return null;
+		};
+
+		/**
+		 * Returns the tooltip text for a link overlay. Can be overridden
+		 * to resolve page links to page names.
+		 */
+		Graph.prototype.getLinkOverlayTooltip = function(link)
+		{
+			return link;
+		};
+
+		/**
+		 * Creates a tooltip overlay for the given cell.
+		 */
+		Graph.prototype.createTooltipOverlay = function(cell)
+		{
+			var tooltip = this.convertValueToTooltip(cell);
+
+			if (tooltip != null && tooltip.length > 0)
+			{
+				var overlay = new mxCellOverlay(
+					new mxImage(Editor.lightDarkTooltipImage, 16, 16), tooltip,
+					mxConstants.ALIGN_LEFT, mxConstants.ALIGN_TOP,
+					new mxPoint(-8, -8));
+				overlay.isTooltipOverlay = true;
+
+				var graph = this;
+				overlay.addListener(mxEvent.CLICK, function(sender, evt)
+				{
+					var mouseEvt = evt.getProperty('event');
+					var tip = graph.getTooltipForCell(evt.getProperty('cell'));
+
+					if (tip != null && tip.length > 0)
+					{
+						graph.tooltipHandler.show(tip, mouseEvt.clientX, mouseEvt.clientY);
+					}
+				});
+
+				return overlay;
+			}
+
+			return null;
+		};
+
 		/**
 		 * Sets the link for the given cell.
 		 */
@@ -14238,6 +15012,15 @@ if (typeof mxVertexHandler !== 'undefined')
 			
 			// Selects editing cell
 			this.graph.setSelectionCell(cell);
+
+			// Re-compute font size after initialText may have been set
+			// (e.g. typing shim sets innerHTML which doesn't fire input events)
+			if (this.editingCell != null && this.textarea != null &&
+				this.textarea.parentNode != null && state != null &&
+				this.graph.isAutosizeTextState(state))
+			{
+				this.resize();
+			}
 		}
 		
 		mxCellEditor.prototype.toggleViewMode = function()
@@ -14420,15 +15203,137 @@ if (typeof mxVertexHandler !== 'undefined')
 		
 					mxUtils.setPrefixedStyle(this.textarea.style, 'transform', 'scale(' + scale + ',' + scale + ')');	
 				}
+				else if (state != null && this.graph.isAutosizeTextState(state))
+				{
+					// autosizeText: position textarea at cell origin with
+					// flex layout for vertical alignment and padding for
+					// spacing to match the rendered text layout exactly
+					var scale = state.view.scale;
+					var sty = state.style;
+					var geo = this.graph.getCellGeometry(this.editingCell);
+
+					if (geo != null)
+					{
+						this.bounds = mxRectangle.fromRectangle(state);
+
+						// Position textarea at cell origin
+						this.textarea.style.left = Math.round(state.x) + 'px';
+						this.textarea.style.top = Math.round(state.y) + 'px';
+
+						// Transform: scale and rotation only, no alignment
+						// translate (vertical alignment handled via flex)
+						var deg = (this.rotateText && this.textShape != null) ?
+							this.textShape.getTextRotation() : 0;
+						mxUtils.setPrefixedStyle(this.textarea.style, 'transformOrigin', '0px 0px');
+						mxUtils.setPrefixedStyle(this.textarea.style, 'transform',
+							((deg != 0) ? 'rotate(' + deg + 'deg) ' : '') +
+							'scale(' + scale + ',' + scale + ')');
+
+						// Remove transparent border set by updateTextAreaStyle so
+						// content area matches the measurement width exactly
+						this.textarea.style.borderWidth = '0';
+
+						// Add foreignObjectPadding to width to match the rendered
+						// flex container width in mxSvgCanvas2D.createCss
+						var fop = mxSvgCanvas2D.prototype.foreignObjectPadding;
+						this.textarea.style.width = Math.round(geo.width + fop) + 'px';
+						this.textarea.style.height = Math.round(geo.height) + 'px';
+						this.textarea.style.overflow = 'hidden';
+						this.textarea.style.boxSizing = 'border-box';
+
+						if (sty[mxConstants.STYLE_WHITE_SPACE] == 'wrap')
+						{
+							this.textarea.style.wordWrap = mxConstants.WORD_WRAP;
+							this.textarea.style.whiteSpace = 'normal';
+						}
+
+						// Compute spacing matching mxText defaults: STYLE_SPACING
+						// defaults to 2, directional spacings default to 0 (not 2)
+						var spacing = parseInt(mxUtils.getValue(sty, mxConstants.STYLE_SPACING, 2));
+						var spTop = spacing + parseInt(mxUtils.getValue(sty, mxConstants.STYLE_SPACING_TOP, 0));
+						var spBottom = spacing + parseInt(mxUtils.getValue(sty, mxConstants.STYLE_SPACING_BOTTOM, 0));
+						var spLeft = spacing + parseInt(mxUtils.getValue(sty, mxConstants.STYLE_SPACING_LEFT, 0));
+						var spRight = spacing + parseInt(mxUtils.getValue(sty, mxConstants.STYLE_SPACING_RIGHT, 0));
+
+						this.textarea.style.paddingLeft = Math.round(spLeft) + 'px';
+						this.textarea.style.paddingRight = Math.round(spRight) + 'px';
+						this.textarea.style.paddingTop = Math.round(spTop) + 'px';
+						this.textarea.style.paddingBottom = Math.round(spBottom) + 'px';
+
+						// Use flex layout for vertical alignment — this replaces
+						// the padding-top computation and works even before the
+						// textarea is appended to the DOM (unlike innerText-based
+						// measurement which returns empty for detached elements)
+						this.textarea.style.display = 'flex';
+						this.textarea.style.flexDirection = 'column';
+
+						var valign = mxUtils.getValue(sty, mxConstants.STYLE_VERTICAL_ALIGN,
+							mxConstants.ALIGN_MIDDLE);
+
+						if (valign == mxConstants.ALIGN_MIDDLE)
+						{
+							this.textarea.style.justifyContent = 'center';
+						}
+						else if (valign == mxConstants.ALIGN_BOTTOM)
+						{
+							this.textarea.style.justifyContent = 'flex-end';
+						}
+						else
+						{
+							this.textarea.style.justifyContent = 'flex-start';
+						}
+
+						// Recompute font size for current text content
+						// (innerText works on subsequent resizes after DOM append;
+						// on initial resize the stored style font-size from
+						// updateTextAreaStyle is used)
+						var text = this.textarea.innerText;
+
+						if (text != null && text.length > 0)
+						{
+							var space = this.graph.getAutosizeTextAvailableSpace(
+								sty, geo.width, geo.height, state);
+
+							if (space != null)
+							{
+								var value = mxUtils.htmlEntities(text, false).replace(/\n/g, '<br>');
+								var fontFamily = sty[mxConstants.STYLE_FONTFAMILY] ||
+									mxConstants.DEFAULT_FONTFAMILY;
+								var fontStyle = sty[mxConstants.STYLE_FONTSTYLE];
+								var wrap = sty[mxConstants.STYLE_WHITE_SPACE] == 'wrap';
+
+								var fontSize = this.graph.computeAutosizeTextFontSize(value,
+									space.availW, space.availH, fontFamily, fontStyle, wrap);
+
+								this.textarea.style.fontSize = fontSize + 'px';
+
+								// Use unrounded lineHeight to match mxText rendering
+								this.textarea.style.lineHeight = (mxConstants.ABSOLUTE_LINE_HEIGHT) ?
+									(fontSize * mxConstants.LINE_HEIGHT) + 'px' :
+									mxConstants.LINE_HEIGHT;
+							}
+						}
+					}
+				}
 				else
 				{
+					this.textarea.style.width = '';
 					this.textarea.style.height = '';
 					this.textarea.style.overflow = '';
+					this.textarea.style.boxSizing = '';
+					this.textarea.style.borderWidth = '';
+					this.textarea.style.paddingTop = '';
+					this.textarea.style.paddingBottom = '';
+					this.textarea.style.paddingLeft = '';
+					this.textarea.style.paddingRight = '';
+					this.textarea.style.display = '';
+					this.textarea.style.flexDirection = '';
+					this.textarea.style.justifyContent = '';
 					mxCellEditorResize.apply(this, arguments);
 				}
 			}
 		};
-		
+
 		mxCellEditorGetInitialValue = mxCellEditor.prototype.getInitialValue;
 		mxCellEditor.prototype.getInitialValue = function(state, trigger)
 		{
@@ -16191,8 +17096,58 @@ if (typeof mxVertexHandler !== 'undefined')
 			}
 		};
 
+		// Updates font size in live preview for autosizeText cells
+		var mxVertexHandlerUpdateLivePreview = mxVertexHandler.prototype.updateLivePreview;
+
+		mxVertexHandler.prototype.updateLivePreview = function(me)
+		{
+			if (this.state != null && this.graph.isAutosizeTextState(this.state))
+			{
+				var scale = this.graph.view.scale;
+				var style = this.state.style;
+				var w = this.roundLength(this.bounds.width / scale);
+				var h = this.roundLength(this.bounds.height / scale);
+				var value = this.graph.cellRenderer.getLabelValue(this.state);
+
+				if (value != null && value.length > 0)
+				{
+					var space = this.graph.getAutosizeTextAvailableSpace(style, w, h, this.state);
+
+					if (space != null)
+					{
+						if (!this.graph.isHtmlLabel(this.state.cell))
+						{
+							value = mxUtils.htmlEntities(value, false);
+						}
+
+						value = value.replace(/\n/g, '<br>');
+
+						var fontFamily = style[mxConstants.STYLE_FONTFAMILY] ||
+							mxConstants.DEFAULT_FONTFAMILY;
+						var fontStyle = style[mxConstants.STYLE_FONTSTYLE];
+						var wrap = style[mxConstants.STYLE_WHITE_SPACE] == 'wrap';
+
+						var fontSize = this.graph.computeAutosizeTextFontSize(value,
+							space.availW, space.availH, fontFamily, fontStyle, wrap);
+
+						var origFontSize = style[mxConstants.STYLE_FONTSIZE];
+						style[mxConstants.STYLE_FONTSIZE] = fontSize;
+						mxVertexHandlerUpdateLivePreview.apply(this, arguments);
+
+						// After setState, this.state.style points to the clone's
+						// style object, so restore font size on the current reference
+						this.state.style[mxConstants.STYLE_FONTSIZE] = origFontSize;
+
+						return;
+					}
+				}
+			}
+
+			mxVertexHandlerUpdateLivePreview.apply(this, arguments);
+		};
+
 		var vertexHandlerMouseMove = mxVertexHandler.prototype.mouseMove;
-	
+
 		// Workaround for "isConsumed not defined" in MS Edge is to use arguments
 		mxVertexHandler.prototype.mouseMove = function(sender, me)
 		{

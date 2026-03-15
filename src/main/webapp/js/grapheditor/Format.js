@@ -57,8 +57,8 @@ Format.arrowImage = Graph.createSvgImage(20, 22, '<path transform="translate(4,3
 Format.simpleArrowImage = Graph.createSvgImage(20, 22, '<path transform="translate(4,3)" stroke-width="2.5" d="M 0 6 L 4 6 L 4 10 L 0 10 Z M 7 6 L 18 6 L 18 2 L 25 8 L 18 14 L 18 10 L 7 10 Z M 28 6 L 28 6 L 32 6 L 32 10 L 28 10 Z" stroke="black" fill="none"/>', 42, 20);
 Format.straightImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 4 26 L 26 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
 Format.orthogonalImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 L 2 14 L 28 14 L 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
-Format.horizontalElbowImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,3)rotate(270,0,0)scale(-1,1)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 L 2 14 L 28 14 L 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z M 14 11 L 14 5 M 14 3 L 16 5 L 12 5 Z M 14 17 L 14 23 M 14 25 L 16 23 L 12 23 Z" stroke="black" fill="none"/>', 36, 36);
-Format.verticalElbowImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 L 2 14 L 28 14 L 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z M 14 11 L 14 5 M 14 3 L 16 5 L 12 5 Z M 14 17 L 14 23 M 14 25 L 16 23 L 12 23 Z" stroke="black" fill="none"/>', 36, 36);
+Format.horizontalElbowImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 13 0 L 17 0 L 17 4 L 13 4 Z M 15 4 L 15 26 M 13 26 L 17 26 L 17 30 L 13 30 Z M 12 15 L 6 15 M 4 15 L 6 13 L 6 17 Z M 18 15 L 24 15 M 26 15 L 24 13 L 24 17 Z" stroke="black" fill="none"/>', 36, 36);
+Format.verticalElbowImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 13 L 4 13 L 4 17 L 0 17 Z M 4 15 L 26 15 M 26 13 L 30 13 L 30 17 L 26 17 Z M 15 12 L 15 6 M 15 4 L 17 6 L 13 6 Z M 15 18 L 15 24 M 15 26 L 17 24 L 13 24 Z" stroke="black" fill="none"/>', 36, 36);
 Format.horizontalIsometricImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 4 26 L 19 17 L 10 12 L 26 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
 Format.verticalIsometricImage = Graph.createSvgImage(16, 18, '<path transform="translate(32,4)scale(-1,1)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 4 26 L 19 17 L 10 12 L 26 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
 Format.curvedImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 Q 2 14 14 14 Q 28 14 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
@@ -524,8 +524,9 @@ BaseFormatPanel.prototype.createTitle = function(title)
 {
 	var div = document.createElement('div');
 	div.className = 'geFormatSectionTitle';
+	div.setAttribute('title', title);
 	mxUtils.write(div, title);
-	
+
 	return div;
 };
 
@@ -713,6 +714,7 @@ BaseFormatPanel.prototype.createOption = function(label, isCheckedFn, setChecked
 	
 	var cb = document.createElement('input');
 	cb.setAttribute('type', 'checkbox');
+	cb.setAttribute('title', label);
 	div.appendChild(cb);
 
 	var elt = document.createElement('span');
@@ -873,14 +875,16 @@ BaseFormatPanel.prototype.createColorOption = function(label, getColorFn, setCol
 	
 	var cb = document.createElement('input');
 	cb.setAttribute('type', 'checkbox');
-	
+	cb.setAttribute('title', label);
+
 	if (!hideCheckbox)
 	{
-		div.appendChild(cb);	
+		div.appendChild(cb);
 	}
 
 	var span = document.createElement('span');
 	mxUtils.write(span, label);
+	span.setAttribute('title', label);
 	div.appendChild(span);
 
 	var value = getColorFn();
@@ -1246,9 +1250,22 @@ BaseFormatPanel.prototype.createCellColorOption = function(label, colorKey, defa
 	function getValue()
 	{
 		var style = graph.getCellStyle(graph.getSelectionCell(), false);
-		
-		return (style != null) ? ((style[colorKey] != null) ?
-			style[colorKey] : undefinedValue) : null;
+		var returnValue = (style != null) ? style[colorKey] : null;
+
+		// Handles special case for inherited colors
+		if (returnValue == 'inherit')
+		{
+			var parent = graph.getModel().getParent(graph.getSelectionCell());
+			var pstyle = graph.getCellStyle(parent, false);
+
+			if (pstyle != null && pstyle[colorKey] != null)
+			{
+				returnValue = pstyle[colorKey];
+			}
+		}
+
+		return (style != null) ? ((returnValue != null) ?
+			returnValue : undefinedValue) : null;
 	};
 
 	var value = getValue();
@@ -1399,8 +1416,9 @@ BaseFormatPanel.prototype.createRelativeOption = function(label, key, width, han
 	var div = this.createPanel();
 	div.className = 'geFormatEntry';
 	mxUtils.write(div, label);
+	div.setAttribute('title', label);
 	div.style.fontWeight = 'bold';
-	
+
 	var update = mxUtils.bind(this, function(evt)
 	{
 		if (handler != null)
@@ -1435,6 +1453,7 @@ BaseFormatPanel.prototype.createRelativeOption = function(label, key, width, han
 
 	var input = this.addUnitInput(div, '%', 16,
 		width, update, 10, 0, handler != null);
+	input.setAttribute('title', label);
 
 	if (key != null)
 	{
@@ -1485,9 +1504,10 @@ BaseFormatPanel.prototype.createRelativeOption = function(label, key, width, han
 BaseFormatPanel.prototype.addLabel = function(div, title, right, width)
 {
 	width = (width != null) ? width : 61;
-	
+
 	var label = document.createElement('div');
 	mxUtils.write(label, title);
+	label.setAttribute('title', title);
 	label.style.position = 'absolute';
 	label.style.left = (226 - right - width) + 'px';
 	label.style.width = width + 'px';
@@ -1938,6 +1958,7 @@ ArrangePanel.prototype.addFlip = function(div)
 	var span = document.createElement('div');
 	span.className = 'geFormatSectionTitle';
 	mxUtils.write(span, mxResources.get('flip'));
+	span.setAttribute('title', mxResources.get('flip'));
 	div.appendChild(span);
 	
 	var btn = mxUtils.button(mxResources.get('horizontal'), function(evt)
@@ -2003,12 +2024,14 @@ ArrangePanel.prototype.addDistribute = function(div)
 	var cb = document.createElement('input');
 	cb.setAttribute('type', 'checkbox');
 	cb.setAttribute('id', 'spacingCheckbox');
+	cb.setAttribute('title', mxResources.get('spacing'));
 	cb.style.margin = '0 6px 0 0';
 	panel.appendChild(cb);
 
 	var label = document.createElement('label');
 	label.style.verticalAlign = 'top';
 	label.setAttribute('for', 'spacingCheckbox');
+	label.setAttribute('title', mxResources.get('spacing'));
 	label.style.userSelect = 'none';
 	mxUtils.write(label, mxResources.get('spacing'));
 	panel.appendChild(label);
@@ -2041,13 +2064,15 @@ ArrangePanel.prototype.addAngle = function(div)
 	if (ss.rotatable && !ss.table && !ss.row && !ss.cell)
 	{
 		mxUtils.write(span, mxResources.get('angle'));
+		span.setAttribute('title', mxResources.get('angle'));
 		div.appendChild(span);
 		
 		input = this.addUnitInput(div, '°', 16, 52, function()
 		{
 			update.apply(this, arguments);
 		});
-		
+		input.setAttribute('title', mxResources.get('angle'));
+
 		mxUtils.br(div);
 	}
 
@@ -2202,6 +2227,7 @@ ArrangePanel.prototype.addGeometry = function(container)
 	span.style.marginTop = '4px';
 	span.style.maxWidth = '50px';
 	mxUtils.write(span, mxResources.get('size'));
+	span.setAttribute('title', mxResources.get('size'));
 	div.appendChild(span);
 
 	var widthUpdate, heightUpdate, leftUpdate, topUpdate;
@@ -2209,10 +2235,12 @@ ArrangePanel.prototype.addGeometry = function(container)
 	{
 		widthUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	width.setAttribute('title', mxResources.get('width'));
 	var height = this.addUnitInput(div, this.getUnit(), 16, 52, function()
 	{
 		heightUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	height.setAttribute('title', mxResources.get('height'));
 	
 	var autosizeBtn = document.createElement('div');
 	autosizeBtn.style.backgroundImage = 'url(' + Editor.autosizeImage + ')';
@@ -2222,12 +2250,13 @@ ArrangePanel.prototype.addGeometry = function(container)
 	autosizeBtn.style.height = '21px';
 	autosizeBtn.style.left = '52px';
 	mxUtils.setOpacity(autosizeBtn, 50);
-	
+	autosizeBtn.setAttribute('title', mxResources.get('autosize'));
+
 	mxEvent.addListener(autosizeBtn, 'click', function()
 	{
 		ui.actions.get('autosize').funct();
 	});
-	
+
 	div.appendChild(autosizeBtn);
 	
 	if (rect.row)
@@ -2326,6 +2355,7 @@ ArrangePanel.prototype.addGeometry = function(container)
 	span.style.marginTop = '0px';
 	span.style.fontWeight = 'bold';
 	mxUtils.write(span, mxResources.get('position'));
+	span.setAttribute('title', mxResources.get('position'));
 	div2.appendChild(span);
 
 	var left = this.addUnitInput(div2, this.getUnit(), 87, 52, function()
@@ -2358,6 +2388,7 @@ ArrangePanel.prototype.addGeometry = function(container)
 				span.style.width = '70px';
 				span.style.marginTop = '0px';
 				mxUtils.write(span, mxResources.get('relative'));
+				span.setAttribute('title', mxResources.get('relative'));
 				div2.appendChild(span);
 
 				dx = this.addGenericInput(div2, ' %', 87, 52, function()
@@ -2382,6 +2413,7 @@ ArrangePanel.prototype.addGeometry = function(container)
 						}
 					}
 				});
+				dx.setAttribute('title', mxResources.get('relative'));
 
 				if (model.isEdge(model.getParent(rect.vertices[0])))
 				{
@@ -2392,6 +2424,7 @@ ArrangePanel.prototype.addGeometry = function(container)
 					{
 						dyUpdate.apply(this, arguments);
 					});
+					dy.setAttribute('title', mxResources.get('orthogonal'));
 
 					dyUpdate = this.addGeometryHandler(dy, function(geo, value)
 					{
@@ -2432,7 +2465,9 @@ ArrangePanel.prototype.addGeometry = function(container)
 
 	this.addLabel(div2, mxResources.get(coordinateLabels ? 'left' : 'line'), 87, 64);
 	this.addLabel(div2, mxResources.get(coordinateLabels ? 'top' : 'orthogonal'), 16, 64);
-	
+	left.setAttribute('title', mxResources.get(coordinateLabels ? 'left' : 'line'));
+	top.setAttribute('title', mxResources.get(coordinateLabels ? 'top' : 'orthogonal'));
+
 	var listener = mxUtils.bind(this, function(sender, evt, force)
 	{
 		rect = ui.getSelectionState();
@@ -2546,6 +2581,7 @@ ArrangePanel.prototype.addGeometry = function(container)
 			{
 				// Adds move drop down with center, start and end options
 				var moveSelect = document.createElement('select');
+				moveSelect.setAttribute('title', mxResources.get('move'));
 				moveSelect.style.position = 'absolute';
 				moveSelect.style.width = '134px';
 				moveSelect.style.left = '77px';
@@ -2773,6 +2809,7 @@ ArrangePanel.prototype.addEdgeGeometry = function(container)
 	span.style.marginTop = '0px';
 	span.style.fontWeight = 'bold';
 	mxUtils.write(span, mxResources.get('width'));
+	span.setAttribute('title', mxResources.get('width'));
 	div.appendChild(span);
 
 	var widthUpdate, xtUpdate, ytUpdate, xsUpdate, ysUpdate;
@@ -2780,6 +2817,7 @@ ArrangePanel.prototype.addEdgeGeometry = function(container)
 	{
 		widthUpdate.apply(this, arguments);
 	});
+	width.setAttribute('title', mxResources.get('width'));
 
 	mxUtils.br(div);
 	this.addKeyHandler(width, listener);
@@ -2815,16 +2853,19 @@ ArrangePanel.prototype.addEdgeGeometry = function(container)
 	span.style.width = '70px';
 	span.style.marginTop = '4px';
 	mxUtils.write(span, mxResources.get('linestart'));
+	span.setAttribute('title', mxResources.get('linestart'));
 	divs.appendChild(span);
 
 	var xs = this.addUnitInput(divs, this.getUnit(), 87, 52, function()
 	{
 		xsUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	xs.setAttribute('title', mxResources.get('left'));
 	var ys = this.addUnitInput(divs, this.getUnit(), 16, 52, function()
 	{
 		ysUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	ys.setAttribute('title', mxResources.get('top'));
 
 	mxUtils.br(divs);
 	this.addLabel(divs, mxResources.get('left'), 87, 64);
@@ -2841,16 +2882,19 @@ ArrangePanel.prototype.addEdgeGeometry = function(container)
 	span.style.width = '70px';
 	span.style.marginTop = '4px';
 	mxUtils.write(span, mxResources.get('lineend'));
+	span.setAttribute('title', mxResources.get('lineend'));
 	divt.appendChild(span);
 
 	var xt = this.addUnitInput(divt, this.getUnit(), 87, 52, function()
 	{
 		xtUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	xt.setAttribute('title', mxResources.get('left'));
 	var yt = this.addUnitInput(divt, this.getUnit(), 16, 52, function()
 	{
 		ytUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	yt.setAttribute('title', mxResources.get('top'));
 
 	mxUtils.br(divt);
 	this.addLabel(divt, mxResources.get('left'), 87, 64);
@@ -3025,6 +3069,7 @@ TextFormatPanel.prototype.addFont = function(container)
 		ui.menus.get('fontFamily'),
 		'Helvetica', null, fontFamilyPanel);
 	this.addArrow(fontMenu);
+	fontMenu.setAttribute('title', mxResources.get('fontFamily'));
 	fontMenu.style.margin = '0px';
 	fontMenu.style.position = 'relative';
 	fontMenu.classList.add('geFullWidthElement');
@@ -3223,9 +3268,11 @@ TextFormatPanel.prototype.addFont = function(container)
 	// Label position
 	var stylePanel4 = stylePanel.cloneNode(false);
 	mxUtils.write(stylePanel4, mxResources.get('position'));
-	
+	stylePanel4.setAttribute('title', mxResources.get('position'));
+
 	// Adds label position options
 	var positionSelect = document.createElement('select');
+	positionSelect.setAttribute('title', mxResources.get('position'));
 	positionSelect.style.left = '114px';
 	positionSelect.style.width = '98px';
 	
@@ -3253,12 +3300,14 @@ TextFormatPanel.prototype.addFont = function(container)
 	// Writing direction
 	var stylePanel5 = stylePanel4.cloneNode(false);
 	mxUtils.write(stylePanel5, mxResources.get('writingDirection'));
-	
+	stylePanel5.setAttribute('title', mxResources.get('writingDirection'));
+
 	// Adds writing direction options
 	// LATER: Handle reselect of same option in all selects (change event
 	// is not fired for same option so have opened state on click) and
 	// handle multiple different styles for current selection
 	var dirSelect = positionSelect.cloneNode(false);
+	dirSelect.setAttribute('title', mxResources.get('writingDirection'));
 
 	// NOTE: For automatic we use the value null since automatic
 	// requires the text to be non formatted and non-wrapped
@@ -3339,6 +3388,7 @@ TextFormatPanel.prototype.addFont = function(container)
 	input.style.position = 'absolute';
 	input.style.left = '146px';
 	input.style.width = '52px';
+	input.setAttribute('title', mxResources.get('fontSize'));
 	stylePanel2.appendChild(input);
 	
 	var inputUpdate = this.installInputHandler(input, mxConstants.STYLE_FONTSIZE,
@@ -3583,6 +3633,28 @@ TextFormatPanel.prototype.addFont = function(container)
 		convertToSvg.getElementsByTagName('input')[0].setAttribute('disabled', 'disabled');
 	}
 
+	var autosizeOpt = this.createCellOption(mxResources.get('autosizeText'),
+		'autosizeText', '0', null, null, mxUtils.bind(this, function(cells, value)
+	{
+		if (value)
+		{
+			for (var i = 0; i < cells.length; i++)
+			{
+				if (graph.model.isVertex(cells[i]))
+				{
+					graph.updateAutosizeTextFontSize(cells[i]);
+				}
+			}
+		}
+	}));
+	autosizeOpt.style.fontWeight = 'bold';
+	
+	// Word wrap in edge labels only supported via labelWidth style
+	if (ss.vertices.length > 0)
+	{
+		extraPanel.appendChild(autosizeOpt);
+	}
+
 	if (!ui.isOffline() || mxClient.IS_CHROMEAPP || EditorUi.isElectronApp)
 	{
 		convertToSvg.getElementsByTagName('span')[0].style.maxWidth = '172px';
@@ -3599,6 +3671,7 @@ TextFormatPanel.prototype.addFont = function(container)
 	span.style.marginTop = '0px';
 	span.style.fontWeight = 'bold';
 	mxUtils.write(span, mxResources.get('spacing'));
+	span.setAttribute('title', mxResources.get('spacing'));
 	spacingPanel.appendChild(span);
 
 	var topUpdate, globalUpdate, leftUpdate, bottomUpdate, rightUpdate;
@@ -3606,10 +3679,12 @@ TextFormatPanel.prototype.addFont = function(container)
 	{
 		topUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	topSpacing.setAttribute('title', mxResources.get('top'));
 	var globalSpacing = this.addUnitInput(spacingPanel, this.getUnit(), 16, 52, function()
 	{
 		globalUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	globalSpacing.setAttribute('title', mxResources.get('global'));
 
 	mxUtils.br(spacingPanel);
 	this.addLabel(spacingPanel, mxResources.get('top'), 87, 64);
@@ -3621,14 +3696,17 @@ TextFormatPanel.prototype.addFont = function(container)
 	{
 		leftUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	leftSpacing.setAttribute('title', mxResources.get('left'));
 	var bottomSpacing = this.addUnitInput(spacingPanel, this.getUnit(), 87, 52, function()
 	{
 		bottomUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	bottomSpacing.setAttribute('title', mxResources.get('bottom'));
 	var rightSpacing = this.addUnitInput(spacingPanel, this.getUnit(), 16, 52, function()
 	{
 		rightUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	rightSpacing.setAttribute('title', mxResources.get('right'));
 
 	mxUtils.br(spacingPanel);
 	this.addLabel(spacingPanel, mxResources.get('left'), 158, 64);
@@ -4688,7 +4766,7 @@ StyleFormatPanel.prototype.addEditOps = function(div)
 		
 		var ops = ['edit', 'copyAsText', 'editLink', 'editShape', 'editImage',
 			'editData', 'copyData', 'pasteData', 'editConnectionPoints',
-			'editGeometry', 'editTooltip', 'editStyle'];
+			'editGeometry', 'editPolygon', 'editTooltip', 'editStyle'];
 		var libs = null;
 
 		if (this.editorUi.sidebar != null)
@@ -4812,11 +4890,13 @@ StyleFormatPanel.prototype.addFill = function(container)
 
 	// Adds gradient direction option
 	var gradientSelect = document.createElement('select');
+	gradientSelect.setAttribute('title', mxResources.get('gradient'));
 	gradientSelect.style.position = 'absolute';
 	gradientSelect.style.left = '76px';
 	gradientSelect.style.width = '86px';
-	
+
 	var fillStyleSelect = gradientSelect.cloneNode(false);
+	fillStyleSelect.setAttribute('title', mxResources.get('fill'));
 	
 	// Stops events from bubbling to color option event handler
 	mxEvent.addListener(gradientSelect, 'click', function(evt)
@@ -5141,6 +5221,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	
 	// Adds path style option
 	var styleSelect = document.createElement('select');
+	styleSelect.setAttribute('title', mxResources.get('style'));
 	styleSelect.style.position = 'absolute';
 	styleSelect.style.left = '72px';
 	styleSelect.style.width = '90px';
@@ -5398,9 +5479,9 @@ StyleFormatPanel.prototype.addStroke = function(container)
 			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
 				['orthogonalEdgeStyle', null, null], null, null, true, Format.orthogonalImage.src)).setAttribute('title', mxResources.get('orthogonal'));
 			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-				['elbowEdgeStyle', null, null, null], null, null, true, Format.horizontalElbowImage.src)).setAttribute('title', mxResources.get('vertical'));
-			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
 				['elbowEdgeStyle', 'vertical', null, null], null, null, true, Format.verticalElbowImage.src)).setAttribute('title', mxResources.get('horizontal'));
+			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				['elbowEdgeStyle', null, null, null], null, null, true, Format.horizontalElbowImage.src)).setAttribute('title', mxResources.get('vertical'));
 			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
 				['isometricEdgeStyle', null, null, null], null, null, true, Format.horizontalIsometricImage.src)).setAttribute('title', mxResources.get('isometric'));
 			Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
@@ -5422,7 +5503,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	var lineStart = ui.toolbar.addMenu(new Menu(mxUtils.bind(this, function(menu)
 	{
 		if (ss.style.shape == 'connector' || ss.style.shape == 'flexArrow' || ss.style.shape == 'filledEdge' ||
-			ss.style.shape == 'wire' || ss.style.shape == 'pipe')
+			ss.style.shape == 'wire' || ss.style.shape == 'pipe' || ss.style.shape == 'mxgraph.basic.arc')
 		{
 			// Copies other marker
 			var otherMarker = mxUtils.getValue(ss.style, mxConstants.STYLE_ENDARROW, mxConstants.NONE);
@@ -5444,7 +5525,8 @@ StyleFormatPanel.prototype.addStroke = function(container)
 				[mxConstants.NONE, 0], null, null, false, Format.noMarkerImage.src)).setAttribute('title', mxResources.get('none'));
 			
 			if (ss.style.shape == 'connector' || ss.style.shape == 'filledEdge' ||
-				ss.style.shape == 'wire' || ss.style.shape == 'pipe')
+				ss.style.shape == 'wire' || ss.style.shape == 'pipe' ||
+				ss.style.shape == 'mxgraph.basic.arc')
 			{
 				Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_STARTARROW, 'startFill'],
 					[mxConstants.ARROW_CLASSIC, 1], null, null, false, Format.classicFilledMarkerImage.src));
@@ -5537,7 +5619,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	var lineEnd = ui.toolbar.addMenu(new Menu(mxUtils.bind(this, function(menu)
 	{
 		if (ss.style.shape == 'connector' || ss.style.shape == 'flexArrow' || ss.style.shape == 'filledEdge' ||
-			ss.style.shape == 'wire' || ss.style.shape == 'pipe')
+			ss.style.shape == 'wire' || ss.style.shape == 'pipe' || ss.style.shape == 'mxgraph.basic.arc')
 		{
 			// Copies other marker
 			var otherMarker = mxUtils.getValue(ss.style, mxConstants.STYLE_STARTARROW, mxConstants.NONE);
@@ -5559,7 +5641,8 @@ StyleFormatPanel.prototype.addStroke = function(container)
 				[mxConstants.NONE, 0], null, null, false, Format.noMarkerImage.src)).setAttribute('title', mxResources.get('none'));
 			
 			if (ss.style.shape == 'connector' || ss.style.shape == 'filledEdge' ||
-				ss.style.shape == 'wire' || ss.style.shape == 'pipe')
+				ss.style.shape == 'wire' || ss.style.shape == 'pipe' ||
+				ss.style.shape == 'mxgraph.basic.arc')
 			{
 				Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_ENDARROW, 'endFill'],
 					[mxConstants.ARROW_CLASSIC, 1], null, null, false, Format.classicFilledMarkerImage.src), 'scaleX(-1)');
@@ -5689,6 +5772,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	arrowPanel.style.display = 'block';
 	arrowPanel.style.height = '60px';
 	arrowPanel.style.paddingTop = '2px';
+	arrowPanel.style.overflow = 'visible';
 	
 	var span = document.createElement('div');
 	span.style.position = 'absolute';
@@ -5699,6 +5783,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	span.style.fontWeight = 'normal';
 	
 	mxUtils.write(span, mxResources.get('size'));
+	span.setAttribute('title', mxResources.get('size'));
 	arrowPanel.appendChild(span);
 
 	var startSpacingUpdate, startSizeUpdate, endSpacingUpdate, endSizeUpdate;
@@ -5707,11 +5792,13 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	{
 		startSizeUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	startSize.setAttribute('title', mxResources.get('linestart'));
 
 	var endSize = this.addUnitInput(arrowPanel, this.getUnit(), 16, 52, function()
 	{
 		endSizeUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	endSize.setAttribute('title', mxResources.get('lineend'));
 
 	mxUtils.br(arrowPanel);
 	
@@ -5719,19 +5806,23 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	spacer.style.height = '8px';
 	arrowPanel.appendChild(spacer);
 	
-	span = span.cloneNode(false);
+	var spacingLabel = span.cloneNode(false);
+	span = spacingLabel;
 	mxUtils.write(span, mxResources.get('spacing'));
+	span.setAttribute('title', mxResources.get('spacing'));
 	arrowPanel.appendChild(span);
 
 	var startSpacing = this.addUnitInput(arrowPanel, this.getUnit(), 82, 52, function()
 	{
 		startSpacingUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	startSpacing.setAttribute('title', mxResources.get('linestart'));
 
 	var endSpacing = this.addUnitInput(arrowPanel, this.getUnit(), 16, 52, function()
 	{
 		endSpacingUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	endSpacing.setAttribute('title', mxResources.get('lineend'));
 
 	mxUtils.br(arrowPanel);
 	this.addLabel(arrowPanel, mxResources.get('linestart'), 82, 62).style.fontSize = '10px';
@@ -5743,13 +5834,15 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	
 	var span = document.createElement('div');
 	mxUtils.write(span, mxResources.get('perimeter'));
+	span.setAttribute('title', mxResources.get('perimeter'));
 	perimeterPanel.appendChild(span);
-	
+
 	var perimeterUpdate;
 	var perimeterSpacing = this.addUnitInput(perimeterPanel, this.getUnit(), 16, 52, function()
 	{
 		perimeterUpdate.apply(this, arguments);
 	}, this.getUnitStep(), null, null, this.isFloatUnit());
+	perimeterSpacing.setAttribute('title', mxResources.get('perimeter'));
 
 	if (ss.edges.length == ss.cells.length)
 	{
@@ -5758,6 +5851,19 @@ StyleFormatPanel.prototype.addStroke = function(container)
 	}
 	else if (ss.vertices.length == ss.cells.length)
 	{
+		if (ss.style.shape == 'mxgraph.basic.arc')
+		{
+			edgeStyle.style.visibility = 'hidden';
+			container.appendChild(stylePanel2);
+			spacer.style.display = 'none';
+			spacingLabel.style.display = 'none';
+			startSpacing.style.display = 'none';
+			startSpacing.nextSibling.style.display = 'none';
+			endSpacing.style.display = 'none';
+			endSpacing.nextSibling.style.display = 'none';
+			container.appendChild(arrowPanel);
+		}
+
 		container.appendChild(perimeterPanel);
 	}
 	
@@ -5868,7 +5974,7 @@ StyleFormatPanel.prototype.addStroke = function(container)
 		
 		if (ss.style.shape != 'connector' && ss.style.shape != 'flexArrow' &&
 			ss.style.shape != 'filledEdge' && ss.style.shape != 'wire' &&
-			ss.style.shape != 'pipe')
+			ss.style.shape != 'pipe' && ss.style.shape != 'mxgraph.basic.arc')
 		{
 			mxUtils.setOpacity(lineStart, 30);
 			mxUtils.setOpacity(lineEnd, 30);
@@ -5954,9 +6060,11 @@ StyleFormatPanel.prototype.addLineJumps = function(container)
 		span.style.textOverflow = 'ellipsis';
 		
 		mxUtils.write(span, mxResources.get('lineJumps'));
+		span.setAttribute('title', mxResources.get('lineJumps'));
 		container.appendChild(span);
-		
+
 		var styleSelect = document.createElement('select');
+		styleSelect.setAttribute('title', mxResources.get('lineJumps'));
 		styleSelect.style.left = '72px';
 		styleSelect.style.width = '72px';
 
@@ -6001,8 +6109,9 @@ StyleFormatPanel.prototype.addLineJumps = function(container)
 		{
 			jumpSizeUpdate.apply(this, arguments);
 		}, this.getUnitStep(), null, null, this.isFloatUnit());
-		
-		jumpSizeUpdate = this.installInputHandler(jumpSize, 'jumpSize', Graph.defaultJumpSize, 
+		jumpSize.setAttribute('title', mxResources.get('size'));
+
+		jumpSizeUpdate = this.installInputHandler(jumpSize, 'jumpSize', Graph.defaultJumpSize,
 				0, 999, this.getUnit(' '), null, this.isFloatUnit(), true);
 		
 		var listener = mxUtils.bind(this, function(sender, evt, force)
@@ -6188,9 +6297,11 @@ DiagramStylePanel.prototype.getGlobalStyleButtons = function()
 
 	var sketchInput = document.createElement('input');
 	sketchInput.setAttribute('type', 'checkbox');
+	sketchInput.setAttribute('title', mxResources.get('sketch'));
 	sketchInput.checked = Editor.sketchMode;
 	sketchDiv.appendChild(sketchInput);
 	mxUtils.write(sketchDiv, mxResources.get('sketch'));
+	sketchDiv.setAttribute('title', mxResources.get('sketch'));
 
 	mxEvent.addListener(sketchDiv, 'click', function(evt)
 	{
@@ -7158,8 +7269,9 @@ DiagramFormatPanel.prototype.addGridOption = function(container)
 	var input = document.createElement('input');
 	input.style.position = 'absolute';
 	input.style.width = '50px';
-	input.value = this.inUnit(graph.getGridSize()) + ' ' + this.getUnit(); 
-	
+	input.setAttribute('title', mxResources.get('gridSize'));
+	input.value = this.inUnit(graph.getGridSize()) + ' ' + this.getUnit();
+
 	var stepper = this.createStepper(input, update, this.getUnitStep(), null, null, this.isFloatUnit());
 	input.style.display = (graph.isGridEnabled()) ? '' : 'none';
 	stepper.style.display = input.style.display;

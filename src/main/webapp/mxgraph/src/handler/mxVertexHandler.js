@@ -592,7 +592,9 @@ mxVertexHandler.prototype.mouseDown = function(sender, me)
 {
 	if (!me.isConsumed() && this.graph.isEnabled() &&
 		(!mxEvent.isAltDown(me.getEvent()) ||
-		!mxEvent.isShiftDown(me.getEvent())))
+		!mxEvent.isShiftDown(me.getEvent())) &&
+		(!mxEvent.isMouseEvent(me.getEvent()) ||
+		mxEvent.isLeftMouseButton(me.getEvent())))
 	{
 		var handle = this.getHandleForEvent(me);
 

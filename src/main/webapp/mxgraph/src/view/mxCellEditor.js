@@ -410,6 +410,19 @@ mxCellEditor.prototype.installListeners = function(elt)
 
 	mxEvent.addListener(elt, 'keypress', keypressHandler);
 	mxEvent.addListener(elt, 'paste', keypressHandler);
+
+	// Clears the empty label placeholder when IME composition starts.
+	// keypress does not fire during IME composition so the placeholder
+	// must be cleared here to avoid composing into the placeholder text.
+	mxEvent.addListener(elt, 'compositionstart', mxUtils.bind(this, function(evt)
+	{
+		if (this.editingCell != null && this.clearOnChange &&
+			elt.innerHTML == this.getEmptyLabelText())
+		{
+			this.clearOnChange = false;
+			elt.innerText = '';
+		}
+	}));
 	
 	// Handler for updating the empty label text value after a change
 	// Keyup event is delayed and input doesn't fire for cursor up so
@@ -887,9 +900,14 @@ mxCellEditor.prototype.startEditing = function(cell, trigger, initialText)
 			}
 		});
 		
-		// Asynchronous does not show on-screen keyboard on iOS
-		if (mxClient.IS_IOS)
+		// Synchronous when editing was initiated by typing on a selected
+		// cell so that the textarea has focus before the browser delivers
+		// keypress, input and IME composition events for the triggering
+		// keystroke. Also synchronous on iOS where async prevents the
+		// on-screen keyboard from showing.
+		if (mxClient.IS_IOS || this.editByTyping)
 		{
+			this.editByTyping = false;
 			fn();
 		}
 		else

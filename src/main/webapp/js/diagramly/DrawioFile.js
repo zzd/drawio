@@ -182,6 +182,23 @@ DrawioFile.prototype.getShadowPages = function()
 	if (this.shadowPages == null)
 	{
 		this.shadowPages = this.ui.getPagesForXml(this.initialData);
+
+		if (this.shadowVars === undefined)
+		{
+			this.shadowVars = null;
+
+			try
+			{
+				var doc = mxUtils.parseXml(this.initialData);
+				var root = doc.documentElement;
+
+				if (root != null && root.nodeName == 'mxfile')
+				{
+					this.shadowVars = root.getAttribute('vars');
+				}
+			}
+			catch (e) {}
+		}
 	}
 
 	return this.shadowPages;
@@ -190,9 +207,21 @@ DrawioFile.prototype.getShadowPages = function()
 /**
  * Sets the shadow pages.
  */
-DrawioFile.prototype.setShadowPages = function(pages)
+DrawioFile.prototype.setShadowPages = function(pages, optVars)
 {
 	this.shadowPages = pages;
+	this.shadowVars = (optVars !== undefined) ? optVars :
+		((this.ui.fileNode != null) ?
+			this.ui.fileNode.getAttribute('vars') : null);
+};
+
+/**
+ * Returns the shadow vars value.
+ */
+DrawioFile.prototype.getShadowVars = function()
+{
+	this.getShadowPages(); // ensure lazy init
+	return (this.shadowVars !== undefined) ? this.shadowVars : null;
 };
 
 /**
@@ -367,6 +396,26 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 			var shadow = this.getShadowPages();
 			var patches = [this.ui.diffPages((diffShadow != null) ?
 				diffShadow : shadow, pages)];
+
+			var incomingVars = null;
+
+			try
+			{
+				var doc = mxUtils.parseXml(file.initialData);
+				var root = doc.documentElement;
+
+				if (root != null && root.nodeName == 'mxfile')
+				{
+					incomingVars = root.getAttribute('vars');
+				}
+			}
+			catch (e) {}
+
+			if (incomingVars != this.getShadowVars())
+			{
+				patches[0][EditorUi.DIFF_FILE] = {vars: incomingVars};
+			}
+
 			var ignored = this.ignorePatches(patches);
 			
 			if (!ignored)
@@ -409,7 +458,7 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 					}
 					else
 					{
-						this.setShadowPages(pages);
+						this.setShadowPages(pages, incomingVars);
 
 						// Patches the realtime document
 						if (this.sync != null)
@@ -858,7 +907,13 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges)
 		// Folding and math change require special handling
 		var fold = graph.foldingEnabled;
 		var math = graph.mathEnabled;
-		
+
+		// Applies file-level changes before model update so that
+		// labels using file variables are resolved correctly
+		var oldVars = (this.ui.fileNode != null) ?
+			this.ui.fileNode.getAttribute('vars') : null;
+		this.ui.patchFileNode(patches);
+
 		// Updates text editor if cell changes during validation
 		var redraw = graph.cellRenderer.redraw;
 
@@ -951,33 +1006,40 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges)
 				undoMgr.fireEvent(new mxEventObject(mxEvent.CLEAR));
 			}
 			
-			if (this.ui.currentPage == null || this.ui.currentPage.needsUpdate)
+			var varsChanged = oldVars != ((this.ui.fileNode != null) ?
+				this.ui.fileNode.getAttribute('vars') : null);
+			var needsUpdate = this.ui.currentPage == null ||
+				this.ui.currentPage.needsUpdate;
+
+			if (needsUpdate && math != graph.mathEnabled)
 			{
-				// Updates the graph and background
-				if (math != graph.mathEnabled)
+				this.ui.editor.updateGraphComponents();
+				graph.refresh();
+			}
+			else if (varsChanged)
+			{
+				graph.refresh();
+			}
+			else if (needsUpdate)
+			{
+				if (fold != graph.foldingEnabled)
 				{
-					this.ui.editor.updateGraphComponents();
-					graph.refresh();
+					graph.view.revalidate();
 				}
 				else
 				{
-					if (fold != graph.foldingEnabled)
-					{
-						graph.view.revalidate();
-					}
-					else
-					{
-						graph.view.validate();
-					}
-					
-					graph.sizeDidChange();
+					graph.view.validate();
 				}
+
+				graph.sizeDidChange();
 			}
 
 			// Updates snapshot for finding local changes in sync
 			if (this.sync != null && this.isRealtime() && !sendChanges)
 			{
 				this.sync.snapshot = this.ui.clonePages(this.ui.pages);
+				this.sync.snapshotVars = (this.ui.fileNode != null) ?
+					this.ui.fileNode.getAttribute('vars') : null;
 			}
 			
 			this.ui.editor.fireEvent(new mxEventObject('pagesPatched', 'patches', patches));

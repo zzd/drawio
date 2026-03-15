@@ -257,8 +257,17 @@ mxWindow.prototype.maximizeImage = mxClient.imageBasePath + '/maximize.gif';
 mxWindow.prototype.resizeImage = mxClient.imageBasePath + '/resize.gif';
 
 /**
+ * Variable: dockState
+ *
+ * Stores the current dock state. Null means floating (undocked).
+ * Values: null, 'left', 'right', 'top', 'bottom',
+ * 'top-left', 'top-right', 'bottom-left', 'bottom-right'.
+ */
+mxWindow.prototype.dockState = null;
+
+/**
  * Variable: visible
- * 
+ *
  * Boolean flag that represents the visible state of the window.
  */
 mxWindow.prototype.visible = false;

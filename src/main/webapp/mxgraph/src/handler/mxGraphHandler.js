@@ -597,6 +597,11 @@ mxGraphHandler.prototype.mouseDown = function(sender, me)
 	this.mouseDownY = me.getY();
 	var evt = me.getEvent();
 
+	if (mxEvent.isMouseEvent(evt) && !mxEvent.isLeftMouseButton(evt))
+	{
+		return;
+	}
+
 	var forceMove = mxEvent.isAltDown(evt) && mxEvent.isShiftDown(evt) &&
 		!this.graph.isSelectionEmpty();
 

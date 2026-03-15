@@ -316,19 +316,51 @@ EditorUi = function(editor, container, lightbox)
 	    
 		// Creates hover icons
 		this.hoverIcons = this.createHoverIcons();
-		
+
+		// Creates inline toolbar
+		this.inlineToolbar = (Editor.enableInlineToolbar) ?
+			this.createInlineToolbar() : null;
+
+		// Zoom Preview
+		this.editor.graph.addListener('zoomPreview', mxUtils.bind(this, function(sender, evt)
+		{
+			if (this.hoverIcons != null)
+			{
+				this.hoverIcons.reset();
+			}
+
+			if (this.inlineToolbar != null)
+			{
+				this.inlineToolbar.hide();
+			}
+		}));
+
+		// Zoom Preview Complete
+		this.editor.graph.addListener('zoomPreviewComplete', mxUtils.bind(this, function(sender, evt)
+		{
+			if (this.inlineToolbar != null)
+			{
+				this.inlineToolbar.updateSelection();
+			}
+		}));
+
 		// Hides hover icons when cells are moved
 		if (graph.graphHandler != null)
 		{
 			var graphHandlerStart = graph.graphHandler.start;
-			
+
 			graph.graphHandler.start = function()
 			{
 				if (ui.hoverIcons != null)
 				{
 					ui.hoverIcons.reset();
 				}
-				
+
+				if (ui.inlineToolbar != null && this.cell != null)
+				{
+					ui.inlineToolbar.hide();
+				}
+
 				graphHandlerStart.apply(this, arguments);
 			};
 		}
@@ -396,6 +428,11 @@ EditorUi = function(editor, container, lightbox)
 		var panningHandlerIsForcePanningEvent = graph.panningHandler.isForcePanningEvent;
 		graph.panningHandler.isForcePanningEvent = function(me)
 		{
+			if (graph.freehand != null && graph.freehand.isActive())
+			{
+				return false;
+			}
+
 			// Ctrl+left button is reported as right button in FF on Mac
 			return panningHandlerIsForcePanningEvent.apply(this, arguments) ||
 				ui.isSpaceDown() || (mxEvent.isMouseEvent(me.getEvent()) &&
@@ -691,8 +728,14 @@ EditorUi = function(editor, container, lightbox)
 				{
 					if (this.toolbar.edgeStyleMenu != null)
 					{
-						this.toolbar.edgeStyleMenu.style.backgroundImage = 'url(' +
-							this.getImageForEdgeStyle(ss.style) + ')';
+						var src = this.getImageForEdgeStyle(ss.style);
+
+						if (ss.edges.length == 1 && ss.style[mxConstants.STYLE_SHAPE] == 'arrow')
+						{
+							src = Format.straightImage.src;
+						}
+
+						this.toolbar.edgeStyleMenu.style.backgroundImage = 'url(' + src + ')';
 					}
 
 					if (this.toolbar.edgeShapeMenu != null)
@@ -1100,13 +1143,14 @@ EditorUi.prototype.init = function()
 		mxEvent.addListener(graph.container, 'keydown', mxUtils.bind(this, function(evt)
 		{
 			this.onKeyDown(evt);
-		}));
-		
-		mxEvent.addListener(graph.container, 'keypress', mxUtils.bind(this, function(evt)
-		{
 			this.onKeyPress(evt);
 		}));
-	
+
+		// Hidden textarea that captures keyboard input (including IME) when a
+		// cell is selected but not being edited. This ensures the OS engages
+		// IME from the very first keystroke on CJK and other input methods.
+		this.installTypingShim();
+
 		// Updates action states
 		this.addUndoListener();
 		this.addBeforeUnloadListener();
@@ -2389,18 +2433,270 @@ EditorUi.prototype.onKeyDown = function(evt)
 };
 
 /**
- * Returns true if the given event should start editing. This implementation returns true.
+ * Starts editing on keydown for the selected cell. This is a fallback for
+ * when the typing shim is not active. The shim handles IME correctly by
+ * keeping an invisible textarea focused so the OS engages IME from the
+ * first keystroke.
  */
 EditorUi.prototype.onKeyPress = function(evt)
 {
 	var graph = this.editor.graph;
-	
-	// KNOWN: Focus does not work if label is empty in quirks mode
-	if (this.isImmediateEditingEvent(evt) && !graph.isEditing() && !graph.isSelectionEmpty() && evt.which !== 0 &&
-		evt.which !== 27 && !mxEvent.isAltDown(evt) && !mxEvent.isControlDown(evt) && !mxEvent.isMetaDown(evt))
+
+	// Skip if the event came from the typing shim (the shim handles editing start)
+	if (this.typingShim != null && mxEvent.getSource(evt) === this.typingShim)
 	{
-		graph.escape();
-		graph.startEditing(null, String.fromCharCode(evt.which));
+		return;
+	}
+
+	// KNOWN: Focus does not work if label is empty in quirks mode
+	if (this.isImmediateEditingEvent(evt) && !graph.isEditing() && !graph.isSelectionEmpty() &&
+		!mxEvent.isAltDown(evt) && !mxEvent.isControlDown(evt) && !mxEvent.isMetaDown(evt))
+	{
+		// evt.key.length === 1 identifies printable characters (excludes "Shift", "Enter", etc.)
+		// keyCode 229 indicates IME is processing the input
+		if ((evt.key != null && evt.key.length === 1) || evt.keyCode === 229)
+		{
+			// Defers to mxKeyHandler if it has a binding for this key
+			// (e.g. "/" for omni search) to avoid intercepting shortcuts
+			if (this.keyHandler != null && this.keyHandler.getFunction(evt) != null)
+			{
+				return;
+			}
+
+			graph.escape();
+			graph.cellEditor.editByTyping = true;
+			graph.startEditing();
+		}
+	}
+};
+
+/**
+ * Creates and installs a hidden textarea ("typing shim") that stays focused
+ * when a cell is selected but not being edited. Because the OS sees an editable
+ * element with focus, it properly engages IME from the very first keystroke.
+ * When input is detected (regular text or composed IME text), the shim starts
+ * the real cell editing and injects the captured text.
+ */
+EditorUi.prototype.installTypingShim = function()
+{
+	var ui = this;
+	var graph = this.editor.graph;
+
+	var shim = document.createElement('textarea');
+	shim.setAttribute('autocomplete', 'off');
+	shim.setAttribute('autocorrect', 'off');
+	shim.setAttribute('autocapitalize', 'off');
+	shim.setAttribute('spellcheck', 'false');
+	shim.tabIndex = -1;
+	shim.className = 'mxTypingShim';
+	shim.style.cssText = 'position:absolute;overflow:hidden;resize:none;' +
+		'outline:none;border:none;padding:0;margin:0;z-index:1;' +
+		'width:4px;height:1em;opacity:0;pointer-events:none;';
+
+	this.typingShim = shim;
+	var composing = false;
+
+	// Captures text from the shim and starts editing
+	var startEditingFromShim = mxUtils.bind(this, function()
+	{
+		if (!composing && shim.value.length > 0)
+		{
+			var text = shim.value;
+			shim.value = '';
+			this.hideTypingShim();
+
+			graph.escape();
+			graph.cellEditor.editByTyping = true;
+			graph.startEditing(null, text);
+		}
+	});
+
+	// Track IME composition state
+	mxEvent.addListener(shim, 'compositionstart', function()
+	{
+		composing = true;
+	});
+
+	// Some browsers fire input before compositionend, so also
+	// check for text to capture when composition finishes
+	mxEvent.addListener(shim, 'compositionend', function()
+	{
+		composing = false;
+		startEditingFromShim();
+	});
+
+	// Detect input and start editing with the captured text.
+	// During composition, waits for compositionend first.
+	mxEvent.addListener(shim, 'input', function()
+	{
+		startEditingFromShim();
+	});
+
+	// Handle keydown: let printable characters through to the shim,
+	// but prevent non-printable keys from affecting the textarea
+	// content while still allowing them to bubble for graph handling
+	mxEvent.addListener(shim, 'keydown', mxUtils.bind(this, function(evt)
+	{
+		// IME processing: let through
+		if (evt.keyCode === 229)
+		{
+			return;
+		}
+
+		// Ctrl/Meta modifier: let through for clipboard shortcuts (Ctrl+C/V/X)
+		// and other modifier-based shortcuts. The clipboard textInput mechanism
+		// in diagramly/EditorUi.js handles Ctrl/Meta by focusing a separate
+		// contentEditable element, so these events must not be prevented.
+		if (mxEvent.isControlDown(evt) || mxEvent.isMetaDown(evt))
+		{
+			return;
+		}
+
+		// Printable character without modifier: let it type into the shim
+		if (evt.key != null && evt.key.length === 1 && !mxEvent.isAltDown(evt))
+		{
+			// But check for keyboard shortcuts bound to this key
+			if (this.keyHandler != null && this.keyHandler.getFunction(evt) != null)
+			{
+				evt.preventDefault();
+			}
+
+			return;
+		}
+
+		// Non-printable key (arrows, delete, escape, tab, etc.):
+		// prevent textarea behavior but let event bubble for graph handling
+		evt.preventDefault();
+	}));
+
+	// Show/hide shim based on selection changes.
+	// Also defer in case cell states are not yet available
+	// (e.g., after programmatic cell insertion before view validation).
+	graph.getSelectionModel().addListener(mxEvent.CHANGE, mxUtils.bind(this, function()
+	{
+		this.updateTypingShim();
+
+		window.setTimeout(mxUtils.bind(this, function()
+		{
+			this.updateTypingShim();
+		}), 0);
+	}));
+
+	// Hide shim when editing starts
+	graph.addListener(mxEvent.EDITING_STARTED, mxUtils.bind(this, function()
+	{
+		this.hideTypingShim();
+	}));
+
+	// Re-show shim when editing ends if a cell is still selected
+	graph.addListener(mxEvent.EDITING_STOPPED, mxUtils.bind(this, function()
+	{
+		// Defer to let focus settle after editing stops
+		window.setTimeout(mxUtils.bind(this, function()
+		{
+			this.updateTypingShim();
+		}), 0);
+	}));
+
+	// Redirect container focus to the shim. Many code paths call
+	// graph.container.focus() after inserting cells or stopping
+	// editing (Sidebar.itemClicked, mxDragSource.drop, etc.).
+	// Make the container focusable so we can intercept this.
+	if (graph.container.tabIndex == null || graph.container.tabIndex < 0)
+	{
+		graph.container.tabIndex = -1;
+	}
+
+	mxEvent.addListener(graph.container, 'focus', mxUtils.bind(this, function()
+	{
+		this.updateTypingShim();
+	}));
+
+	// Override focusContainer to redirect to shim after editing stops
+	var cellEditorFocusContainer = graph.cellEditor.focusContainer;
+
+	graph.cellEditor.focusContainer = mxUtils.bind(this, function()
+	{
+		if (!graph.isSelectionEmpty() && !graph.isEditing())
+		{
+			this.updateTypingShim();
+		}
+		else
+		{
+			cellEditorFocusContainer.apply(graph.cellEditor);
+		}
+	});
+};
+
+/**
+ * Shows or hides the typing shim based on the current state.
+ */
+EditorUi.prototype.updateTypingShim = function()
+{
+	var graph = this.editor.graph;
+
+	if (!graph.isEditing() && !graph.isSelectionEmpty() &&
+		graph.isEnabled() && !graph.isCellLocked(graph.getSelectionCell()))
+	{
+		this.showTypingShim();
+	}
+	else
+	{
+		this.hideTypingShim();
+	}
+};
+
+/**
+ * Shows the typing shim, positions it near the selected cell, and focuses it.
+ */
+EditorUi.prototype.showTypingShim = function()
+{
+	var graph = this.editor.graph;
+	var shim = this.typingShim;
+
+	if (shim == null || graph.isEditing())
+	{
+		return;
+	}
+
+	var cell = graph.getSelectionCell();
+	var state = graph.getView().getState(cell);
+
+	if (state != null)
+	{
+		// Position near the cell so IME candidate window appears at the right location
+		shim.style.left = Math.round(state.x) + 'px';
+		shim.style.top = Math.round(state.y) + 'px';
+
+		if (shim.parentNode !== graph.container)
+		{
+			graph.container.appendChild(shim);
+		}
+
+		shim.value = '';
+
+		// Do not steal focus from input/textarea elements outside the graph
+		// container (e.g., Find/Replace dialog, Edit Data dialog)
+		var ae = document.activeElement;
+
+		if (ae == null || ae === document.body || ae === graph.container ||
+			graph.container.contains(ae))
+		{
+			shim.focus({preventScroll: true});
+		}
+	}
+};
+
+/**
+ * Hides and removes the typing shim from the DOM.
+ */
+EditorUi.prototype.hideTypingShim = function()
+{
+	var shim = this.typingShim;
+
+	if (shim != null && shim.parentNode != null)
+	{
+		shim.parentNode.removeChild(shim);
 	}
 };
 
@@ -3679,6 +3975,13 @@ EditorUi.prototype.initCanvas = function()
 							// Shows interactive elements
 							graph.view.getDecoratorPane().style.opacity = '';
 							graph.view.getOverlayPane().style.opacity = '';
+
+							var hints = graph.container.querySelectorAll('.geHint');
+
+							for (var i = 0; i < hints.length; i++)
+							{
+								hints[i].style.opacity = '';
+							}
 						}
 						
 						var sp = new mxPoint(graph.container.scrollLeft, graph.container.scrollTop);
@@ -3723,6 +4026,7 @@ EditorUi.prototype.initCanvas = function()
 							mainGroup.setAttribute('filter', filter);
 						}
 						
+						graph.fireEvent(new mxEventObject('zoomPreviewComplete'));
 						graph.cumulativeZoomFactor = 1;
 						updateZoomTimeout = null;
 						scrollPosition = null;
@@ -3824,10 +4128,12 @@ EditorUi.prototype.initCanvas = function()
 
 			graph.view.getDecoratorPane().style.opacity = '0';
 			graph.view.getOverlayPane().style.opacity = '0';
-			
-			if (ui.hoverIcons != null)
+
+			var hints = graph.container.querySelectorAll('.geHint');
+
+			for (var i = 0; i < hints.length; i++)
 			{
-				ui.hoverIcons.reset();
+				hints[i].style.opacity = '0';
 			}
 
 			graph.fireEvent(new mxEventObject('zoomPreview', 'factor', f));
@@ -3864,6 +4170,11 @@ EditorUi.prototype.initCanvas = function()
 	{
 		graph.fireEvent(new mxEventObject('wheel'));
 
+		if (graph.freehand != null && graph.freehand.isDrawing())
+		{
+			return;
+		}
+
 		if (this.dialogs == null || this.dialogs.length == 0)
 		{
 			// Scrolls with scrollbars turned off
@@ -3890,14 +4201,18 @@ EditorUi.prototype.initCanvas = function()
 					if (source == graph.container)
 					{
 						graph.tooltipHandler.hideTooltip();
-						cursorPosition = (cx != null && cy!= null) ? new mxPoint(cx, cy) :
+						var mousePos = (cx != null && cy != null) ? new mxPoint(cx, cy) :
 							new mxPoint(mxEvent.getClientX(evt), mxEvent.getClientY(evt));
+						var prevCursorPosition = (cursorPosition != null) ?
+							new mxPoint(cursorPosition.x, cursorPosition.y) : null;
+						var prevFactor = graph.cumulativeZoomFactor;
+						cursorPosition = mousePos;
 						forcedZoom = force;
 						var factor = graph.zoomFactor;
 						var delay = null;
 
 						// Slower zoom for pinch gesture on trackpad with max delta to
-						// filter out mouse wheel events in Brave browser for Windows 
+						// filter out mouse wheel events in Brave browser for Windows
 						if (evt.ctrlKey && evt.deltaY != null && Math.abs(evt.deltaY) < 40 &&
 							Math.round(evt.deltaY) != evt.deltaY)
 						{
@@ -3909,10 +4224,61 @@ EditorUi.prototype.initCanvas = function()
 							factor = 1 + (Math.max(1, Math.abs(evt.movementY)) / 20) * (factor - 1);
 							delay = -1;
 						}
-						
+
 						graph.lazyZoom(up, null, delay, factor);
+
+						// Computes combined zoom origin when mouse moves during
+						// a zoom sequence to avoid viewport jump at the final DOM
+						// update. Reapplies CSS transform-origin with the corrected
+						// origin that represents the single equivalent zoom point
+						// for all accumulated steps.
+						if (prevCursorPosition != null && prevFactor != 1 &&
+							graph.isFastZoomEnabled() && graph.scrollbars)
+						{
+							var newFactor = graph.cumulativeZoomFactor;
+							var stepFactor = newFactor / prevFactor;
+							var denom = 1 - newFactor;
+
+							if (Math.abs(denom) > 0.001)
+							{
+								cursorPosition = new mxPoint(
+									(mousePos.x * (1 - stepFactor) +
+										stepFactor * prevCursorPosition.x *
+										(1 - prevFactor)) / denom,
+									(mousePos.y * (1 - stepFactor) +
+										stepFactor * prevCursorPosition.y *
+										(1 - prevFactor)) / denom);
+
+								var ox = cursorPosition.x + graph.container.scrollLeft -
+									graph.container.offsetLeft;
+								var oy = cursorPosition.y + graph.container.scrollTop -
+									graph.container.offsetTop;
+								mainGroup.style.transformOrigin = ox + 'px ' + oy + 'px';
+								bgGroup.style.transformOrigin = ox + 'px ' + oy + 'px';
+
+								if (graph.view.backgroundPageShape != null &&
+									graph.view.backgroundPageShape.node != null)
+								{
+									var page = graph.view.backgroundPageShape.node;
+
+									mxUtils.setPrefixedStyle(page.style, 'transform-origin',
+										(cursorPosition.x + graph.container.scrollLeft -
+											page.offsetLeft - graph.container.offsetLeft) + 'px ' +
+										(cursorPosition.y + graph.container.scrollTop -
+											page.offsetTop - graph.container.offsetTop) + 'px');
+								}
+								else
+								{
+									var f = Math.round((Math.round(graph.view.scale *
+										newFactor * 100) / 100) * mult) / (mult *
+										graph.view.scale);
+									graph.view.validateBackgroundStyles(f, ox, oy);
+								}
+							}
+						}
+
 						mxEvent.consume(evt);
-				
+
 						return false;
 					}
 					
@@ -4261,6 +4627,14 @@ EditorUi.prototype.createHoverIcons = function()
 };
 
 /**
+ * Creates the inline toolbar.
+ */
+EditorUi.prototype.createInlineToolbar = function()
+{
+	return new InlineToolbar(this);
+};
+
+/**
  * Returns the URL for a copy of this editor with no state.
  */
 EditorUi.prototype.redo = function()
@@ -4422,11 +4796,30 @@ EditorUi.prototype.setScrollbars = function(value)
 };
 
 /**
+ * Function: fitDiagramOrPages
+ * 
+ * Zooms the diagram to fit into the window.
+ */
+EditorUi.prototype.fitDiagramOrPages = function(maxScale, borders, ignorePages)
+{
+	var graph = this.editor.graph;
+
+	if (graph.pageVisible && graph.isSelectionEmpty() && !ignorePages)
+	{
+		graph.fitPages(maxScale);
+	}
+	else
+	{
+		this.fitDiagramToWindow(maxScale, borders, ignorePages);
+	}
+};
+
+/**
  * Function: fitDiagramToWindow
  * 
  * Zooms the diagram to fit into the window.
  */
-EditorUi.prototype.fitDiagramToWindow = function()
+EditorUi.prototype.fitDiagramToWindow = function(maxScale, borders, zoomOutOnly)
 {
 	var graph = this.editor.graph;
 	var bounds = (graph.isSelectionEmpty()) ?
@@ -4454,7 +4847,8 @@ EditorUi.prototype.fitDiagramToWindow = function()
 	}
 	else
 	{
-		var b = Editor.fitWindowBorders;
+		var b = (borders != null) ? borders :
+			Editor.fitWindowBorders;
 		
 		if (b != null)
 		{
@@ -4464,7 +4858,7 @@ EditorUi.prototype.fitDiagramToWindow = function()
 			bounds.height += b.height + b.y;
 		}
 		
-		graph.fitWindow(bounds);
+		graph.fitWindow(bounds, null, maxScale, zoomOutOnly);
 	}
 };
 
@@ -6858,6 +7252,12 @@ EditorUi.prototype.destroy = function()
 		this.selectionStateListener = null;
 	}
 	
+	if (this.inlineToolbar != null)
+	{
+		this.inlineToolbar.destroy();
+		this.inlineToolbar = null;
+	}
+
 	if (this.editor != null)
 	{
 		this.editor.destroy();

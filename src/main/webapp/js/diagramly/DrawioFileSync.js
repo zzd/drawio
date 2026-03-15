@@ -397,6 +397,8 @@ DrawioFileSync.prototype.initRealtime = function()
 	this.file.ownPages = this.ui.clonePages(
 		this.ui.pages);
 	this.snapshot = this.file.ownPages;
+	this.snapshotVars = (this.ui.fileNode != null) ?
+		this.ui.fileNode.getAttribute('vars') : null;
 };
 
 /**
@@ -419,6 +421,7 @@ DrawioFileSync.prototype.resetRealtime = function()
 	this.file.theirPages = null;
 	this.file.ownPages = null;
 	this.snapshot = null;
+	this.snapshotVars = null;
 };
 
 /**
@@ -1169,6 +1172,17 @@ DrawioFileSync.prototype.sendLocalChanges = function()
 		{
 			var snapshot = this.ui.clonePages(this.ui.pages);
 			var patch = this.ui.diffPages(this.snapshot, snapshot);
+
+			var currentVars = (this.ui.fileNode != null) ?
+				this.ui.fileNode.getAttribute('vars') : null;
+
+			if (currentVars != this.snapshotVars)
+			{
+				patch[EditorUi.DIFF_FILE] = {vars: currentVars};
+			}
+
+			this.snapshotVars = currentVars;
+
 			this.file.ownPages = this.ui.patchPages(
 				this.file.ownPages, patch, true);
 			this.snapshot = snapshot;
@@ -1277,8 +1291,20 @@ DrawioFileSync.prototype.merge = function(patches, checksum, desc, success, erro
 				return;
 			}
 			else
-			{	
-				this.file.setShadowPages(shadow);
+			{
+				// Extracts target vars from patches for shadow
+				var targetVars = this.file.getShadowVars();
+
+				for (var i = 0; i < patches.length; i++)
+				{
+					if (patches[i] != null && patches[i][EditorUi.DIFF_FILE] != null &&
+						patches[i][EditorUi.DIFF_FILE].vars !== undefined)
+					{
+						targetVars = patches[i][EditorUi.DIFF_FILE].vars;
+					}
+				}
+
+				this.file.setShadowPages(shadow, targetVars);
 
 				// Patches the current document and own pages
 				if (this.patchRealtime(patches, null, pending, immediate) == null)
@@ -1286,6 +1312,22 @@ DrawioFileSync.prototype.merge = function(patches, checksum, desc, success, erro
 					this.file.patch(patches,
 						(DrawioFile.LAST_WRITE_WINS) ?
 							changes : null);
+				}
+				else
+				{
+					// In realtime mode, file.patch() is not called so
+					// file-level changes must be applied separately
+					var oldVars = (this.ui.fileNode != null) ?
+						this.ui.fileNode.getAttribute('vars') : null;
+					this.ui.patchFileNode(patches);
+					var newVars = (this.ui.fileNode != null) ?
+						this.ui.fileNode.getAttribute('vars') : null;
+
+					if (oldVars != newVars)
+					{
+						this.ui.editor.graph.refresh();
+						this.snapshotVars = newVars;
+					}
 				}
 				
 				// Logs successull patch
@@ -1417,6 +1459,9 @@ DrawioFileSync.prototype.fastForward = function(desc)
 			this.file.ownPages[i].needsUpdate = true;
 		}
 	}
+
+	this.snapshotVars = (this.ui.fileNode != null) ?
+		this.ui.fileNode.getAttribute('vars') : null;
 
 	var thread = this.cleanupThread;
 	window.clearTimeout(this.cleanupThread);
@@ -1886,6 +1931,16 @@ DrawioFileSync.prototype.fileSaved = function(pages, lastDesc, success, error, t
 			else
 			{
 				var diff = this.ui.diffPages(this.file.getShadowPages(), pages);
+
+				var shadowVars = this.file.getShadowVars();
+				var currentVars = (this.ui.fileNode != null) ?
+					this.ui.fileNode.getAttribute('vars') : null;
+
+				if (currentVars != shadowVars)
+				{
+					diff[EditorUi.DIFF_FILE] = {vars: currentVars};
+				}
+
 				var lastSecret = this.file.getDescriptorSecret(lastDesc);
 				checksum = (checksum != null) ? checksum : this.ui.getHashValueForPages(pages);
 				
@@ -1964,6 +2019,8 @@ DrawioFileSync.prototype.fileSaved = function(pages, lastDesc, success, error, t
 	// Ignores cache response as clients
 	// load file if cache entry failed
 	this.file.setShadowPages(pages);
+	this.snapshotVars = (this.ui.fileNode != null) ?
+		this.ui.fileNode.getAttribute('vars') : null;
 	this.scheduleCleanup();
 };
 

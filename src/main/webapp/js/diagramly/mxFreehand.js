@@ -126,6 +126,7 @@ function mxFreehand(graph)
 		graph.getRubberband().setEnabled(!isEnabled);
 		graph.graphHandler.setSelectEnabled(!isEnabled);
 		graph.graphHandler.setMoveEnabled(!isEnabled);
+		graph.panningHandler.setPinchEnabled(!isEnabled);
 
 		if (isEnabled)
 		{
@@ -147,6 +148,11 @@ function mxFreehand(graph)
 	this.isDrawing = function()
 	{
 		return enabled;
+	};
+
+	this.isActive = function()
+	{
+		return path != null;
 	};
 	
 	var endPath = mxUtils.bind(this, function(e)
@@ -366,6 +372,15 @@ function mxFreehand(graph)
 		if (enabled)
 		{
 			evt.getProperty('event').consume();
+		}
+	}));
+
+	// Prevents pinch-zoom gestures while freehand drawing is active
+	graph.addListener(mxEvent.GESTURE, mxUtils.bind(this, function(sender, evt)
+	{
+		if (enabled)
+		{
+			mxEvent.consume(evt.getProperty('event'));
 		}
 	}));
 	

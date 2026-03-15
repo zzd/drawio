@@ -5519,6 +5519,116 @@
 	// Registers the pipe shape
 	mxCellRenderer.registerShape('pipe', PipeShape);
 
+	// Zigzag/Wave vertex shape
+	// size = half-wavelength in absolute graph units (controls tooth spacing)
+	// Height of shape sets amplitude. Rounded toggle switches zigzag/wave.
+	// Width adds/removes teeth without changing tooth size.
+	function ZigzagShape()
+	{
+		mxActor.call(this);
+	};
+
+	mxUtils.extend(ZigzagShape, mxRectangleShape);
+
+	ZigzagShape.prototype.size = 10;
+
+	ZigzagShape.prototype.isRoundable = function()
+	{
+		return true;
+	};
+
+	ZigzagShape.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		c.translate(x, y);
+
+		// Background fill
+		var fillClr = mxUtils.getValue(this.style, mxConstants.STYLE_FILLCOLOR, null);
+
+		if (fillClr != null && fillClr != mxConstants.NONE)
+		{
+			c.setStrokeColor('none');
+			c.begin();
+			c.rect(0, 0, w, h);
+			c.fillAndStroke();
+			c.setStrokeColor(this.stroke);
+		}
+
+		var size = Math.max(5, parseFloat(
+			mxUtils.getValue(this.style, 'size', this.size)));
+		var centerY = h / 2;
+
+		// Inset peaks so stroke stays within bounds
+		// Zigzag needs more margin due to miter joins at sharp peaks
+		var sw = this.strokewidth;
+		var inset = this.isRounded ? sw / 2 : sw;
+		var topY = inset;
+		var bottomY = h - inset;
+
+		// Number of full peak-to-peak segments, adjusted to fit width
+		var numFull = Math.max(1, Math.round(w / size) - 1);
+		var halfWave = w / (numFull + 1);
+		// End segments are half-width so angle matches middle segments
+		var halfEnd = halfWave / 2;
+
+		c.begin();
+		c.moveTo(0, centerY);
+
+		if (this.isRounded)
+		{
+			var k = 0.4;
+
+			// Start half-segment: (0, centerY) to (halfEnd, topY)
+			c.curveTo(
+				k * halfEnd, centerY - (centerY - topY) * k,
+				(1 - k) * halfEnd, topY,
+				halfEnd, topY);
+
+			// Full peak-to-peak segments
+			for (var j = 0; j < numFull; j++)
+			{
+				var sx = halfEnd + j * halfWave;
+				var ex = sx + halfWave;
+				var sy = (j % 2 == 0) ? topY : bottomY;
+				var ey = (j % 2 == 0) ? bottomY : topY;
+
+				c.curveTo(
+					sx + k * halfWave, sy,
+					ex - k * halfWave, ey,
+					ex, ey);
+			}
+
+			// End half-segment: last peak to (w, centerY)
+			var lastX = halfEnd + numFull * halfWave;
+			var lastY = (numFull % 2 == 0) ? topY : bottomY;
+			var dirSign = (lastY == topY) ? 1 : -1;
+
+			c.curveTo(
+				lastX + k * halfEnd, lastY,
+				w - k * halfEnd, centerY - dirSign * (centerY - topY) * k,
+				w, centerY);
+		}
+		else
+		{
+			// Start half-segment
+			c.lineTo(halfEnd, topY);
+
+			// Full peak-to-peak segments
+			for (var j = 0; j < numFull; j++)
+			{
+				var ex = halfEnd + (j + 1) * halfWave;
+				var ey = (j % 2 == 0) ? bottomY : topY;
+				c.lineTo(ex, ey);
+			}
+
+			// End half-segment
+			c.lineTo(w, centerY);
+		}
+
+		c.stroke();
+	};
+
+	mxCellRenderer.registerShape('zigzag', ZigzagShape);
+
 	// Implements custom colors for shapes
 	if (typeof StyleFormatPanel !== 'undefined')
 	{
@@ -6673,7 +6783,22 @@
 			'card': createCubeHandleFunction(0.5, CardShape.prototype.size, true),
 			'loopLimit': createCubeHandleFunction(0.5, LoopLimitShape.prototype.size, true),
 			'trapezoid': createTrapezoidHandleFunction(0.5, TrapezoidShape.prototype.size, TrapezoidShape.prototype.fixedSize),
-			'parallelogram': createTrapezoidHandleFunction(1, ParallelogramShape.prototype.size, ParallelogramShape.prototype.fixedSize)
+			'parallelogram': createTrapezoidHandleFunction(1, ParallelogramShape.prototype.size, ParallelogramShape.prototype.fixedSize),
+			'zigzag': function(state)
+			{
+				// Handle at 2nd peak, half sensitivity (factor 3 = 1.5 for 2nd peak * 2 for half)
+				return [createHandle(state, ['size'], function(bounds)
+				{
+					var size = Math.max(5, parseFloat(
+						mxUtils.getValue(this.state.style, 'size', ZigzagShape.prototype.size)));
+
+					return new mxPoint(bounds.x + 3 * size, bounds.y);
+				}, function(bounds, pt)
+				{
+					this.state.style['size'] = Math.max(5,
+						Math.round((pt.x - bounds.x) / 3));
+				}, false)];
+			}
 		};
 		
 		// Exposes custom handles

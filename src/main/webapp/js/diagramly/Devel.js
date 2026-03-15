@@ -22,7 +22,7 @@ if (!mxIsElectron)
 			'img-src * data: blob:; media-src * data:; font-src * data:; ' +
 			// www.draw.io required for browser data migration to app.diagrams.net and
 			// viewer.diagrams.net required for iframe embed preview
-			'frame-src %frame-src% \'self\' https://viewer.diagrams.net https://www.draw.io https://*.google.com; ' +
+			'frame-src %frame-src% \'self\' https://viewer.diagrams.net https://www.draw.io https://*.google.com https://*.sharepoint.com https://login.microsoftonline.com; ' +
 			'style-src %style-src% \'self\' https://fonts.googleapis.com \'unsafe-inline\'; ' +
 			'base-uri \'none\'; ' +
 			'child-src \'self\'; ' +
@@ -117,7 +117,6 @@ mxscript(geBasePath +'/Actions.js');
 mxscript(geBasePath +'/Menus.js');
 mxscript(geBasePath +'/Toolbar.js');
 mxscript(geBasePath +'/Dialogs.js');
-
 // Loads main classes
 mxscript(drawDevUrl + 'js/diagramly/sidebar/Sidebar.js');
 mxscript(drawDevUrl + 'js/diagramly/sidebar/Sidebar-ActiveDirectory.js');
@@ -189,6 +188,9 @@ mxscript(drawDevUrl + 'js/diagramly/sidebar/Sidebar-WebIcons.js');
 mxscript(drawDevUrl + 'js/diagramly/util/mxJsCanvas.js');
 mxscript(drawDevUrl + 'js/diagramly/util/mxAsyncCanvas.js');
 
+mxscript(drawDevUrl + 'js/diagramly/gif/GifEncoder.js');
+mxscript(drawDevUrl + 'js/diagramly/gif/AnimatedExport.js');
+
 mxscript(drawDevUrl + 'js/diagramly/DrawioFile.js');
 mxscript(drawDevUrl + 'js/diagramly/LocalFile.js');
 mxscript(drawDevUrl + 'js/diagramly/LocalLibrary.js');
@@ -253,6 +255,7 @@ if (!window.DRAWIO_PUBLIC_BUILD)
 mxscript(drawDevUrl + 'js/mermaid/mermaid2drawio.js');	
 
 // Vsdx/vssx support
+mxscript(drawDevUrl + 'js/diagramly/emf/emf-svg.js');
 mxscript(drawDevUrl + 'js/diagramly/vsdx/mxVsdxCanvas2D.js');
 mxscript(drawDevUrl + 'js/diagramly/vsdx/bmpDecoder.js');
 mxscript(drawDevUrl + 'js/diagramly/vsdx/importer.js');

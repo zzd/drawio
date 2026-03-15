@@ -162,7 +162,7 @@ OUTPUT FILES (in src/main/webapp/js/):
 				<file name="Dialogs.js" />
 			</sources>
 		</jscomp>
-		
+
 		<!-- Step 5: Compile all sidebar shape libraries -->
 		<jscomp compilationLevel="simple" debug="false" forceRecompile="true" output="${basedir}/sidebar.min.js">
 			<sources dir="${war.dir}/js/diagramly/sidebar">
@@ -432,6 +432,9 @@ OUTPUT FILES (in src/main/webapp/js/):
 				<file name="bmpDecoder.js" />
 				<file name="importer.js" />
 			</sources>
+			<sources dir="${war.dir}/js/diagramly/emf">
+				<file name="emf-svg.js" />
+			</sources>
 			<sources dir="${war.dir}/js/mermaid">
 				<file name="mermaid2drawio.js" />
 			</sources>
@@ -492,6 +495,11 @@ OUTPUT FILES (in src/main/webapp/js/):
 			<sources dir="${war.dir}/js/diagramly/util">
 				<file name="mxAsyncCanvas.js" />
 				<file name="mxJsCanvas.js" />
+			</sources>
+
+			<sources dir="${war.dir}/js/diagramly/gif">
+				<file name="GifEncoder.js" />
+				<file name="AnimatedExport.js" />
 			</sources>
 
 			<!-- Cloud storage integrations -->

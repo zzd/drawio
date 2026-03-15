@@ -417,10 +417,8 @@ Editor.themes.push('atlas');
 							}
 							else
 							{
-								addElt(this.sidebar.createVertexTemplate('shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;' +
-									'fontColor=#000000;darkOpacity=0.05;fillColor=#FFF9B2;strokeColor=none;fillStyle=solid;' +
-									'direction=west;gradientDirection=north;gradientColor=#FFF2A1;shadow=1;size=20;pointerEvents=1;',
-									140, 160, '', mxResources.get('note') + ' (S)', true, false, null, true, null, tw, th),
+								addElt(this.sidebar.createVertexTemplate(Editor.defaultNoteStyle, 160, 160, '',
+									mxResources.get('note') + ' (S)', true, false, null, true, null, tw, th),
 									mxResources.get('note') + ' (S)', null, 'S');
 								addElt(boxElt, mxResources.get('rectangle') + ' (D)', null, 'D');
 								addElt(this.sidebar.createVertexTemplate('ellipse;whiteSpace=wrap;html=1;', 160, 100, '',

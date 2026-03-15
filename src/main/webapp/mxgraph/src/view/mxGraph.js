@@ -3039,7 +3039,7 @@ mxGraph.prototype.fit = function(border, keepOrigin, margin, enabled, ignoreWidt
 		var cssBorder = this.getBorderSizes();
 		var w1 = this.container.offsetWidth - cssBorder.x - cssBorder.width - 1;
 		var h1 = (maxHeight != null) ? maxHeight : this.container.offsetHeight - cssBorder.y - cssBorder.height - 1;
-		var bounds = this.view.getGraphBounds();
+		var bounds = this.getGraphBounds();
 		
 		if (bounds.width > 0 && bounds.height > 0)
 		{

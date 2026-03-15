@@ -899,6 +899,20 @@ var mxEvent =
 	MOVE_END: 'moveEnd',
 
 	/**
+	 * Variable: DOCK
+	 *
+	 * Specifies the event name for dock.
+	 */
+	DOCK: 'dock',
+
+	/**
+	 * Variable: UNDOCK
+	 *
+	 * Specifies the event name for undock.
+	 */
+	UNDOCK: 'undock',
+
+	/**
 	 * Variable: PAN_START
 	 *
 	 * Specifies the event name for panStart.

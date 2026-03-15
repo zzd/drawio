@@ -1,3 +1,142 @@
+05-MAR-2026: 29.6.1
+
+- Removes i18n updating from actions
+- Fix Cloud Build when using custom service account
+- Hide cell ID and make Edit Data dialog resizable for file-level vars
+- Prevent focus stealing from external input elements in showTypingShim [DID-17955]
+- Adds showTooltipIcons switch
+- Reset sync channel on makeCopy to prevent cross-talk with original file [jgraph/drawio#5487]
+- Increase dialog height for EmbedDialog instances to improve layout
+- Make EmbedDialog resizable with flex layout
+- Hides hints while zooming [jgraph/drawio#5486]
+
+27-FEB-2026: 29.6.0
+
+- Fix MS365 SharePoint file picker integration
+- Sets ms365 integration live
+- Adds format=0 and sidebar=0 URL params for minimal theme
+
+26-FEB-2026: 29.5.6
+
+- AWS shapes update
+- Adds ms365 URL parameter
+
+26-FEB-2026: 29.5.5
+
+- Fixes possible NPE in mxLayoutManager
+- Fixes return value in Graph.cellsResized override
+- Fixes line submenu in edge context menu
+- Adds new dialog styles
+- Adds file-specific variables [jgraph/drawio#549] [jgraph/drawio#2911] [jgraph/drawio-desktop#2108]
+
+25-FEB-2026: 29.5.4
+
+- Fixes elbow edge style icons
+- Fixes update of toolbar edge styles with selected vertices
+- Fixes order of horizontal and vertical edge option in Format panel, toolbar, inline toolbar and context menu
+- Makes inline toolbar visible by default, uses line menu
+- Fixes tooltips for inline toolbar
+- Fixes inconsistent edge menus
+- Adds dockable tool windows
+- Fixes possible stale dropdown menu
+- Fixes clipping of labels for Chrome on Windows
+- Fixes inconsistent tooltips in Format panel
+- Adds tooltips for checkboxes in Format panel
+- Adds autosizeText cell style and sticky notes with automatic text size [jgraph/drawio#2570]
+- Fixes background image translation in GraphViewer (almost all code overrides getGraphBounds of graph and not viewer which graph.fit uses) [DID-17873]
+
+24-FEB-2026: 29.5.3
+
+- Hides link icons if showLinkIcons disabled
+- Fixes IME first keystroke [jgraph/drawio#3642] [jgraph/drawio#4801] [jgraph/drawio#313]
+- Fixes broken copy/paste after IME fix
+- Fixes error message for missing animations
+- Adds zigzag shape in Misc sidebar  [jgraph/drawio#4663]
+- Adds insert and edit polygon actions [jgraph/drawio#5292]
+- Fixes broken panning after IME fix
+- Adds optional inline toolbar for edge styles [jgraph/drawio#4794]
+- Simplifies horizontal and vertical elbow edge style icons
+- Fix VSDX import: make Visio containers non-connectable and add hyperlink null guard [DID-17660]
+
+22-FEB-2026: 29.5.2
+
+- Deletes unused code causing security warnings
+- Tidies changelog
+- Updates excludes
+- Fixes zoom while drawing freehand [jgraph/drawio#3959]
+- Updates MathJax from 4.1.0 to 4.1.1
+- Fixes panning in active freehand mode [jgraph/drawio#4080]
+- Adds animated gif export [jgraph/drawio#3739]
+- Moves animated gif functions to correct location
+- Fixes error for saving scratchpad [jgraph/drawio-desktop#2341]
+- Adds flow direction and fixes background for animated gif export
+- Limits show link icons to main graph
+- Fixes resources merge issue
+- Reviewed and updated translations
+
+20-FEB-2026: 29.5.1
+
+- Updates to emf importer
+
+19-FEB-2026: 29.5.0
+
+- Initial draft for link icon
+- Uses validateCellState for update of link icon
+- Adds enableExportUrl configuration switch [jgraph/drawio#4336] [jgraph/drawio#5431]
+- Fix emoji and supplementary Unicode characters corrupted after save/reload
+- Bezier curve falls back to quad for cases it can't handle [jgraph/drawio-desktop#2333]
+- Missing var in actions.js [jgraph/drawio#5457]
+- Fixes rename and saveAs for StorageFiles
+- New emf converter
+
+14-FEB-2026: 29.4.0
+
+- Handles 404 in GitLab group iteration [jgraph/drawio#4528]
+- Adds visible modifiers and events for actions
+- Fixes ignored parameter in addItem
+- Fixes ignored pv and grid URL parameters for create hash with xml
+- Sets maximum initial zoom for create hash to 1.2
+- Makes connection points dialog resizable [drawio/discussions/5442]
+- Adds resizing for image crop dialog [drawio/discussions/5203], handles overflows [drawio/discussions/5478]
+- Adds fitDiagramOnLoad switch [jgraph/drawio#5415]
+- Fixes realtimeStateChanged triggers notification repaint
+- Adds message type for create hash property
+- Fixes grid jump while zoom [jgraph/drawio#1440]
+- Uses current production wheelZoomDelay
+- Adds markers for arc shape [jgraph/drawio#3639]
+- Removes fill and gradient option for arc shape
+
+06-FEB-2026: 29.3.8
+
+- Improves create hash handling
+- Handles overflows in error dialog
+- Conf Cloud: Removed export to URL option [DID-17708]
+- Adds debug output in  executeCreateHash
+
+03-FEB-2026: 29.3.7
+
+- Adds Claude 4.5 Opus for local LLMS and removes whitespace from response XML
+- Shows AI button in Conf and Jira toolbar if not disabled
+- Adds scrollbars for overflow content in Generate window
+- Bump qs, body-parser and express in /etc/centralizedLogging/GCP
+- Adds XML type for create hash property
+- Fits create hash property diagram to window
+
+27-JAN-2026: 29.3.6
+
+- Adds delete all pages option
+- Improvements for XML import
+- Adds custom line dash pattern options
+- Update translations submodule to 996b60e
+- Disables file size stats
+- Adds claude guide to root
+- Fixes handling of inherit color value
+- Fixes overflow, adds option to insert layer after current layer, moves selection layers [jgraph/drawio#5438]
+- Update translations submodule to 6650194
+- Update translations submodule to 645f7e6
+- Conf Cloud: Fixed race condition in OAuth requests when multiple viewers are in the same page [DID-17497]
+- VSDX Import: Fixed some NPE and added a case for embedded images [DID-17282]
+
 20-JAN-2026: 29.3.5
 
 - Add simple.js build to atlas.min.js

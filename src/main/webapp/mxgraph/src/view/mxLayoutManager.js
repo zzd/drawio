@@ -286,7 +286,7 @@ mxLayoutManager.prototype.cellsMoved = function(cells, evt)
  */
 mxLayoutManager.prototype.cellsResized = function(cells, bounds, prev)
 {
-	if (cells != null && bounds != null)
+	if (cells != null && bounds != null && prev != null)
 	{
 		var model = this.getGraph().getModel();
 		

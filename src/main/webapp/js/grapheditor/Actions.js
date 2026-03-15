@@ -849,6 +849,11 @@ Actions.prototype.init = function()
 
 					if (graph.getModel().isVertex(cell))
 					{
+						if (graph.isAutosizeTextCell(cell))
+						{
+							graph.setCellStyles('autosizeText', null, [cell]);
+						}
+
 						if (graph.getModel().getChildCount(cell) > 0)
 						{
 							graph.updateGroupBounds([cell], 0, true);
@@ -884,7 +889,7 @@ Actions.prototype.init = function()
 			
 			for (var i = 0; i < cells.length; i++)
 			{
-				state = graph.getView().getState(cells[i]);
+				var state = graph.getView().getState(cells[i]);
 				
 				if (state != null)
 				{
@@ -986,14 +991,7 @@ Actions.prototype.init = function()
 	}, null, null, Editor.ctrlKey + ' - / Alt+Mousewheel');
 	this.addAction('fitWindow', function()
 	{
-		if (graph.pageVisible && graph.isSelectionEmpty())
-		{
-			graph.fitPages();
-		}
-		else
-		{
-			ui.fitDiagramToWindow();
-		}
+		ui.fitDiagramOrPages();
 	}, null, null, Editor.ctrlKey + '+' + Editor.shiftKey + '+H');
 	this.addAction('fitPage', mxUtils.bind(this, function()
 	{
@@ -1789,7 +1787,8 @@ Actions.prototype.init = function()
 				applyClipPath(cell, clipPath, width, height, graph);
 	    	});
 	    	
-	    	ui.showDialog(dlg.container, 300, 390, true, true);
+	    	ui.showDialog(dlg.container, 380, 390, true, true,
+				null, null, null, new mxRectangle(0, 0, 440, 450));
 		}
 	}).isEnabled = isGraphEnabled;
 	action = this.addAction('layers', mxUtils.bind(this, function()
@@ -1850,6 +1849,26 @@ Actions.prototype.init = function()
 	action.setToggleAction(true);
 	action.setSelectedCallback(mxUtils.bind(this, function() { return this.outlineWindow != null && this.outlineWindow.window.isVisible(); }));
 
+	this.addAction('editPolygon...', function()
+	{
+		var cell = graph.getSelectionCell();
+
+		if (graph.isEnabled() && cell != null)
+		{
+			var state = graph.view.getState(cell);
+
+			if (state != null && mxUtils.getValue(state.style,
+				mxConstants.STYLE_SHAPE) === 'mxgraph.basic.polygon')
+			{
+				var dlg = new PolygonDialog(ui, cell);
+				ui.showDialog(dlg.container, 680, 540, true, true,
+					function() { dlg.destroy(); },
+					null, null, new mxRectangle(0, 0, 740, 600));
+				dlg.init();
+			}
+		}
+	}).isEnabled = isGraphEnabled;
+
 	this.addAction('editConnectionPoints...', function()
 	{
 		var cell = graph.getSelectionCell();
@@ -1858,10 +1877,10 @@ Actions.prototype.init = function()
 			cell != null && cell.geometry != null)
 		{
 			var dlg = new ConnectionPointsDialog(ui, cell);
-	    	ui.showDialog(dlg.container, 350, 450, true, false, function() 
+	    	ui.showDialog(dlg.container, 400, 450, true, false, function()
 			{
 				dlg.destroy();
-			});
+			}, null, null, new mxRectangle(0, 0, 400 + 50, 450 + 50));
 			dlg.init();
 		}
 	}, null, null,  Editor.altKey + '+' + Editor.shiftKey + '+Q').isEnabled = isGraphEnabled;
@@ -1953,7 +1972,8 @@ Action.prototype.setEnabled = function(value)
 	if (this.enabled != value)
 	{
 		this.enabled = value;
-		this.fireEvent(new mxEventObject('stateChanged'));
+		this.fireEvent(new mxEventObject('stateChanged',
+			'attribute', 'enabled'));
 	}
 };
 
@@ -1963,6 +1983,27 @@ Action.prototype.setEnabled = function(value)
 Action.prototype.isEnabled = function()
 {
 	return this.enabled;
+};
+
+/**
+ * Sets the visible state of the action and fires a stateChanged event.
+ */
+Action.prototype.setVisible = function(value)
+{
+	if (this.visible != value)
+	{
+		this.visible = value;
+		this.fireEvent(new mxEventObject('stateChanged',
+			'attribute', 'visible'));
+	}
+};
+
+/**
+ * Sets the enabled state of the action and fires a stateChanged event.
+ */
+Action.prototype.isVisible = function()
+{
+	return this.visible;
 };
 
 /**

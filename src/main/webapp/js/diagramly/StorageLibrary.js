@@ -35,6 +35,17 @@ StorageLibrary.prototype.isAutosave = function()
 };
 
 /**
+ * Translates this point by the given vector.
+ * 
+ * @param {number} dx X-coordinate of the translation.
+ * @param {number} dy Y-coordinate of the translation.
+ */
+StorageLibrary.prototype.save = function(revision, success, error)
+{
+	this.saveAs(this.getTitle(), success, error);
+};
+
+/**
  * Overridden to avoid updating data with current file.
  */
 StorageLibrary.prototype.saveAs = function(title, success, error)

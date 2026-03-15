@@ -18,6 +18,11 @@ EditorUi.DIFF_REMOVE = 'r';
 EditorUi.DIFF_UPDATE = 'u';
 
 /**
+ * Constant for file-level attribute changes in patches.
+ */
+EditorUi.DIFF_FILE = 'f';
+
+/**
  * Shared codec.
  */
 EditorUi.transientViewStateProperties = ['defaultParent', 'currentRoot', 'scrollLeft',
@@ -63,6 +68,42 @@ EditorUi.prototype.applyPatches = function(pages, patches, markPages, resolver, 
 };
 
 /**
+ * Applies file-level attribute changes from the given patches to the fileNode.
+ * Returns true if any file-level attributes were changed.
+ */
+EditorUi.prototype.patchFileNode = function(patches)
+{
+	var changed = false;
+
+	if (this.fileNode != null && patches != null)
+	{
+		for (var i = 0; i < patches.length; i++)
+		{
+			if (patches[i] != null && patches[i][EditorUi.DIFF_FILE] != null)
+			{
+				for (var key in patches[i][EditorUi.DIFF_FILE])
+				{
+					var val = patches[i][EditorUi.DIFF_FILE][key];
+
+					if (val != null)
+					{
+						this.fileNode.setAttribute(key, val);
+					}
+					else
+					{
+						this.fileNode.removeAttribute(key);
+					}
+
+					changed = true;
+				}
+			}
+		}
+	}
+
+	return changed;
+};
+
+/**
  * Removes all labels, user objects and styles from the given node in-place.
  */
 EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updateEdgeParents)
@@ -73,7 +114,7 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
 	var removed = {};
 	var lookup = {};
 	var moved = {};
-	
+
   	if (resolver != null && resolver[EditorUi.DIFF_UPDATE] != null)
 	{
   		for (var id in resolver[EditorUi.DIFF_UPDATE])

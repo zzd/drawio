@@ -49,46 +49,64 @@ Menus.prototype.init = function()
 	this.customFonts = [];
 	this.customFontSizes = [];
 
-	this.put('edgeShape', new Menu(mxUtils.bind(this, function(menu)
+	this.put('edgeStyle', new Menu(mxUtils.bind(this, function(menu, parent)
+	{
+		var state = graph.view.getState(graph.getSelectionCell());
+		var shape = (state != null) ? mxUtils.getValue(state.style, mxConstants.STYLE_SHAPE) : null;
+		
+		if (shape != 'arrow')
+		{
+			Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				[null, null, null], null, parent, true, Format.straightImage.src)).setAttribute('title', mxResources.get('straight'));
+			Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				['orthogonalEdgeStyle', null, null], null, parent, true, Format.orthogonalImage.src)).setAttribute('title', mxResources.get('orthogonal'));
+			Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				['elbowEdgeStyle', 'vertical', null, null], null, parent, true, Format.verticalElbowImage.src)).setAttribute('title', mxResources.get('horizontal'));
+			Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				['elbowEdgeStyle', null, null, null], null, parent, true, Format.horizontalElbowImage.src)).setAttribute('title', mxResources.get('vertical'));
+			Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				['isometricEdgeStyle', null, null, null], null, parent, true, Format.horizontalIsometricImage.src)).setAttribute('title', mxResources.get('isometric'));
+			Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				['isometricEdgeStyle', 'vertical', null, null], null, parent, true, Format.verticalIsometricImage.src)).setAttribute('title', mxResources.get('isometric'));
+	
+			if (shape == null || shape == 'connector')
+			{
+				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+					['orthogonalEdgeStyle', '1', null], null, parent, true, Format.curvedImage.src)).setAttribute('title', mxResources.get('curved'));
+			}
+			
+			Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
+				['entityRelationEdgeStyle', null, null], null, parent, true, Format.entityImage.src)).setAttribute('title', mxResources.get('entityRelation'));
+		}
+	})));
+	
+	this.put('edgeShape', new Menu(mxUtils.bind(this, function(menu, parent)
 	{
 		var keys = [mxConstants.STYLE_SHAPE, mxConstants.STYLE_STARTSIZE, mxConstants.STYLE_ENDSIZE, mxConstants.STYLE_DASHED, 'width'];
 
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', keys, [null, null, null, null, null],
-			null, null, true, Format.connectionImage.src)).setAttribute('title', mxResources.get('line'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', keys, ['link', null, null, null, null],
-			null, null, true, Format.linkEdgeImage.src)).setAttribute('title', mxResources.get('link'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', keys, ['flexArrow', null, null, null, null],
-			null, null, true, Format.arrowImage.src)).setAttribute('title', mxResources.get('arrow'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', keys, ['arrow', null, null, null, null],
-			null, null, true, Format.simpleArrowImage.src)).setAttribute('title', mxResources.get('simpleArrow'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', keys, ['filledEdge', null, null, null, null],
-			null, null, true, Format.filledEdgeImage.src)).setAttribute('title', 'Filled Edge');
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', keys, ['pipe', null, null, null, null],
-			null, null, true, Format.pipeEdgeImage.src)).setAttribute('title', 'Pipe');
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', keys, ['wire', null, null, '1', null],
-			null, null, true, Format.wireEdgeImage.src)).setAttribute('title', 'Wire');
+		Format.processMenuIcon(this.edgeStyleChange(menu, '', keys, [null, null, null, null, null],
+			null, parent, true, Format.connectionImage.src)).setAttribute('title', mxResources.get('line'));
+		Format.processMenuIcon(this.edgeStyleChange(menu, '', keys, ['link', null, null, null, null],
+			null, parent, true, Format.linkEdgeImage.src)).setAttribute('title', mxResources.get('link'));
+		Format.processMenuIcon(this.edgeStyleChange(menu, '', keys, ['flexArrow', null, null, null, null],
+			null, parent, true, Format.arrowImage.src)).setAttribute('title', mxResources.get('arrow'));
+		Format.processMenuIcon(this.edgeStyleChange(menu, '', keys, ['arrow', null, null, null, null],
+			null, parent, true, Format.simpleArrowImage.src)).setAttribute('title', mxResources.get('simpleArrow'));
+		Format.processMenuIcon(this.edgeStyleChange(menu, '', keys, ['filledEdge', null, null, null, null],
+			null, parent, true, Format.filledEdgeImage.src)).setAttribute('title', 'Filled Edge');
+		Format.processMenuIcon(this.edgeStyleChange(menu, '', keys, ['pipe', null, null, null, null],
+			null, parent, true, Format.pipeEdgeImage.src)).setAttribute('title', 'Pipe');
+		Format.processMenuIcon(this.edgeStyleChange(menu, '', keys, ['wire', null, null, '1', null],
+			null, parent, true, Format.wireEdgeImage.src)).setAttribute('title', 'Wire');
 	})));
 
-	this.put('edgeStyle', new Menu(mxUtils.bind(this, function(menu)
+	this.put('line', new Menu(mxUtils.bind(this, function(menu, parent)
 	{
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			[null, null, null], null, null, true, Format.straightImage.src)).setAttribute('title', mxResources.get('straight'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			['orthogonalEdgeStyle', null, null], null, null, true, Format.orthogonalImage.src)).setAttribute('title', mxResources.get('orthogonal'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			['elbowEdgeStyle', null, null, null], null, null, true, Format.horizontalElbowImage.src)).setAttribute('title', mxResources.get('vertical'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			['elbowEdgeStyle', 'vertical', null, null], null, null, true, Format.verticalElbowImage.src)).setAttribute('title', mxResources.get('horizontal'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			['isometricEdgeStyle', null, null, null], null, null, true, Format.horizontalIsometricImage.src)).setAttribute('title', mxResources.get('isometric'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			['isometricEdgeStyle', 'vertical', null, null], null, null, true, Format.verticalIsometricImage.src)).setAttribute('title', mxResources.get('isometric'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			['orthogonalEdgeStyle', '1', null], null, null, true, Format.curvedImage.src)).setAttribute('title', mxResources.get('curved'));
-		Format.processMenuIcon(this.editorUi.menus.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-			['entityRelationEdgeStyle', null, null], null, null, true, Format.entityImage.src)).setAttribute('title', mxResources.get('entityRelation'));
+		this.get('edgeStyle').funct(menu, parent);
+		menu.addSeparator(parent);
+		this.get('edgeShape').funct(menu, parent);
 	})));
-	
+
 	this.put('fontFamily', new Menu(mxUtils.bind(this, function(menu, parent)
 	{
 		var addItem = mxUtils.bind(this, function(fontFamily)
@@ -319,51 +337,6 @@ Menus.prototype.init = function()
 	{
 		menu.addItem(mxResources.get('horizontal'), null, function() { graph.distributeCells(true, null, true); }, parent);
 		menu.addItem(mxResources.get('vertical'), null, function() { graph.distributeCells(false, null, true); }, parent);
-	})));
-	this.put('line', new Menu(mxUtils.bind(this, function(menu, parent)
-	{
-		var state = graph.view.getState(graph.getSelectionCell());
-		
-		if (state != null)
-		{
-			var shape = mxUtils.getValue(state.style, mxConstants.STYLE_SHAPE);
-		
-			if (shape != 'arrow')
-			{
-				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-					[null, null, null], null, parent, true, Format.straightImage.src)).setAttribute('title', mxResources.get('straight'));
-				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-					['orthogonalEdgeStyle', null, null], null, parent, true, Format.orthogonalImage.src)).setAttribute('title', mxResources.get('orthogonal'));
-				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-					['elbowEdgeStyle', null, null, null], null, parent, true, Format.horizontalElbowImage.src)).setAttribute('title', mxResources.get('simple'));
-				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-					['elbowEdgeStyle', 'vertical', null, null], null, parent, true, Format.verticalElbowImage.src)).setAttribute('title', mxResources.get('simple'));
-				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-					['isometricEdgeStyle', null, null, null], null, parent, true, Format.horizontalIsometricImage.src)).setAttribute('title', mxResources.get('isometric'));
-				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_ELBOW, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-					['isometricEdgeStyle', 'vertical', null, null], null, parent, true, Format.verticalIsometricImage.src)).setAttribute('title', mxResources.get('isometric'));
-		
-				if (shape == 'connector')
-				{
-					Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-						['orthogonalEdgeStyle', '1', null], null, parent, true, Format.curvedImage.src)).setAttribute('title', mxResources.get('curved'));
-				}
-				
-				Format.processMenuIcon(this.edgeStyleChange(menu, '', [mxConstants.STYLE_EDGE, mxConstants.STYLE_CURVED, mxConstants.STYLE_NOEDGESTYLE],
-					['entityRelationEdgeStyle', null, null], null, parent, true, Format.entityImage.src)).setAttribute('title', mxResources.get('entityRelation'));
-			}
-			
-			menu.addSeparator(parent);
-
-			Format.processMenuIcon(this.styleChange(menu, '', [mxConstants.STYLE_SHAPE, mxConstants.STYLE_STARTSIZE, mxConstants.STYLE_ENDSIZE, 'width'],
-				[null, null, null, null], null, parent, null, null, true, Format.connectionImage.src)).setAttribute('title', mxResources.get('line'));
-			Format.processMenuIcon(this.styleChange(menu, '', [mxConstants.STYLE_SHAPE, mxConstants.STYLE_STARTSIZE, mxConstants.STYLE_ENDSIZE, 'width'],
-				['link', null, null, null], null, parent, null, null, true, Format.linkEdgeImage.src)).setAttribute('title', mxResources.get('link'));
-			Format.processMenuIcon(this.styleChange(menu, '', [mxConstants.STYLE_SHAPE, mxConstants.STYLE_STARTSIZE, mxConstants.STYLE_ENDSIZE, 'width'],
-				['flexArrow', null, null, null], null, parent, null, null, true, Format.arrowImage.src)).setAttribute('title', mxResources.get('arrow'));
-			Format.processMenuIcon(this.styleChange(menu, '', [mxConstants.STYLE_SHAPE, mxConstants.STYLE_STARTSIZE, mxConstants.STYLE_ENDSIZE, 'width'],
-				['arrow', null, null, null], null, parent, null, null, true, Format.simpleArrowImage.src)).setAttribute('title', mxResources.get('simpleArrow'));
-		}
 	})));
 	this.put('layout', new Menu(mxUtils.bind(this, function(menu, parent)
 	{
@@ -1170,13 +1143,13 @@ Menus.prototype.edgeStyleChange = function(menu, label, keys, values, sprite, pa
 			for (var i = 0; i < cells.length; i++)
 			{
 				var cell = cells[i];
-				
+
 				if (graph.getModel().isEdge(cell))
 				{
 					if (reset)
 					{
 						var geo = graph.getCellGeometry(cell);
-			
+
 						// Resets all edge points
 						if (geo != null)
 						{
@@ -1185,12 +1158,22 @@ Menus.prototype.edgeStyleChange = function(menu, label, keys, values, sprite, pa
 							graph.getModel().setGeometry(cell, geo);
 						}
 					}
-					
+
 					for (var j = 0; j < keys.length; j++)
 					{
 						graph.setCellStyles(keys[j], values[j], [cell]);
 					}
-					
+
+					edges.push(cell);
+				}
+				else if (mxUtils.getValue(graph.getCurrentCellStyle(cell),
+					mxConstants.STYLE_SHAPE) == 'mxgraph.basic.arc')
+				{
+					for (var j = 0; j < keys.length; j++)
+					{
+						graph.setCellStyles(keys[j], values[j], [cell]);
+					}
+
 					edges.push(cell);
 				}
 			}
@@ -1198,7 +1181,7 @@ Menus.prototype.edgeStyleChange = function(menu, label, keys, values, sprite, pa
 			this.editorUi.fireEvent(new mxEventObject(
 				'styleChanged', 'cells', edges,
 				'keys', keys, 'values', values,
-				'force', cells.length == 0));
+				'force', edges.length == 0));
 		}
 		finally
 		{
@@ -1771,6 +1754,11 @@ Menus.prototype.addPopupMenuCellEditItems = function(menu, cell, evt, parent)
 	if (graph.getModel().isVertex(cell) && graph.isCellConnectable(cell))
 	{
 		this.addMenuItem(menu, 'editConnectionPoints', parent, evt);
+	}
+
+	if (state != null && mxUtils.getValue(state.style, mxConstants.STYLE_SHAPE) === 'mxgraph.basic.polygon')
+	{
+		this.addMenuItem(menu, 'editPolygon', parent, evt);
 	}
 };
 

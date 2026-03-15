@@ -2529,10 +2529,10 @@ ExportDialog.saveLocalFile = function(editorUi, data, filename, format)
 /**
  * Constructs a new metadata dialog.
  */
-var EditDataDialog = function(ui, cell)
+var EditDataDialog = function(ui, cell, optionalGraph)
 {
 	var div = document.createElement('div');
-	var graph = ui.editor.graph;
+	var graph = optionalGraph || ui.editor.graph;
 	
 	var value = graph.getModel().getValue(cell);
 	
@@ -2571,13 +2571,14 @@ var EditDataDialog = function(ui, cell)
 	var count = 0;
 
 	var id = (EditDataDialog.getDisplayIdForCell != null) ?
-		EditDataDialog.getDisplayIdForCell(ui, cell) : null;
+		EditDataDialog.getDisplayIdForCell(ui, cell, optionalGraph) : null;
 	
 	var addRemoveButton = function(text, name)
 	{
 		var wrapper = document.createElement('div');
 		wrapper.style.position = 'relative';
-		wrapper.style.paddingRight = '20px';
+		wrapper.style.display = 'flex';
+		wrapper.style.alignItems = 'center';
 		wrapper.style.boxSizing = 'border-box';
 		wrapper.style.width = '100%';
 		
@@ -2585,16 +2586,10 @@ var EditDataDialog = function(ui, cell)
 		var img = mxUtils.createImage(Dialog.prototype.closeImage);
 		img.style.height = '9px';
 		img.style.fontSize = '9px';
-		img.style.marginBottom = (mxClient.IS_IE11) ? '-1px' : '5px';
 		
 		removeAttr.className = 'geButton';
 		removeAttr.setAttribute('title', mxResources.get('delete'));
-		removeAttr.style.position = 'absolute';
-		removeAttr.style.top = '4px';
-		removeAttr.style.right = '0px';
-		removeAttr.style.margin = '0px';
-		removeAttr.style.width = '9px';
-		removeAttr.style.height = '9px';
+		removeAttr.style.marginLeft = '8px';
 		removeAttr.style.cursor = 'pointer';
 		removeAttr.appendChild(img);
 		
@@ -2891,7 +2886,8 @@ var EditDataDialog = function(ui, cell)
 			console.log(result);
 			ui.alert('Written to Console (Dev Tools)');
 		}, mxResources.get('export'), null, 'Console', 'data.json');
-		ui.showDialog(dlg.container, 450, 240, true, true);
+		ui.showDialog(dlg.container, 450, 270, true, true, null,
+			false, null, new mxRectangle(0, 0, 400, 250));
 		dlg.init();
 	}));
 	
@@ -3573,6 +3569,31 @@ var LayersWindow = function(editorUi, x, y, w, h)
 					}
 				}), layerSubmenu);
 
+				menu.addItem(mxResources.get('addLayer'), null, mxUtils.bind(this, function(evt)
+				{
+					if (graph.isEnabled())
+					{
+						selectLayers(false);
+						model.beginUpdate();
+						var cell
+						
+						try
+						{
+							cell = graph.addCell(new mxCell(mxResources.get('untitledLayer')),
+								model.root, index + ((mxEvent.isShiftDown(evt) ? 0 : 1)));
+							graph.setDefaultParent(cell);
+						}
+						finally
+						{
+							model.endUpdate();
+						}
+
+						renameLayer(cell);
+					}
+					
+					mxEvent.consume(evt);
+				}), layerSubmenu);
+				
 				menu.addSeparator(layerSubmenu);
 
 				menu.addItem(mxResources.get('rename'), null, mxUtils.bind(this, function()
@@ -3743,7 +3764,6 @@ var LayersWindow = function(editorUi, x, y, w, h)
 	dot.innerHTML = '&#8226;';
 	dot.style.padding = '0 2px';
 	dot.style.fontSize = '16pt';
-	dot.style.right = '6px';
 	dot.style.order = '1';
 	
 	function updateLayerDot()
@@ -3810,6 +3830,7 @@ var LayersWindow = function(editorUi, x, y, w, h)
 			var div = document.createElement('div');
 			div.style.display = 'flex';
 			div.style.alignItems = 'center';
+			div.style.minWidth = '0';
 			div.style.flexGrow = '1';
 
 			mxEvent.addListener(cb, 'click', function(evt)
@@ -3854,10 +3875,26 @@ var LayersWindow = function(editorUi, x, y, w, h)
 			
 			mxEvent.addListener(ldiv, 'dragend', function(evt)
 			{
+				var layers = getSelectedLayers();
+
 				if (dragSource != null && dropIndex != null &&
 					model.getChildCount(model.root) > 1)
 				{
-					graph.addCell(child, model.root, dropIndex);
+					layers = (layers.length == 0) ? [child] : layers;
+
+					// Moves all selected layers
+					model.beginUpdate();
+					try
+					{
+						for (var i = 0; i < layers.length; i++)
+						{
+							graph.addCell(layers[i], model.root, dropIndex);
+						}
+					}
+					finally
+					{
+						model.endUpdate();
+					}
 				}
 
 				dragSource = null;
@@ -4029,7 +4066,6 @@ var LayersWindow = function(editorUi, x, y, w, h)
 			{
 				addLayer(i, graph.convertValueToString(child) ||
 					mxResources.get('background'), child, child,
-					// graph.getDefaultParent() == child ||
 					isLayerSelected(child));
 			}))(model.getChildAt(model.root, i));
 		}

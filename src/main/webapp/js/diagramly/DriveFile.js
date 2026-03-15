@@ -397,18 +397,35 @@ DriveFile.prototype.makeCopy = function(success, error, filename)
 		// be updated as soon as we have the ID.
 		this.saveAs(filename, mxUtils.bind(this, function(resp)
 		{
+			// Disconnects sync from the original file's channel
+			// and restarts on the copy's channel
+			if (this.sync != null)
+			{
+				this.sync.stop();
+				this.sync.channelId = null;
+				this.sync.key = null;
+			}
+
 			this.desc = resp;
+
+			// Restarts sync on the copy's channel before save
+			// so that createToken uses the correct channel ID
+			if (this.sync != null)
+			{
+				this.sync.start();
+			}
+
 			this.ui.spinner.stop();
 			this.setModified(false);
 			this.invalidChecksum = false;
 			this.inConflictState = false;
-			
+
 			this.descriptorChanged();
 			success();
 		}), mxUtils.bind(this, function()
 		{
 			this.ui.spinner.stop();
-			
+
 			if (error != null)
 			{
 				error();
