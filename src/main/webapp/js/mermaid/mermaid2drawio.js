@@ -48,6 +48,13 @@ mxMermaidToDrawio = function(graph, diagramtype, extra)
         ['#000000', '#dddddd']
     ];
 
+    // Mermaid neutral/dark theme defaults for nodes without explicit styles
+    var themeDefaults = {
+        fillColor: 'light-dark(#eeeeee,#1f2020)',
+        strokeColor: 'light-dark(#999999,#cccccc)',
+        fontColor: 'light-dark(#333333,#cccccc)'
+    };
+
     var IsStateDiagram = diagramtype == 'statediagram' || diagramtype == 'stateDiagram';
     var modelString = EditorUi.prototype.emptyDiagramXml;
 
@@ -135,6 +142,98 @@ mxMermaidToDrawio = function(graph, diagramtype, extra)
             node.x, node.y, node.width, node.height, style);
     }
 
+    function parseCssToDrawioStyle(cssStyles)
+    {
+        if (!cssStyles) return '';
+
+        var css = Array.isArray(cssStyles) ? cssStyles.join(';') : cssStyles;
+        var style = [];
+        var props = css.split(';');
+
+        for (var i = 0; i < props.length; i++)
+        {
+            var parts = props[i].split(':');
+
+            if (parts.length < 2) continue;
+
+            var key = parts[0].trim();
+            var value = parts.slice(1).join(':').trim();
+
+            if (!key || !value) continue;
+
+            switch (key)
+            {
+                case 'fill':
+                case 'background-color':
+                case 'background':
+                    style.push('fillColor=' + value);
+                break;
+                case 'stroke':
+                    style.push('strokeColor=' + value);
+                break;
+                case 'stroke-width':
+                    style.push('strokeWidth=' + parseFloat(value));
+                break;
+                case 'color':
+                    style.push('fontColor=' + value);
+                break;
+                case 'stroke-dasharray':
+                    style.push('dashed=1');
+                    var dashValues = value.trim().split(/[\s,]+/);
+
+                    if (dashValues.length >= 2)
+                    {
+                        style.push('dashPattern=' + dashValues.join(' '));
+                    }
+                break;
+            }
+        }
+
+        return style.length > 0 ? style.join(';') + ';' : '';
+    }
+
+    function deduplicateStyle(style)
+    {
+        var parts = style.split(';');
+        var defaultStyle = null;
+        var map = {};
+        var keys = [];
+
+        for (var i = 0; i < parts.length; i++)
+        {
+            var part = parts[i].trim();
+
+            if (!part) continue;
+
+            var eqIdx = part.indexOf('=');
+
+            if (eqIdx > 0)
+            {
+                var key = part.substring(0, eqIdx);
+
+                if (!map.hasOwnProperty(key))
+                {
+                    keys.push(key);
+                }
+
+                map[key] = part.substring(eqIdx + 1);
+            }
+            else
+            {
+                defaultStyle = part;
+            }
+        }
+
+        var result = defaultStyle != null ? [defaultStyle] : [];
+
+        for (var i = 0; i < keys.length; i++)
+        {
+            result.push(keys[i] + '=' + map[keys[i]]);
+        }
+
+        return result.join(';') + ';';
+    }
+
     function fixNodePos(node)
     {
         node.x -= node.width/2;
@@ -150,8 +249,6 @@ mxMermaidToDrawio = function(graph, diagramtype, extra)
         node.x = node.x - diff;
         node.y = node.y + diff;
     }
-    
-    // TODO Add styles if needed
     function addNode(node, parent, drawGraph, noPosFix)
     {
         var v;
@@ -166,6 +263,7 @@ mxMermaidToDrawio = function(graph, diagramtype, extra)
             node.shape = node.clusterData.shape;
             node.labelText = node.clusterData.labelText || node.clusterData.label;
             node.type = node.clusterData.type;
+            node.cssStyles = node.cssStyles || node.clusterData.cssStyles;
         }
 
         switch (node.shape)
@@ -737,6 +835,32 @@ mxMermaidToDrawio = function(graph, diagramtype, extra)
             v.style += 'verticalAlign=top;';
         }
 
+        // Apply Mermaid theme defaults then explicit CSS overrides
+        if (v != null)
+        {
+            var themeStyle = '';
+
+            if (v.style.indexOf('fillColor') < 0)
+            {
+                themeStyle += 'fillColor=' + themeDefaults.fillColor + ';';
+            }
+
+            if (v.style.indexOf('strokeColor') < 0)
+            {
+                themeStyle += 'strokeColor=' + themeDefaults.strokeColor + ';';
+            }
+
+            if (v.style.indexOf('fontColor') < 0)
+            {
+                themeStyle += 'fontColor=' + themeDefaults.fontColor + ';';
+            }
+
+            var nodeStyles = parseCssToDrawioStyle(node.cssStyles);
+
+            v.style = deduplicateStyle(v.style + ';' +
+                themeStyle + nodeStyles);
+        }
+
         return v;
     };
 
@@ -836,6 +960,13 @@ mxMermaidToDrawio = function(graph, diagramtype, extra)
         if (mxMermaidToDrawio.htmlLabels)
         {
             style.push('html=1');
+        }
+
+        var edgeCssStyle = parseCssToDrawioStyle(edgeInfo.style);
+
+        if (edgeCssStyle)
+        {
+            style.push(edgeCssStyle);
         }
 
         return style.join(';') + ';';

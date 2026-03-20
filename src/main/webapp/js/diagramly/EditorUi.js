@@ -550,6 +550,11 @@
 	EditorUi.prototype.formatEnabled = urlParams['format'] != '0';
 
 	/**
+	 * Restores app defaults for UI
+	 */
+	EditorUi.prototype.sidebarEnabled = urlParams['sidebar'] != '0';
+
+	/**
 	 * Whether template action should be shown in insert menu.
 	 */
 	EditorUi.prototype.insertTemplateEnabled = true;
@@ -559,6 +564,26 @@
 	 */
 	EditorUi.prototype.closableScratchpad = true;
 	
+	/**
+	 * Optional custom message source for embed mode. If set, messages
+	 * from this source are accepted in addition to window.opener/parent.
+	 * Embedders can set this before calling App.main() to avoid needing
+	 * to fake window.opener or re-dispatch messages.
+	 */
+	EditorUi.prototype.embedMessageSource = null;
+
+	/**
+	 * Default value for compact mode in file data output.
+	 * Can be set via Editor.configure({compact: true}).
+	 */
+	EditorUi.prototype.defaultCompact = false;
+
+	/**
+	 * Whether to suppress auto-focusing the editor window.
+	 * Can be set via Editor.configure({noAutoFocus: true}).
+	 */
+	EditorUi.prototype.noAutoFocus = false;
+
 	/**
 	 * Restores app defaults for UI
 	 */
@@ -1255,6 +1280,7 @@
 				if (nodes.length > 1 || (nodes.length == 1 && nodes[0].hasAttribute('name')))
 				{
 					this.fileNode = node;
+					graph.defaultExportLinkTarget = node.getAttribute('linkTarget');
 					this.pages = (this.pages != null) ? this.pages : [];
 					
 					// Wraps page nodes
@@ -1329,6 +1355,7 @@
 		graph = (graph != null) ? graph : this.editor.graph;
 		forceXml = (forceXml != null) ? forceXml : false;
 		ignoreSelection = (ignoreSelection != null) ? ignoreSelection : true;
+		compact = (compact != null) ? compact : this.defaultCompact;
 		uncompressed = (uncompressed != null) ? uncompressed : !Editor.defaultCompressed;
 		
 		var editLink = null;
@@ -2124,6 +2151,7 @@
 					// this.fileStats(file, node);
 					var selectedPage = null;
 					this.fileNode = node;
+					this.editor.graph.defaultExportLinkTarget = node.getAttribute('linkTarget');
 					this.pages = [];
 
 					// Wraps page nodes
@@ -3339,7 +3367,7 @@
 					this.restoreLibraries();
 					
 					// Workaround for no initial focus in FF
-					if (window.self !== window.top)
+					if (window.self !== window.top && !this.noAutoFocus)
 					{
 						window.focus();
 					}
@@ -3667,11 +3695,11 @@
 			{
 				StorageFile.getFileContent(this, '.scratchpad', mxUtils.bind(this, function(xml)
 				{
-					if (xml == null)
+					if (xml == null || xml.substring(0, 7) == '<mxfile')
 					{
 						xml = this.emptyLibraryXml;
 					}
-					
+
 					this.loadLibrary(new StorageLibrary(this, xml, '.scratchpad'));
 				}));
 			}
@@ -5823,10 +5851,10 @@
 			}
 		}));
 
-		if (this.editor.isExportToCanvas() && this.isChromelessImageExportEnabled())
+		if (this.editor.isExportToCanvas() && this.isChromelessImageExportEnabled() && urlParams['noExport'] != '1')
 		{
 			this.exportDialog = null;
-			
+
 			var exportButton = addButton(mxUtils.bind(this, function(evt)
 			{
 				var clickHandler = mxUtils.bind(this, function()
@@ -11484,7 +11512,17 @@
 
 			this.formatWidth = mxSettings.getFormatWidth();
 		}
-		
+
+		if (!this.formatEnabled)
+		{
+			this.formatWidth = 0;
+		}
+
+		if (!this.sidebarEnabled)
+		{
+			this.hsplitPosition = 0;
+		}
+
 		editorUiCreateUi.apply(this, arguments);
 
 		if (Editor.isSettingsEnabled())
@@ -11516,8 +11554,18 @@
 		graph.showLinkIcons = Editor.showLinkIcons;
 		graph.showTooltipIcons = Editor.showTooltipIcons;
 
-		// Resolves page links to page names for link overlay tooltips
+		// Opens the edit tooltip dialog for the given cell
 		var editorUi = this;
+
+		graph.editTooltip = function(cell)
+		{
+			if (cell != null)
+			{
+				editorUi.actions.get('editTooltip').funct();
+			}
+		};
+
+		// Resolves page links to page names for link overlay tooltips
 
 		graph.getLinkOverlayTooltip = function(link)
 		{
@@ -11907,11 +11955,31 @@
 					this.addMenuItems(menu, ['zoomIn', 'zoomOut', '-'], null, evt);
 				}
 
+				// In passiveScroll mode, store right-click point for insert actions
+				// and add the insert submenu to the background context menu
+				if (Editor.passiveScroll && evt != null)
+				{
+					var pt = mxUtils.convertPoint(graph.container,
+						mxEvent.getClientX(evt), mxEvent.getClientY(evt));
+					graph._contextMenuPoint = new mxPoint(
+						graph.snap(pt.x / graph.view.scale - graph.view.translate.x),
+						graph.snap(pt.y / graph.view.scale - graph.view.translate.y));
+					graph._contextMenuScreenPoint = mxUtils.convertPoint(graph.container,
+						mxEvent.getClientX(evt), mxEvent.getClientY(evt));
+				}
+
+				if (graph.isSelectionEmpty() && Editor.passiveScroll)
+				{
+					this.addSubmenu('insert', menu, null);
+					menu.addSeparator();
+				}
+
 				menusAddPopupMenuItems.apply(this, arguments);
 
-				// Shows add to scratchpad option
+				// Shows add to scratchpad option (hidden in passiveScroll mode)
 				if (!graph.isSelectionEmpty() &&
-					ui.addSelectionToScratchpad != null)
+					ui.addSelectionToScratchpad != null &&
+					!Editor.passiveScroll)
 				{
 					this.addMenuItems(menu, ['-', 'addToScratchpad'], null, evt);
 				}
@@ -11944,7 +12012,21 @@
 					}
 			
 					this.addMenuItems(menu, ['-', 'cut', 'copy', 'copyAsImage',
-						'copyAsSvg', 'duplicate', '-'], null, evt);
+						'copyAsSvg', 'duplicate'], null, evt);
+
+					if (Editor.passiveScroll)
+					{
+						if (graph.getSelectionCount() == 1)
+						{
+							this.addMenuItems(menu, ['-', 'copyStyle', 'pasteStyle'], null, evt);
+						}
+						else
+						{
+							this.addMenuItems(menu, ['-', 'pasteStyle'], null, evt);
+						}
+					}
+
+					this.addMenuItems(menu, ['-'], null, evt);
 
 					if (!this.isShowCellEditItems())
 					{
@@ -12009,6 +12091,46 @@
 			
 			this.menus.isShowArrangeItems = this.menus.isShowStyleItems;
 			this.menus.isShowCellEditItems = this.menus.isShowStyleItems;
+		}
+
+		// In passiveScroll mode, override insert point to use context menu location.
+		// Insert actions pass pt=null when there's no mouse insert point, which
+		// falls through to getCenterInsertPoint. We override that to return
+		// the stored context menu point instead.
+		if (Editor.passiveScroll)
+		{
+			var graphGetCenterInsertPoint = graph.getCenterInsertPoint;
+
+			graph.getCenterInsertPoint = function(bbox)
+			{
+				if (this._contextMenuPoint != null)
+				{
+					var pt = this._contextMenuPoint;
+					bbox = (bbox != null) ? bbox : new mxRectangle();
+
+					return new mxPoint(
+						graph.snap(pt.x - (bbox.width || 0) / 2),
+						graph.snap(pt.y - (bbox.height || 0) / 2));
+				}
+
+				return graphGetCenterInsertPoint.apply(this, arguments);
+			};
+
+			// Clear the stored point after the popup menu is hidden.
+			// Deferred so the action triggered by the menu item can read
+			// the point before it is cleared.
+			var popupHideMenu = graph.popupMenuHandler.hideMenu;
+
+			graph.popupMenuHandler.hideMenu = function()
+			{
+				popupHideMenu.apply(this, arguments);
+
+				window.setTimeout(function()
+				{
+					graph._contextMenuPoint = null;
+					graph._contextMenuScreenPoint = null;
+				}, 0);
+			};
 		}
 
 		// Specifies the default filename
@@ -12192,18 +12314,30 @@
 			{
 				document.body.classList.add('geEmbedInline');
 
-				graph.addListener(mxEvent.ESCAPE, function(sender, evt)
+				if (Editor.passiveScroll)
 				{
-					if (evt != null && graph.isEnabled() && !graph.isEditing() &&
-						evt.getProperty('event') != null)
+					document.body.classList.add('geInlineNoUi');
+				}
+
+				if (!Editor.passiveScroll)
+				{
+					graph.addListener(mxEvent.ESCAPE, function(sender, evt)
 					{
-						ui.actions.get('exit').funct();
-					}
-				});
+						if (evt != null && graph.isEnabled() && !graph.isEditing() &&
+							evt.getProperty('event') != null)
+						{
+							ui.actions.get('exit').funct();
+						}
+					});
+				}
 			}
 
 		    this.installImagePasteHandler();
-		    this.installNativeClipboardHandler();
+
+			if (!this.useInternalClipboard)
+			{
+		    	this.installNativeClipboardHandler();
+			}
 		};
 
 		// Creates the spinner
@@ -12696,7 +12830,7 @@
 			if (theme == 'simple' || theme == 'sketch')
 			{
 				this.doSetCurrentTheme(theme, true);
-				
+
 				if (urlParams['embedInline'] == '1')
 				{
 					// Inline embed mode must be initialized after setting current theme
@@ -12704,16 +12838,44 @@
 				}
 				else
 				{
-					// Initial state of format panel
+					// Initial state of format panel and sidebar
 					var iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
-					
+
 					if (iw < Editor.smallScreenWidth)
 					{
-						this.toggleFormatPanel(false);
+						this.formatWidth = 0;
+					}
+
+					if (theme == 'simple' && iw < Editor.smallScreenWidth - 240)
+					{
+						this.hsplitPosition = 0;
+					}
+
+					if (theme == 'simple')
+					{
+						this.lastWindowWidth = iw;
 					}
 				}
 
 				this.fireEvent(new mxEventObject('themeInitialized'));
+			}
+
+			// Initial state of format panel and sidebar for kennedy
+			if (theme == 'kennedy')
+			{
+				var iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+
+				if (iw < Editor.smallScreenWidth)
+				{
+					this.formatWidth = 0;
+				}
+
+				if (iw < Editor.smallScreenWidth - 240)
+				{
+					this.hsplitPosition = 0;
+				}
+
+				this.lastWindowWidth = iw;
 			}
 		}
 
@@ -12821,19 +12983,19 @@
 
 	EditorUi.prototype.windowResized = function()
 	{
-		if (Editor.currentTheme == 'simple')
+		if (Editor.currentTheme == 'simple' || Editor.currentTheme == 'kennedy')
 		{
 			var iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
-			var limit = Editor.smallScreenWidth;
+			var formatLimit = Editor.smallScreenWidth;
 
-			if (this.lastWindowWidth != null && this.lastWindowWidth >= limit && iw < limit)
+			if (this.lastWindowWidth != null && this.lastWindowWidth >= formatLimit && iw < formatLimit)
 			{
 				if (this.isFormatPanelVisible())
 				{
 					this.toggleFormatPanel(false);
 				}
 			}
-			else if (this.lastWindowWidth != null && this.lastWindowWidth < limit && iw >= limit)
+			else if (this.lastWindowWidth != null && this.lastWindowWidth < formatLimit && iw >= formatLimit)
 			{
 				if (!this.isFormatPanelVisible())
 				{
@@ -12841,10 +13003,33 @@
 				}
 			}
 
+			var sidebarLimit = Editor.smallScreenWidth - 160;
+
+			if (this.lastWindowWidth != null && this.lastWindowWidth >= sidebarLimit && iw < sidebarLimit)
+			{
+				if (this.isShapesPanelVisible())
+				{
+					this.toggleShapesPanel(false, true);
+
+				}
+			}
+			else if (this.lastWindowWidth != null && this.lastWindowWidth < sidebarLimit && iw >= sidebarLimit)
+			{
+				if (!this.isShapesPanelVisible() && this.sidebarEnabled)
+				{
+					this.toggleShapesPanel(true, true);
+				}
+			}
+
 			this.lastWindowWidth = iw;
 		}
 
 		editorUiWindowResized.apply(this, arguments);
+
+		if (this.updateFullscreenState != null)
+		{
+			this.updateFullscreenState();
+		}
 	};
 
 	/**
@@ -12929,7 +13114,7 @@
 
 			if (changed)
 			{
-				var parent = window.opener || window.parent;
+				var parent = this.embedMessageSource || window.opener || window.parent;
 				parent.postMessage(JSON.stringify({
 					event: 'resize',
 					fullscreen: Editor.inlineFullscreen,
@@ -12961,7 +13146,15 @@
 		this.addListener('editInlineStart', mxUtils.bind(this, function(evt)
 		{
 			this.inlineSizeChanged();
-			this.fitWindows();
+
+			if (Editor.passiveScroll)
+			{
+				this.hideWindows();
+			}
+			else
+			{
+				this.fitWindows();
+			}
 		}));
 
 		this.addListener('editInlineStop', mxUtils.bind(this, function(evt)
@@ -14314,6 +14507,11 @@
 
 			this.formatWindow.window.addListener(mxEvent.SHOW, mxUtils.bind(this, function()
 			{
+				if (this.format != null)
+				{
+					this.format.refresh();
+				}
+
 				this.formatWindow.window.fit();
 			}));
 
@@ -14353,7 +14551,7 @@
 			this.formatWindow.window.minimumSize = new mxRectangle(0, 0, 240, 80);
 
 			// Sets initial state for format window
-			if (Editor.currentTheme == 'sketch')
+			if (Editor.currentTheme == 'sketch' && this.formatEnabled)
 			{
 				window.setTimeout(mxUtils.bind(this, mxUtils.bind(this, function()
 				{
@@ -14397,7 +14595,7 @@
 	/**
 	 * 
 	 */
-	EditorUi.prototype.toggleShapesPanel = function(visible)
+	EditorUi.prototype.toggleShapesPanel = function(visible, noScroll)
 	{
 		if (this.isShapesPanelVisible() != visible)
 		{
@@ -14416,7 +14614,11 @@
 			{
 				this.hsplitPosition = tmp;
 				this.refresh();
-				this.diagramContainer.scrollLeft -= x - this.hsplitPosition;
+
+				if (!noScroll)
+				{
+					this.diagramContainer.scrollLeft -= x - this.hsplitPosition;
+				}
 			});
 			
 			var tmp = (visible) ? size : 0;
@@ -14440,11 +14642,13 @@
 					mxUtils.setPrefixedStyle(this.sidebarContainer.style, 'transition', null);
 					mxUtils.setPrefixedStyle(this.sidebarContainer.style, 'transform', null);
 					mxUtils.setPrefixedStyle(this.sidebarContainer.style, 'transform-origin', null);
-					
+
 					if (tmp == 0)
 					{
 						doRefresh();
 					}
+
+					this.fireEvent(new mxEventObject('shapesPanelChanged'));
 				}), delay * 1000);
 			}), 0);
 		}
@@ -14869,7 +15073,7 @@
 				JSON.stringify(this.saveScrollState(true)));
 			
 			// Send request for fullscreen to parent
-			var parent = window.opener || window.parent;
+			var parent = this.embedMessageSource || window.opener || window.parent;
 			parent.postMessage(JSON.stringify({
 				event: 'resize',
 				fullscreen: value,
@@ -14939,7 +15143,7 @@
 				this.diagramContainer.style.bottom = '';
 				this.diagramContainer.style.right = '';
 
-				var parent = window.opener || window.parent;
+				var parent = this.embedMessageSource || window.opener || window.parent;
 				parent.postMessage(JSON.stringify({
 					event: 'resize',
 					rect: this.diagramContainer.getBoundingClientRect()
@@ -14976,10 +15180,14 @@
 				this.bottomResizer.offsetHeight) / 2) + 'px';
 		}
 
-		this.bottomResizer.style.visibility = (Editor.inlineFullscreen) ? 'hidden' : '';
+		this.bottomResizer.style.visibility = (Editor.inlineFullscreen ||
+			Editor.noResizers) ? 'hidden' : '';
 		this.rightResizer.style.visibility = this.bottomResizer.style.visibility;
-		toolbar.style.visibility = '';
-		footer.style.visibility = '';
+
+		var inlineNoUi = urlParams['embedInline'] == '1' && Editor.passiveScroll;
+		toolbar.style.visibility = inlineNoUi ? 'hidden' : '';
+		footer.style.visibility = inlineNoUi ? 'hidden' : '';
+		picker.style.display = inlineNoUi ? 'none' : '';
 	};
 
 	/**
@@ -15923,6 +16131,12 @@
 	EditorUi.prototype.pasteFromClipboard = function(pt)
 	{
 		var graph = this.editor.graph;
+
+		if (pt == null && Editor.pasteAtMousePointer &&
+			graph.isMouseInsertPoint())
+		{
+			pt = graph.getInsertPoint();
+		}
 
 		if (graph.isEnabled() && !graph.isCellLocked(graph.getDefaultParent()))
 		{
@@ -17620,7 +17834,7 @@
 	EditorUi.prototype.initializeEmbedMode = function()
 	{
 		this.setGraphEnabled(false);
-		var parent = window.opener || window.parent;
+		var parent = this.embedMessageSource || window.opener || window.parent;
 
 		if (parent != window)
 		{
@@ -17648,6 +17862,12 @@
 					this.setCurrentFile(new EmbedFile(this, xml, {}));
 					this.mode = App.MODE_EMBED;
 					this.setFileData(xml);
+
+					// Fits diagram to window
+					if (Editor.fitDiagramOnLoad)
+					{
+						this.initialFitDiagram();
+					}
 					
 					// TODO: Check if cellsInserted should be fired instead here
 					if (convertToSketch)
@@ -17698,7 +17918,7 @@
 					
 					// Workaround for no initial focus in FF
 					// (does not work in Conf Cloud with FF)
-					if (window.self !== window.top)
+					if (window.self !== window.top && !this.noAutoFocus)
 					{
 						window.focus();
 					}
@@ -17758,10 +17978,21 @@
 	EditorUi.prototype.createLoadMessage = function(eventName)
 	{
 		var graph = this.editor.graph;
-		
-		return {event: eventName, pageVisible: graph.pageVisible, translate: graph.view.translate,
-			bounds: graph.getGraphBounds(), currentPage: this.getSelectedPageIndex(),
-			scale: graph.view.scale, page: graph.view.getBackgroundPageBounds()};
+		var bounds = graph.getGraphBounds();
+		var s = graph.view.scale;
+		var t = graph.view.translate;
+
+		return {event: eventName, pageVisible: graph.pageVisible, translate: t,
+			bounds: bounds, currentPage: this.getSelectedPageIndex(),
+			scale: s, page: graph.view.getBackgroundPageBounds(),
+			modelBounds: {
+				x: bounds.x / s - t.x,
+				y: bounds.y / s - t.y,
+				width: bounds.width / s,
+				height: bounds.height / s
+			},
+			containerSize: {width: graph.container.clientWidth, height: graph.container.clientHeight,
+				offsetWidth: graph.container.offsetWidth, offsetHeight: graph.container.offsetHeight}};
 	};
 	
 	/**
@@ -17778,7 +18009,7 @@
 				graph.stopEditing(!graph.isInvokesStopCellEditing());
 			}
 
-			var parent = window.opener || window.parent;
+			var parent = this.embedMessageSource || window.opener || window.parent;
 			
 			if (!this.editor.modified)
 			{
@@ -17865,7 +18096,7 @@
 		// Receives XML message from opener and puts it into the graph
 		mxEvent.addListener(window, 'message', mxUtils.bind(this, function(evt)
 		{
-			var validSource = window.opener || window.parent;
+			var validSource = this.embedMessageSource || window.opener || window.parent;
 			
 			if (evt.source != validSource)
 			{
@@ -17937,6 +18168,8 @@
 				
 				try
 				{
+					var message = data;
+
 					if (data == null)
 					{
 						// Ignore
@@ -18098,8 +18331,8 @@
 							{
 								this.sidebar.hideTooltip();
 							}
-							
-							if (cancel)
+
+							if (cancel && !data.noExitOnCancel)
 							{
 								this.actions.get('exit').funct();
 							}
@@ -18175,6 +18408,46 @@
 
 						return;
 					}
+					else if (data.action == 'invokeAction')
+					{
+						var action = this.actions.get(data.actionName);
+
+						if (action != null)
+						{
+							action.funct();
+						}
+
+						return;
+					}
+					else if (data.action == 'resetEditor')
+					{
+						var graph = this.editor.graph;
+
+						if (graph.isEditing())
+						{
+							graph.stopEditing(false);
+						}
+
+						this.hideCurrentMenu();
+						graph.popupMenuHandler.hideMenu();
+						graph.clearSelection();
+
+						return;
+					}
+					else if (data.action == 'fit')
+					{
+						var graph = this.editor.graph;
+						var prev = graph.maxFitScale;
+						graph.maxFitScale = (data.maxScale != null) ? data.maxScale : 1;
+						graph.fit((data.border != null) ? data.border : 16, null, null, null, null, true);
+						graph.maxFitScale = prev;
+
+						var msg = this.createLoadMessage('fit');
+						msg.message = data;
+						parent.postMessage(JSON.stringify(msg), '*');
+
+						return;
+					}
 					else if (data.action == 'fullscreenChanged')
 					{
 						var scrollState = null;
@@ -18239,7 +18512,7 @@
 									
 									var msg = this.createLoadMessage('export');
 									msg.format = data.format;
-									msg.message = data;
+									msg.message = message;
 									msg.data = uri;
 									msg.svg = svg;
 									msg.xml = xml;
@@ -18417,6 +18690,14 @@
 									msg.xml = mxUtils.getXml(xml);
 									msg.format = data.format;
 								}
+								else if (data.format == 'xml')
+								{
+									msg.xml = this.getFileData(true);
+									msg.format = data.format;
+									parent.postMessage(JSON.stringify(msg), '*');
+
+									return;
+								}
 								else
 								{
 									// Creates a preview with no alt text for unsupported browsers
@@ -18549,6 +18830,7 @@
 					{
 						convertToSketch = data.toSketch;
 						autosave = data.autosave == 1;
+						var sourceMetadata = data.sourceMetadata || null;
 						this.hideDialog();
 						
 						if (data.modified != null && urlParams['modified'] == null)
@@ -18620,6 +18902,44 @@
 						}
 
 						this.embedExitPoint = null;
+
+						if (data.scale != null)
+						{
+							var customScale = data.scale;
+							var scaleBorder = (data.scaleBorder != null) ?
+								data.scaleBorder : (this.embedExportBorder || 0);
+							var border = (data.border != null) ? data.border : 0;
+
+							afterLoad = mxUtils.bind(this, function()
+							{
+								var graph = this.editor.graph;
+								var bounds = graph.getGraphBounds();
+
+								if (bounds.width > 0 && bounds.height > 0)
+								{
+									var s = graph.view.scale;
+									var x0 = graph.view.translate.x + border -
+										bounds.x / s + scaleBorder / customScale;
+									var y0 = graph.view.translate.y + border -
+										bounds.y / s + scaleBorder / customScale;
+									graph.view.scaleAndTranslate(customScale, x0, y0);
+								}
+							});
+						}
+						else if (data.fit != null)
+						{
+							var fitBorder = (data.border != null) ? data.border : 0;
+							var fitMaxScale = data.maxFitScale || 1;
+
+							afterLoad = mxUtils.bind(this, function()
+							{
+								var graph = this.editor.graph;
+								var prev = graph.maxFitScale;
+								graph.maxFitScale = fitMaxScale;
+								graph.fit(fitBorder, null, null, null, null, true);
+								graph.maxFitScale = prev;
+							});
+						}
 
 						if (data.rect != null)
 						{
@@ -18730,6 +19050,36 @@
 									this.parseMermaidDiagram(data.data, null, mxUtils.bind(this, function(xml)
 									{
 										fn(xml, evt, null, convertToSketch);
+
+										// Post load event back to parent (doLoad is out of scope here)
+										var resp = this.createLoadMessage('load');
+										resp.xml = this.getFileData(true, null, null, null,
+											null, null, null, null, null, true);
+										resp.message = message;
+										var parent = this.embedMessageSource || window.opener || window.parent;
+										parent.postMessage(JSON.stringify(resp), '*');
+
+										if (sourceMetadata != null && sourceMetadata.key != null &&
+											sourceMetadata.value != null)
+										{
+											var graph = this.editor.graph;
+											var root = graph.getModel().getRoot();
+
+											if (root != null)
+											{
+												graph.getModel().beginUpdate();
+
+												try
+												{
+													graph.setAttributeForCell(root,
+														sourceMetadata.key, sourceMetadata.value);
+												}
+												finally
+												{
+													graph.getModel().endUpdate();
+												}
+											}
+										}
 									}), mxUtils.bind(this, function(e)
 									{
 										this.handleError(e);
@@ -18744,7 +19094,6 @@
 
 								return;
 							}
-
 						}
 						else
 						{
@@ -18839,7 +19188,8 @@
 						{
 							var msg = this.createLoadMessage('autosave');
 							msg.xml = data;
-							var parent = window.opener || window.parent;
+							msg.message = message;
+							var parent = this.embedMessageSource || window.opener || window.parent;
 							parent.postMessage(JSON.stringify(msg), '*');
 						}
 						
@@ -18862,20 +19212,23 @@
 					this.addListener('pageViewChanged', changeListener);
 				}
 				
+				// Runs afterLoad before sending the load response so that
+				// the reported scale and bounds reflect any adjustments
+				// (e.g. custom scale parameter)
+				if (afterLoad != null)
+				{
+					afterLoad();
+				}
+
 				// Sends the bounds of the graph to the host after parsing
 				if (urlParams['returnbounds'] == '1' || urlParams['proto'] == 'json')
 				{
 					var resp = this.createLoadMessage('load');
-					
+
 					// Attaches XML to response
 					resp.xml = data;
-					
-					parent.postMessage(JSON.stringify(resp), '*');
-				}
 
-				if (afterLoad != null)
-				{
-					afterLoad();
+					parent.postMessage(JSON.stringify(resp), '*');
 				}
 			});
 			
@@ -18948,7 +19301,7 @@
 		
 		// Requests data from the sender. This is a workaround for not allowing
 		// the opener to listen for the onload event if not in the same origin.
-		var parent = window.opener || window.parent;
+		var parent = this.embedMessageSource || window.opener || window.parent;
 		var msg = (urlParams['proto'] == 'json') ? JSON.stringify({event: 'init'}) : (urlParams['ready'] || 'ready');
 		parent.postMessage(msg, '*');
 		
@@ -19067,7 +19420,7 @@
 	};
 
 	/**
-	 * 
+	 *
 	 */
 	EditorUi.prototype.showImportCsvDialog = function()
 	{

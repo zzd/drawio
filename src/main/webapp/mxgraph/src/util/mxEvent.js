@@ -803,7 +803,14 @@ var mxEvent =
 	 * Default is -2.
 	 */
 	ROTATION_HANDLE: -2,
-	
+
+	/**
+	 * Variable: CONNECT_HANDLE
+	 *
+	 * Index for the connect handle in an mxMouseEvent. Default is -3.
+	 */
+	CONNECT_HANDLE: -3,
+
 	/**
 	 * Variable: CUSTOM_HANDLE
 	 * 
@@ -1513,6 +1520,13 @@ var mxEvent =
 	 * Specifies the event name for start.
 	 */
 	START: 'start',
+
+	/**
+	 * Variable: UPDATE
+	 *
+	 * Specifies the event name for update.
+	 */
+	UPDATE: 'update',
 
 	/**
 	 * Variable: RESET

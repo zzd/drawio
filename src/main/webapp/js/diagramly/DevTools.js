@@ -2,7 +2,7 @@
  * Copyright (c) 2020-2025, JGraph Holdings Ltd
  * Copyright (c) 2020-2025, draw.io AG
  */
-if (urlParams['dev'] == '1')
+if (urlParams['dev-tooltips'] == '1')
 {
 	(function()
 	{

@@ -6,6 +6,12 @@
 // urlParams is null when used for embedding
 window.urlParams = window.urlParams || {};
 
+// mxIsElectron is false in embed mode (set by bootstrap.js for desktop)
+if (window.mxIsElectron == null || urlParams['embed'] == '1')
+{
+	window.mxIsElectron = false;
+}
+
 // isLocalStorage controls access to local storage
 window.isLocalStorage = window.isLocalStorage || false;
 

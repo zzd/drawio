@@ -189,30 +189,49 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 				if (this.responsive && this.graph.dialect == mxConstants.DIALECT_SVG)
 				{
 					var root = this.graph.view.getDrawPane().ownerSVGElement;
-						
+
+					// Border is applied as CSS padding on the container so that
+					// it stays at a fixed pixel size when the diagram is scaled
+					// down. This matches graph.fit(border) in the draw.io editor,
+					// which also reserves a fixed-pixel border before scaling.
+					var responsiveBorder = 0;
+
 					if (this.graphConfig.border != null)
 					{
-						root.style.padding = this.graphConfig.border + 'px';
+						responsiveBorder = this.graphConfig.border;
 					}
 					else if (container.style.padding == '')
 					{
-						root.style.padding = '8px';
+						responsiveBorder = 8;
 					}
-					
+
+					if (responsiveBorder > 0)
+					{
+						container.style.padding = responsiveBorder + 'px';
+						container.style.boxSizing = 'border-box';
+					}
+
 					root.style.forcedColorAdjust = 'none';
 					root.style.boxSizing = 'border-box';
 					root.style.overflow = 'visible';
-					
+
 					this.graph.fit = function()
 					{
 						// Automatic
 					};
-					
+
+					var maxScale = parseFloat(this.graphConfig['responsive-max-scale']);
+
+					// Capture any pre-existing maxWidth on the container (e.g. set
+					// by the host page to constrain the diagram) so we can honour
+					// it as an upper bound when responsive-max-scale adjusts the width.
+					var presetMaxWidth = parseFloat(container.style.maxWidth);
+
 					this.graph.sizeDidChange = function()
 					{
 						var bounds = this.view.graphBounds;
 						var tr = this.view.translate;
-						
+
 						root.setAttribute('viewBox',
 							(bounds.x + tr.x - this.panDx) + ' ' +
 							(bounds.y + tr.y - this.panDy) + ' ' +
@@ -220,6 +239,15 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 							(bounds.height + 1));
 						this.container.style.backgroundColor =
 							root.style.backgroundColor;
+
+						if (!isNaN(maxScale))
+						{
+							var naturalWidth = Math.round(
+								(bounds.width + 1) * maxScale + 2 * responsiveBorder);
+							var finalMaxWidth = !isNaN(presetMaxWidth) ?
+								Math.min(naturalWidth, presetMaxWidth) : naturalWidth;
+							this.container.style.maxWidth = finalMaxWidth + 'px';
+						}
 
 						this.fireEvent(new mxEventObject(mxEvent.SIZE, 'bounds', bounds));
 					};

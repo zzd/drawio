@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "draw.io Dev Server",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "--directory", "src/main/webapp", "8085"],
+      "port": 8085
+    },
+    {
+      "name": "VSD Node Import Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "port": 5757
+    },
+    {
+      "name": "VSDX Import Test Server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "."],
+      "port": 3000
+    },
+    {
+      "name": "Cloudflare Release Monitor",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["wrangler", "dev"],
+      "port": 8787
+    }
+  ]
+}

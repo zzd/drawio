@@ -284,7 +284,7 @@
 	/**
 	 * Specifies if window docking should be enabled. Default is true.
 	 */
-	Editor.enableWindowDocking = true;
+	Editor.enableWindowDocking = urlParams['embedInline'] != '1';
 
 	/**
 	 * Specifies paste should be at the mouse pointer location. Default is true.
@@ -295,6 +295,11 @@
 	 * Specifies if the diagram should be fit to the window on load. Default is true.
 	 */
 	Editor.fitDiagramOnLoad = true;
+
+	/**
+	 * Specifies if the diagram should be fit to the page on load. Default is true.
+	 */
+	Editor.fitDiagramOnPage = true;
 
 	/**
 	 * Specifies if link icons should be shown on shapes. Default is false.
@@ -2460,7 +2465,28 @@
 			{
 				urlParams['test'] = '1'
 			}
-			
+
+			// Inline embed mode options
+			if (config.passiveScroll)
+			{
+				Editor.passiveScroll = true;
+			}
+
+			if (config.noResizers)
+			{
+				Editor.noResizers = true;
+			}
+
+			if (config.preserveViewState)
+			{
+				Editor.preserveViewState = true;
+			}
+
+			if (config.useInternalClipboard)
+			{
+				EditorUi.prototype.useInternalClipboard = config.useInternalClipboard;
+			}
+
 			if (config.customCss != null)
 			{
 				var style = document.createElement('style');
@@ -2557,6 +2583,11 @@
 				Editor.fitDiagramOnLoad = config.fitDiagramOnLoad;
 			}
 
+			if (config.fitDiagramOnPage != null)
+			{
+				Editor.fitDiagramOnPage = config.fitDiagramOnPage;
+			}
+
 			if (config.showLinkIcons != null)
 			{
 				Editor.showLinkIcons = config.showLinkIcons;
@@ -2565,6 +2596,11 @@
 			if (config.showTooltipIcons != null)
 			{
 				Editor.showTooltipIcons = config.showTooltipIcons;
+			}
+
+			if (config.showConnectHandle != null)
+			{
+				Editor.showConnectHandle = config.showConnectHandle;
 			}
 
 			if (config.enableInlineToolbar != null)
@@ -2723,6 +2759,25 @@
 			if (config.defaultGridEnabled != null)
 			{
 				Graph.prototype.defaultGridEnabled = config.defaultGridEnabled;
+			}
+
+			// Overrides default connection arrows on hover
+			if (config.defaultConnectionArrowsEnabled != null)
+			{
+				Graph.prototype.defaultConnectionArrowsEnabled = config.defaultConnectionArrowsEnabled;
+				Graph.prototype.connectionArrowsEnabled = config.defaultConnectionArrowsEnabled;
+			}
+
+			// Overrides default connectable (connection handler)
+			if (config.defaultConnectable != null)
+			{
+				Graph.prototype.defaultConnectable = config.defaultConnectable;
+			}
+
+			// Overrides default folding enabled
+			if (config.defaultFoldingEnabled != null)
+			{
+				Graph.prototype.defaultFoldingEnabled = config.defaultFoldingEnabled;
 			}
 
 			// Overrides mouse wheel function
@@ -2947,11 +3002,60 @@
 				Editor.enableWindowDocking = config.enableWindowDocking;
 			}
 
+			if (config.compact != null)
+			{
+				EditorUi.prototype.defaultCompact = config.compact;
+			}
+
+			if (config.noAutoFocus != null)
+			{
+				EditorUi.prototype.noAutoFocus = config.noAutoFocus;
+			}
+
+			if (config.hideMenuItems != null)
+			{
+				if (Array.isArray(config.hideMenuItems))
+				{
+					Menus.prototype.hiddenMenuItems = {};
+
+					for (var i = 0; i < config.hideMenuItems.length; i++)
+					{
+						Menus.prototype.hiddenMenuItems[config.hideMenuItems[i]] = true;
+					}
+				}
+				else
+				{
+					EditorUi.debug('Configuration Error: Array expected for hideMenuItems');
+				}
+			}
+
+			if (config.hideMenus != null)
+			{
+				if (Array.isArray(config.hideMenus))
+				{
+					var hiddenLookup = {};
+
+					for (var i = 0; i < config.hideMenus.length; i++)
+					{
+						hiddenLookup[config.hideMenus[i]] = true;
+					}
+
+					Menus.prototype.defaultMenuItems = Menus.prototype.defaultMenuItems.filter(function(m)
+					{
+						return !hiddenLookup[m];
+					});
+				}
+				else
+				{
+					EditorUi.debug('Configuration Error: Array expected for hideMenus');
+				}
+			}
+
 			if (config.enableAi != null)
 			{
 				Editor.enableAi = config.enableAi;
 			}
-			
+
 			if (config.enableChatGpt != null)
 			{
 				Editor.enableAi = config.enableChatGpt;

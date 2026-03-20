@@ -301,7 +301,7 @@ EditorUi.initMinimalTheme = function()
 		{
 			var iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
 
-			if (iw >= 1000 && this.sidebarWindow != null)
+			if (iw >= 1000 && this.sidebarWindow != null && this.sidebarEnabled)
             {
                 this.sidebarWindow.window.setVisible(true);
             }
@@ -671,8 +671,17 @@ EditorUi.initMinimalTheme = function()
         function refreshMenu()
         {
 			iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+			
+			// Measure embed button width before clearing menubar
+			var embedOffset = 0;
+
+			if (urlParams['embed'] == '1' && ui.buttonContainer != null)
+			{
+				embedOffset = ui.buttonContainer.offsetWidth || 300;
+			}
+
 			menubar.innerHTML = '';
-			var small = iw < 1000;
+			var small = iw < 1000 + embedOffset;
 			var appElt = addMenu('diagram', null, (small) ? Editor.menuImage : null);
 
 			createGroup([appElt, addMenuItem(mxResources.get('shapes'), ui.actions.get('toggleShapes').funct, null,
@@ -680,7 +689,7 @@ EditorUi.initMinimalTheme = function()
 				addMenuItem(mxResources.get('format'), ui.actions.get('format').funct, null,
 				mxResources.get('format') + ' (' + ui.actions.get('format').shortcut + ')', ui.actions.get('image'),
 				(small) ? Editor.formatImage : null)]);
-		
+
 			var insertElt = addMenu('insert', true, (small) ? insertImage : null);
 			createGroup([insertElt, addMenuItem(mxResources.get('delete'), ui.actions.get('delete').funct,
 				null, mxResources.get('delete'), ui.actions.get('delete'),
@@ -690,7 +699,7 @@ EditorUi.initMinimalTheme = function()
 			{
 				insertElt.setAttribute('disabled', 'disabled');
 			}
-			
+
 			undoElt.setAttribute('title', mxResources.get('undo') +
 				' (' + undoAction.shortcut + ')');
 			redoElt.setAttribute('title', mxResources.get('redo') +
@@ -698,17 +707,17 @@ EditorUi.initMinimalTheme = function()
 			fitElt.setAttribute('title', mxResources.get('fit') +
 				' (' + Editor.ctrlKey + '+H)');
 
-			if (iw >= 411)
+			if (iw >= 411 + embedOffset)
 			{
 				createGroup([undoElt, redoElt]);
-	
-				if (iw >= 520)
+
+				if (iw >= 520 + embedOffset)
 				{
 					createGroup([fitElt,
-						(iw >= 640) ? addMenuItem('', zoomInAction.funct, true,
+						(iw >= 640 + embedOffset) ? addMenuItem('', zoomInAction.funct, true,
 							mxResources.get('zoomIn') + ' (' + Editor.ctrlKey + ' +)',
 							zoomInAction, Editor.zoomInImage) : null,
-						(iw >= 640) ? addMenuItem('', zoomOutAction.funct, true,
+						(iw >= 640 + embedOffset) ? addMenuItem('', zoomOutAction.funct, true,
 							mxResources.get('zoomOut') + ' (' + Editor.ctrlKey + ' -)',
 							zoomOutAction, Editor.zoomOutImage) : null]);
 				}

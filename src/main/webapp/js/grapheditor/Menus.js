@@ -8,6 +8,7 @@ Menus = function(editorUi)
 {
 	this.editorUi = editorUi;
 	this.menus = new Object();
+	this.pluginMenuItems = {};
 	this.init();
 };
 
@@ -25,6 +26,12 @@ Menus.prototype.defaultFontSize = '12';
  * Sets the default font size.
  */
 Menus.prototype.defaultMenuItems = ['file', 'edit', 'view', 'arrange', 'extras', 'help'];
+
+/**
+ * Lookup for menu items and submenus to hide. Set via the
+ * hideMenuItems configuration property (array of names).
+ */
+Menus.prototype.hiddenMenuItems = null;
 
 /**
  * Adds the label menu items to the given menu and parent.
@@ -617,6 +624,11 @@ Menus.prototype.get = function(name)
  */
 Menus.prototype.addSubmenu = function(name, menu, parent, label)
 {
+	if (this.hiddenMenuItems != null && this.hiddenMenuItems[name])
+	{
+		return null;
+	}
+
 	var entry = this.get(name);
 	var submenu = null;
 	
@@ -641,11 +653,46 @@ Menus.prototype.addSubmenu = function(name, menu, parent, label)
 Menus.prototype.addMenu = function(name, popupMenu, parent)
 {
 	var menu = this.get(name);
-	
+
 	if (menu != null && (popupMenu.showDisabled || menu.isEnabled()))
 	{
 		menu.execute(popupMenu, parent);
 	}
+
+	// Appends plugin-registered items
+	var pluginItems = this.pluginMenuItems[name];
+
+	if (pluginItems != null && pluginItems.length > 0)
+	{
+		popupMenu.addSeparator(parent);
+
+		for (var i = 0; i < pluginItems.length; i++)
+		{
+			if (pluginItems[i] == '-')
+			{
+				popupMenu.addSeparator(parent);
+			}
+			else
+			{
+				this.addMenuItem(popupMenu, pluginItems[i], parent);
+			}
+		}
+	}
+};
+
+/**
+ * Registers additional menu items (action names) to append to a
+ * named menu. Items can be action names or '-' for separators.
+ */
+Menus.prototype.addPluginMenuItems = function(menuName, items)
+{
+	if (this.pluginMenuItems[menuName] == null)
+	{
+		this.pluginMenuItems[menuName] = [];
+	}
+
+	this.pluginMenuItems[menuName] =
+		this.pluginMenuItems[menuName].concat(items);
 };
 
 /**
@@ -1420,6 +1467,11 @@ Menus.prototype.toggleStyle = function(key, defaultValue)
  */
 Menus.prototype.addMenuItem = function(menu, key, parent, trigger, sprite, label)
 {
+	if (this.hiddenMenuItems != null && this.hiddenMenuItems[key])
+	{
+		return null;
+	}
+
 	var action = this.editorUi.actions.get(key);
 
 	if (action != null && (menu.showDisabled || action.isEnabled()) && action.visible)

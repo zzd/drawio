@@ -346,6 +346,11 @@ Editor.pageSizeUnit = mxConstants.INCHES;
 Editor.removeImageMetadata = true;
 
 /**
+ * Whether to show the connect handle on selected vertices. Default is false.
+ */
+Editor.showConnectHandle = false;
+
+/**
  * Whether to enable the inline toolbar. Default is true.
  */
 Editor.enableInlineToolbar = true;
@@ -1082,8 +1087,9 @@ Editor.prototype.resetGraph = function()
 	this.graph.gridEnabled = this.graph.defaultGridEnabled && (!this.isChromelessView() || urlParams['grid'] == '1');
 	this.graph.graphHandler.guidesEnabled = true;
 	this.graph.setTooltips(true);
-	this.graph.setConnectable(true);
-	this.graph.foldingEnabled = true;
+	this.graph.setConnectable(this.graph.defaultConnectable);
+	this.graph.connectionArrowsEnabled = this.graph.defaultConnectionArrowsEnabled;
+	this.graph.foldingEnabled = this.graph.defaultFoldingEnabled;
 	this.graph.scrollbars = this.graph.defaultScrollbars;
 	this.graph.pageVisible = this.graph.defaultPageVisible;
 	this.graph.pageBreaksVisible = this.graph.pageVisible; 
@@ -1103,29 +1109,77 @@ Editor.prototype.resetGraph = function()
  */
 Editor.prototype.readGraphState = function(node)
 {
+	// Preserve original XML attribute values for settings overridden by
+	// URL parameters or config defaults so getGraphXml can write them back
+	// instead of persisting the forced runtime state.
+	this.savedGraphState = {};
+
+	if (Editor.preserveViewState)
+	{
+		var dx = node.getAttribute('dx');
+		var dy = node.getAttribute('dy');
+
+		if (dx != null) this.savedGraphState.dx = dx;
+		if (dy != null) this.savedGraphState.dy = dy;
+	}
+
 	var grid = node.getAttribute('grid');
-	
+
 	if (grid == null || grid == '')
 	{
 		grid = this.graph.defaultGridEnabled ? '1' : '0';
 	}
-	
-	this.graph.gridEnabled = grid != '0' && (!this.isChromelessView() || urlParams['grid'] == '1');
+
+	if (urlParams['grid'] != null)
+	{
+		this.savedGraphState.grid = grid;
+	}
+
+	this.graph.gridEnabled = (urlParams['grid'] != null ? urlParams['grid'] != '0' : grid != '0') &&
+		(!this.isChromelessView() || urlParams['grid'] == '1');
 	this.graph.gridSize = parseFloat(node.getAttribute('gridSize')) || mxGraph.prototype.gridSize;
 	this.graph.graphHandler.guidesEnabled = node.getAttribute('guides') != '0';
 	this.graph.setTooltips(node.getAttribute('tooltips') != '0');
-	this.graph.setConnectable(node.getAttribute('connect') != '0');
-	this.graph.connectionArrowsEnabled = node.getAttribute('arrows') != '0';
-	this.graph.foldingEnabled = node.getAttribute('fold') != '0';
+	var connect = node.getAttribute('connect');
+
+	if (connect != null && Editor.config != null && Editor.config.defaultConnectable != null)
+	{
+		this.savedGraphState.connect = connect;
+	}
+
+	this.graph.setConnectable(connect != null &&
+		(Editor.config == null || Editor.config.defaultConnectable == null) ?
+		connect != '0' : this.graph.defaultConnectable);
+
+	var arrows = node.getAttribute('arrows');
+
+	if (arrows != null && Editor.config != null && Editor.config.defaultConnectionArrowsEnabled != null)
+	{
+		this.savedGraphState.arrows = arrows;
+	}
+
+	this.graph.connectionArrowsEnabled = arrows != null &&
+		(Editor.config == null || Editor.config.defaultConnectionArrowsEnabled == null) ?
+		arrows != '0' : this.graph.defaultConnectionArrowsEnabled;
+	var fold = node.getAttribute('fold');
+
+	if (fold != null && Editor.config != null && Editor.config.defaultFoldingEnabled != null)
+	{
+		this.savedGraphState.fold = fold;
+	}
+
+	this.graph.foldingEnabled = fold != null &&
+		(Editor.config == null || Editor.config.defaultFoldingEnabled == null) ?
+		fold != '0' : this.graph.defaultFoldingEnabled;
 
 	if (this.isChromelessView() && this.graph.foldingEnabled)
 	{
 		this.graph.foldingEnabled = urlParams['nav'] == '1';
 		this.graph.cellRenderer.forceControlClickHandler = this.graph.foldingEnabled;
 	}
-	
+
 	var ps = parseFloat(node.getAttribute('pageScale'));
-	
+
 	if (!isNaN(ps) && ps > 0)
 	{
 		this.graph.pageScale = ps;
@@ -1137,15 +1191,24 @@ Editor.prototype.readGraphState = function(node)
 
 	if (!this.graph.isLightboxView() && !this.graph.isViewer())
 	{
-		var pv = node.getAttribute('page');
-	
-		if (pv != null)
+		if (urlParams['pv'] != null)
 		{
-			this.graph.pageVisible = (pv != '0');
+			var pv = node.getAttribute('page');
+			this.savedGraphState.page = pv;
+			this.graph.pageVisible = urlParams['pv'] != '0';
 		}
 		else
 		{
-			this.graph.pageVisible = this.graph.defaultPageVisible;
+			var pv = node.getAttribute('page');
+
+			if (pv != null)
+			{
+				this.graph.pageVisible = (pv != '0');
+			}
+			else
+			{
+				this.graph.pageVisible = this.graph.defaultPageVisible;
+			}
 		}
 	}
 	else
@@ -1253,20 +1316,26 @@ Editor.prototype.getGraphXml = function(ignoreSelection)
 			this.graph.getSelectionCells())));
 	}
 
-	if (this.graph.view.translate.x != 0 || this.graph.view.translate.y != 0)
+	var saved = this.savedGraphState || {};
+
+	if (saved.dx != null || saved.dy != null)
+	{
+		if (saved.dx != null) node.setAttribute('dx', saved.dx);
+		if (saved.dy != null) node.setAttribute('dy', saved.dy);
+	}
+	else if (this.graph.view.translate.x != 0 || this.graph.view.translate.y != 0)
 	{
 		node.setAttribute('dx', Math.round(this.graph.view.translate.x * 100) / 100);
 		node.setAttribute('dy', Math.round(this.graph.view.translate.y * 100) / 100);
 	}
-	
-	node.setAttribute('grid', (this.graph.isGridEnabled()) ? '1' : '0');
+	node.setAttribute('grid', saved.grid != null ? saved.grid : (this.graph.isGridEnabled()) ? '1' : '0');
 	node.setAttribute('gridSize', this.graph.gridSize);
 	node.setAttribute('guides', (this.graph.graphHandler.guidesEnabled) ? '1' : '0');
 	node.setAttribute('tooltips', (this.graph.tooltipHandler.isEnabled()) ? '1' : '0');
-	node.setAttribute('connect', (this.graph.connectionHandler.isEnabled()) ? '1' : '0');
-	node.setAttribute('arrows', (this.graph.connectionArrowsEnabled) ? '1' : '0');
-	node.setAttribute('fold', (this.graph.foldingEnabled) ? '1' : '0');
-	node.setAttribute('page', (this.graph.pageVisible) ? '1' : '0');
+	node.setAttribute('connect', saved.connect != null ? saved.connect : (this.graph.connectionHandler.isEnabled()) ? '1' : '0');
+	node.setAttribute('arrows', saved.arrows != null ? saved.arrows : (this.graph.connectionArrowsEnabled) ? '1' : '0');
+	node.setAttribute('fold', saved.fold != null ? saved.fold : (this.graph.foldingEnabled) ? '1' : '0');
+	node.setAttribute('page', saved.page != null ? saved.page : (this.graph.pageVisible) ? '1' : '0');
 	node.setAttribute('pageScale', this.graph.pageScale);
 	node.setAttribute('pageWidth', this.graph.pageFormat.width);
 	node.setAttribute('pageHeight', this.graph.pageFormat.height);
@@ -2338,28 +2407,26 @@ PageSetupDialog.addPageFormatPanel = function(div, namePostfix, pageFormat, page
 
 	var customDiv = document.createElement('div');
 	customDiv.style.whiteSpace = 'nowrap';
-	customDiv.style.marginLeft = '4px';
 	customDiv.style.fontSize = '12px';
 	customDiv.style.width = '210px';
 	customDiv.style.height = '24px';
-	
+
 	var widthInput = document.createElement('input');
-	widthInput.setAttribute('size', '7');
+	widthInput.setAttribute('size', '6');
 	widthInput.setAttribute('title', mxResources.get('width'));
 	widthInput.style.textAlign = 'right';
 	customDiv.appendChild(widthInput);
 	mxUtils.write(customDiv, ' x ');
-	
+
 	var heightInput = document.createElement('input');
-	heightInput.setAttribute('size', '7');
+	heightInput.setAttribute('size', '6');
 	heightInput.setAttribute('title', mxResources.get('height'));
 	heightInput.style.textAlign = 'right';
 	customDiv.appendChild(heightInput);
 
 	var unitSelect = document.createElement('select');
 	unitSelect.style.marginLeft = '4px';
-	unitSelect.style.maxWidth = '78px';
-	unitSelect.style.width = '78px';
+	unitSelect.style.boxSizing = 'border-box';
 	var units = [{label: mxResources.get('points'), unit: mxConstants.POINTS},
 		{label: mxResources.get('inches'), unit: mxConstants.INCHES},
 		{label: mxResources.get('millimeters'), unit: mxConstants.MILLIMETERS}];
@@ -2471,7 +2538,7 @@ PageSetupDialog.addPageFormatPanel = function(div, namePostfix, pageFormat, page
 			customDiv.style.display = 'none';
 		}
 	};
-	
+
 	listener();
 
 	div.appendChild(paperSizeSelect);

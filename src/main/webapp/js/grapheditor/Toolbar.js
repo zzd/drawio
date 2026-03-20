@@ -27,47 +27,48 @@ function Toolbar(editorUi, container)
  */
 Toolbar.prototype.init = function()
 {
+	var minWidth = (urlParams['embed'] == '1') ? 1050 : 720;
+	
 	var viewMenu = this.addMenu(this.editorUi.menus.get('viewPanels'), null, Editor.dockRightImage);
-	viewMenu.setAttribute('data-min-width', '720');
-	this.addSeparator(null, 720);
+	this.addSeparator();
 
 	var zoomInput = this.editorUi.createZoomInput();
-	zoomInput.setAttribute('data-min-width', '660');
+	zoomInput.setAttribute('data-min-width', minWidth - 60);
 	this.container.appendChild(zoomInput);
-	this.addSeparator(null, 660);
+	this.addSeparator(null, minWidth - 60);
 
 	this.addItems(['zoomIn', 'zoomOut'], null, null,
-		[Editor.zoomInImage, Editor.zoomOutImage], 460);
-	this.addSeparator(null, 460);
-	
+		[Editor.zoomInImage, Editor.zoomOutImage], minWidth - 260);
+	this.addSeparator(null, minWidth - 260);
+
 	this.addItems(['undo', 'redo'], null, null, [Editor.undoImage, Editor.redoImage]);
-	this.addSeparator(null, 260);
-	this.addItems(['delete'], null, null, [Editor.trashImage], 260);
-	this.addSeparator(null, 300);
-	this.addItems(['toFront', 'toBack'], null, null, [Editor.toFrontImage, Editor.toBackImage], 800);
-	this.addSeparator(null, 800);
-	this.addItems(['fillColor'], null, null, [Editor.fillColorImage], 820);
-	this.addItems(['strokeColor'], null, null, [Editor.strokeColorImage], 840);
-	this.addItems(['shadow'], null, null, [Editor.shadowImage], 900);
-	this.addSeparator(null, 900);
+	this.addSeparator(null, minWidth - 460);
+	this.addItems(['delete'], null, null, [Editor.trashImage], minWidth - 460);
+	this.addSeparator(null, minWidth - 420);
+	this.addItems(['toFront', 'toBack'], null, null, [Editor.toFrontImage, Editor.toBackImage], minWidth + 80);
+	this.addSeparator(null, minWidth + 80);
+	this.addItems(['fillColor'], null, null, [Editor.fillColorImage], minWidth + 100);
+	this.addItems(['strokeColor'], null, null, [Editor.strokeColorImage], minWidth + 120);
+	this.addItems(['shadow'], null, null, [Editor.shadowImage], minWidth + 180);
+	this.addSeparator(null, minWidth + 180);
 	this.edgeShapeMenu = this.addMenu(this.editorUi.menus.get('edgeShape'));
-	this.edgeShapeMenu.setAttribute('data-min-width', 440);
+	this.edgeShapeMenu.setAttribute('data-min-width', minWidth - 280);
 	this.edgeStyleMenu = this.addMenu(this.editorUi.menus.get('edgeStyle'));
-	this.edgeStyleMenu.setAttribute('data-min-width', 500);
-	this.addSeparator(null, 460);
+	this.edgeStyleMenu.setAttribute('data-min-width', minWidth - 220);
+	this.addSeparator(null, minWidth - 260);
 
 	var insertMenu = this.addMenu(this.editorUi.menus.get('insert'), null, Editor.plusImage);
-	insertMenu.setAttribute('data-min-width', 300);
+	insertMenu.setAttribute('data-min-width', minWidth - 420);
 	var shapesElt = insertMenu.cloneNode(true);
-	shapesElt.setAttribute('data-min-width', 330);
+	shapesElt.setAttribute('data-min-width', minWidth - 390);
 	shapesElt.style.backgroundImage = 'url(' + Editor.shapesImage + ')';
 	this.editorUi.addShapePicker(shapesElt, true);
 	this.container.appendChild(shapesElt);
 	var tableMenu = this.addTableDropDown();
-	tableMenu.setAttribute('data-min-width', 360);
-	this.addSeparator(null, 600);
+	tableMenu.setAttribute('data-min-width', minWidth - 360);
+	this.addSeparator(null, minWidth - 120);
 	this.addItems(['insertFreehand', 'generate'], null, null,
-		[Editor.freehandImage, Editor.sparklesImage], 600);
+		[Editor.freehandImage, Editor.sparklesImage], minWidth - 120);
 	
 	this.editorUi.dependsOnLanguage(mxUtils.bind(this, function()
 	{

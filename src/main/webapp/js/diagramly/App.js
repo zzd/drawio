@@ -1831,10 +1831,7 @@ App.prototype.init = function()
 				// Fits diagram to window
 				if (Editor.fitDiagramOnLoad)
 				{
-					var b = (urlParams['border'] != null) ?
-						parseInt(urlParams['border']) : 10;
-					var bds = new mxRectangle(b, b, b, b);
-					this.fitDiagramOrPages(1, bds, true);
+					this.initialFitDiagram();
 				}
 			}));
 		}
@@ -3693,9 +3690,7 @@ App.prototype.executeCreateObject = function(value, done)
 					}
 
 					// Fits diagram to window
-					var b = (urlParams['border'] != null) ?
-						parseInt(urlParams['border']) : 10;
-					this.fitDiagramOrPages(1.2, new mxRectangle(b, b, b, b));
+					this.initialFitDiagram(1.2);
 
 					// Needs to go before upate of hash if
 					// it replaces the history state
@@ -6128,7 +6123,7 @@ App.prototype.loadLibraries = function(libs, done)
 										
 										StorageFile.getFileContent(this, name, mxUtils.bind(this, function(xml)
 										{
-											if (name == '.scratchpad' && xml == null)
+											if (name == '.scratchpad' && (xml == null || xml.substring(0, 7) == '<mxfile'))
 											{
 												xml = this.emptyLibraryXml;
 											}
@@ -7575,12 +7570,12 @@ App.prototype.updateHeader = function()
 		this.toolbarContainer.appendChild(wrapper);
 
 		// Fullscreen toggle
-		var fullscreenElement = document.createElement('a');
-		fullscreenElement.style.backgroundImage = 'url(\'' + Editor.fullscreenImage + '\')';
-		fullscreenElement.className = 'geButton';
-		wrapper.appendChild(fullscreenElement);
-		
-		mxEvent.addListener(fullscreenElement, 'click', mxUtils.bind(this, function(evt)
+		this.fullscreenElement = document.createElement('a');
+		this.fullscreenElement.style.backgroundImage = 'url(\'' + Editor.fullscreenImage + '\')';
+		this.fullscreenElement.className = 'geButton';
+		wrapper.appendChild(this.fullscreenElement);
+
+		mxEvent.addListener(this.fullscreenElement, 'click', mxUtils.bind(this, function(evt)
 		{
 			var active = this.fullscreenMode;
 
@@ -7593,13 +7588,23 @@ App.prototype.updateHeader = function()
 			this.toggleFormatPanel(active);
 			this.fullscreenMode = !active;
 
-			fullscreenElement.style.backgroundImage = 'url(\'' + ((this.fullscreenMode) ?
+			this.fullscreenElement.style.backgroundImage = 'url(\'' + ((this.fullscreenMode) ?
 				Editor.fullscreenExitImage : Editor.fullscreenImage) + '\')';
 
 			mxEvent.consume(evt);
 		}));
 
-		mxEvent.preventDefault(fullscreenElement);
+		mxEvent.preventDefault(this.fullscreenElement);
+
+		this.addListener('formatWidthChanged', mxUtils.bind(this, function()
+		{
+			this.updateFullscreenState();
+		}));
+
+		this.addListener('shapesPanelChanged', mxUtils.bind(this, function()
+		{
+			this.updateFullscreenState();
+		}));
 		
 		// Format panel toggle
 		var toggleFormatElement = document.createElement('a');
@@ -7667,11 +7672,13 @@ App.prototype.updateHeader = function()
 		this.dependsOnLanguage(mxUtils.bind(this, function()
 		{
 			this.fname.setAttribute('title', mxResources.get('rename'));
-			fullscreenElement.setAttribute('title', mxResources.get('fullscreen'));
+			this.fullscreenElement.setAttribute('title', mxResources.get('fullscreen'));
 			toggleElement.setAttribute('title', mxResources.get('collapseExpand'));
 			toggleFormatElement.setAttribute('title', mxResources.get('format') + ' (' + Editor.ctrlKey + '+' + Editor.shiftKey + '+P)');
 		}));
 	}
+
+	this.updateFullscreenState();
 };
 
 /**
@@ -7712,6 +7719,24 @@ App.prototype.setCompactMode = function(active, remember, delay)
 			}
 		}), delay * 1000);
 	}), 0);
+};
+
+/**
+ * Updates the fullscreen button state based on actual panel visibility.
+ */
+App.prototype.updateFullscreenState = function()
+{
+	if (this.fullscreenElement != null)
+	{
+		var shouldBeFullscreen = !this.isShapesPanelVisible() && !this.isFormatPanelVisible();
+
+		if (this.fullscreenMode != shouldBeFullscreen)
+		{
+			this.fullscreenMode = shouldBeFullscreen;
+			this.fullscreenElement.style.backgroundImage = 'url(\'' + ((this.fullscreenMode) ?
+				Editor.fullscreenExitImage : Editor.fullscreenImage) + '\')';
+		}
+	}
 };
 
 /**

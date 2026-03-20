@@ -3057,6 +3057,13 @@ Graph.prototype.linkPolicy = (urlParams['target'] == 'frame') ? 'blank' : (urlPa
 Graph.prototype.linkTarget = (urlParams['target'] == 'frame') ? '_self' : '_blank';
 
 /**
+ * Default link target for SVG exports. If set, used as fallback in getSvg
+ * when no explicit linkTarget is provided. Read from the mxfile node's
+ * linkTarget attribute when loading file data.
+ */
+Graph.prototype.defaultExportLinkTarget = null;
+
+/**
  * Value to the rel attribute of links. Default is 'nofollow noopener noreferrer'.
  * NOTE: There are security implications when this is changed and if noopener is removed,
  * then <openLink> must be overridden to allow for the opener to be set by default.
@@ -3077,6 +3084,21 @@ Graph.prototype.defaultPageVisible = true;
  * Specifies if the page should be visible for new files. Default is true.
  */
 Graph.prototype.defaultGridEnabled = urlParams['grid'] != '0';
+
+/**
+ * Specifies the default value for connection arrows on hover. Default is true.
+ */
+Graph.prototype.defaultConnectionArrowsEnabled = true;
+
+/**
+ * Specifies the default value for connectable (connection handler). Default is true.
+ */
+Graph.prototype.defaultConnectable = true;
+
+/**
+ * Specifies the default value for folding enabled. Default is true.
+ */
+Graph.prototype.defaultFoldingEnabled = true;
 
 /**
  * Specifies if the app should run in chromeless mode. Default is false.
@@ -6982,10 +7004,10 @@ Graph.prototype.fitPages = function(pageCount, ignoreHeight)
  * 
  * Sets the current visible rectangle of the window in graph coordinates.
  */
-Graph.prototype.fitWindow = function(bounds, border, maxScale, zoomOutOnly)
+Graph.prototype.fitWindow = function(bounds, border, maxScale, zoomOutOnly, centerPage)
 {
 	border = (border != null) ? border : 10;
-	
+
 	var cw = this.container.clientWidth - border;
 	var ch = this.container.clientHeight - border;
 	var scale = Math.floor(20 * Math.min(cw / bounds.width, ch / bounds.height)) / 20;
@@ -6997,21 +7019,35 @@ Graph.prototype.fitWindow = function(bounds, border, maxScale, zoomOutOnly)
 
 	if (!zoomOutOnly || scale < maxScale)
 	{
-		this.zoomTo(scale);
+		this.zoomTo(scale, null, null, mxUtils.hasScrollbars(this.container));
 
 		if (mxUtils.hasScrollbars(this.container))
 		{
-			// Call to zoom above may trigger an asynchronous update of the scrollbars
-			// as setting scrollTop/-Left is executed asynchronously so the code below
-			// ensures that the final state of the scrollbars is as intended.
-			window.setTimeout(mxUtils.bind(this, function()
+			var t = this.view.translate;
+			this.container.scrollLeft = (bounds.x + t.x) * this.view.scale -
+				Math.max((cw - bounds.width * this.view.scale) / 2 + border / 2, 0);
+			this.container.scrollTop = (bounds.y + t.y) * this.view.scale -
+				Math.max((ch - bounds.height * this.view.scale) / 2 + border / 2, 0);
+
+			// Centers on page for axes where page fits within viewport
+			if (centerPage && this.pageVisible)
 			{
-				var t = this.view.translate;
-				this.container.scrollLeft = (bounds.x + t.x) * this.view.scale -
-					Math.max((cw - bounds.width * this.view.scale) / 2 + border / 2, 0);
-				this.container.scrollTop = (bounds.y + t.y) * this.view.scale -
-					Math.max((ch - bounds.height * this.view.scale) / 2 + border / 2, 0);
-			}), 0);
+				var pageBounds = this.view.getBackgroundPageBounds();
+				var fullCw = this.container.clientWidth;
+				var fullCh = this.container.clientHeight;
+
+				if (pageBounds.width <= fullCw)
+				{
+					this.container.scrollLeft = pageBounds.x +
+						pageBounds.width / 2 - fullCw / 2;
+				}
+
+				if (pageBounds.height <= fullCh)
+				{
+					this.container.scrollTop = pageBounds.y +
+						pageBounds.height / 2 - fullCh / 2;
+				}
+			}
 		}
 	}
 };
@@ -8183,28 +8219,58 @@ InlineToolbar.prototype.currentState = null;
  */
 InlineToolbar.prototype.init = function()
 {
-	this.icon = document.createElement('div');
-	this.icon.style.position = 'absolute';
-	this.icon.style.width = this.iconSize + 'px';
-	this.icon.style.height = this.iconSize + 'px';
-	this.icon.style.backgroundSize = '16px';
-	this.icon.style.backgroundRepeat = 'no-repeat';
-	this.icon.style.backgroundPosition = 'center';
-	this.icon.style.cursor = 'pointer';
-	this.icon.style.display = 'none';
-	this.icon.style.zIndex = 1;
-	this.icon.style.borderRadius = '3px';
-	this.icon.style.backgroundColor = 'rgba(255,255,255,0.9)';
-	this.icon.style.border = '1px solid #d0d0d0';
-	this.icon.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)';
-	this.icon.className = 'geAdaptiveAsset';
-	this.icon.setAttribute('title', mxResources.get('line'));
+	// Container for both buttons
+	this.toolbar = document.createElement('div');
+	this.toolbar.style.position = 'absolute';
+	this.toolbar.style.display = 'none';
+	this.toolbar.style.zIndex = 1;
+	this.toolbar.style.borderRadius = '3px';
+	this.toolbar.style.backgroundColor = 'light-dark(white, var(--dark-color))';
+	this.toolbar.style.border = '1px solid light-dark(#d0d0d0, #505050)';
+	this.toolbar.style.opacity = '0.9';
+	this.toolbar.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)';
+	this.toolbar.style.whiteSpace = 'nowrap';
 
-	// Append immediately so it's always in the DOM
-	this.graph.container.appendChild(this.icon);
+	var createButton = mxUtils.bind(this, function(title)
+	{
+		var btn = document.createElement('div');
+		btn.style.width = this.iconSize + 'px';
+		btn.style.height = this.iconSize + 'px';
+		btn.style.backgroundSize = '16px';
+		btn.style.backgroundRepeat = 'no-repeat';
+		btn.style.backgroundPosition = 'center';
+		btn.style.cursor = 'pointer';
+		btn.style.display = 'inline-block';
+		btn.style.verticalAlign = 'top';
+		btn.style.borderRadius = '2px';
+		btn.className = 'geAdaptiveAsset';
+		btn.setAttribute('title', title);
+
+		return btn;
+	});
+
+	// Edge style button (existing functionality)
+	this.icon = createButton(mxResources.get('line'));
+	this.toolbar.appendChild(this.icon);
+
+	// Separator before bend button
+	this.bendSep = document.createElement('div');
+	this.bendSep.style.display = 'inline-block';
+	this.bendSep.style.verticalAlign = 'top';
+	this.bendSep.style.width = '1px';
+	this.bendSep.style.height = this.iconSize + 'px';
+	this.bendSep.style.backgroundColor = 'light-dark(#d0d0d0, #505050)';
+	this.toolbar.appendChild(this.bendSep);
+
+	// Bend style button (shows current bend, opens dropdown)
+	this.bendIcon = createButton(mxResources.get('sharp'));
+	this.toolbar.appendChild(this.bendIcon);
+
+	// Append container to DOM
+	this.graph.container.appendChild(this.toolbar);
 
 	// Prevent mousedown from deselecting the edge
-	mxEvent.addListener(this.icon, 'mousedown', mxUtils.bind(this, function(evt)
+	mxEvent.addListener(this.toolbar, 'mousedown', mxUtils.bind(this, function(evt)
 	{
 		if (this.graph.isEnabled())
 		{
@@ -8212,12 +8278,22 @@ InlineToolbar.prototype.init = function()
 		}
 	}));
 
-	// Show menu on click
+	// Show line menu on click of edge style button
 	mxEvent.addListener(this.icon, 'click', mxUtils.bind(this, function(evt)
 	{
 		if (this.graph.isEnabled())
 		{
 			this.showMenu(evt);
+			mxEvent.consume(evt);
+		}
+	}));
+
+	// Show bend menu on click of bend style button
+	mxEvent.addListener(this.bendIcon, 'click', mxUtils.bind(this, function(evt)
+	{
+		if (this.graph.isEnabled())
+		{
+			this.showBendMenu(evt);
 			mxEvent.consume(evt);
 		}
 	}));
@@ -8353,31 +8429,44 @@ InlineToolbar.prototype.getEdgeMidpoint = function(state)
 };
 
 /**
- * Shows the toolbar icon.
+ * Shows the toolbar.
  */
 InlineToolbar.prototype.show = function()
 {
-	this.updateIcon();
-	this.icon.style.display = 'block';
+	this.updateIcons();
+	this.toolbar.style.display = 'block';
 	this.repaint();
 };
 
 /**
- * Hides the toolbar icon.
+ * Hides the toolbar.
  */
 InlineToolbar.prototype.hide = function()
 {
-	this.icon.style.display = 'none';
+	this.toolbar.style.display = 'none';
 };
 
 /**
- * Updates the icon image to match the current cell style.
+ * Returns true if the current edge shape supports the curved bend style.
  */
-InlineToolbar.prototype.updateIcon = function()
+InlineToolbar.prototype.supportsCurvedBend = function(style)
+{
+	var shape = mxUtils.getValue(style, mxConstants.STYLE_SHAPE, null);
+
+	return shape == null || shape == 'connector' ||
+		shape == 'filledEdge' || shape == 'wire' || shape == 'pipe';
+};
+
+/**
+ * Updates both icon images to match the current cell style.
+ */
+InlineToolbar.prototype.updateIcons = function()
 {
 	if (this.currentState != null)
 	{
 		var style = this.graph.getCurrentCellStyle(this.currentState.cell);
+
+		// Edge style icon
 		var src = this.editorUi.getImageForEdgeStyle(style);
 
 		if (style[mxConstants.STYLE_SHAPE] == 'arrow')
@@ -8386,15 +8475,39 @@ InlineToolbar.prototype.updateIcon = function()
 		}
 
 		this.icon.style.backgroundImage = 'url(' + src + ')';
+
+		// Show bend icon for edges that support curved or rounded bends
+		var state = this.graph.view.getState(this.currentState.cell);
+		var showBend = this.supportsCurvedBend(style) ||
+			(state != null && this.graph.isRoundedState(state));
+		this.bendSep.style.display = showBend ? 'inline-block' : 'none';
+		this.bendIcon.style.display = showBend ? 'inline-block' : 'none';
+
+		if (showBend)
+		{
+			if (mxUtils.getValue(style, mxConstants.STYLE_CURVED, null) == '1')
+			{
+				this.bendIcon.style.backgroundImage = 'url(' + Format.curvedBendImage.src + ')';
+			}
+			else if (mxUtils.getValue(style, mxConstants.STYLE_ROUNDED, null) == '1')
+			{
+				this.bendIcon.style.backgroundImage = 'url(' + Format.roundedBendImage.src + ')';
+			}
+			else
+			{
+				this.bendIcon.style.backgroundImage = 'url(' + Format.sharpBendImage.src + ')';
+			}
+		}
 	}
 };
 
 /**
- * Repositions the icon at the cell midpoint.
+ * Repositions the toolbar at the cell midpoint, avoiding overlap with
+ * edge waypoint handles.
  */
 InlineToolbar.prototype.repaint = function()
 {
-	if (this.currentState != null && this.icon.style.display != 'none')
+	if (this.currentState != null && this.toolbar.style.display != 'none')
 	{
 		// Refresh state in case cell was deleted or edge changed
 		var state = this.graph.view.getState(this.currentState.cell);
@@ -8402,17 +8515,79 @@ InlineToolbar.prototype.repaint = function()
 		if (state != null)
 		{
 			this.currentState = state;
-			this.updateIcon();
+			this.updateIcons();
 			var mid = this.getEdgeMidpoint(state);
 
 			if (mid != null)
 			{
-				// absolutePoints are in view coordinates, adjust for container scroll
-				var x = mid.x - this.iconSize / 2;
-				var y = mid.y - this.iconSize - this.offset;
+				// Toolbar width depends on bend icon visibility
+				var bendVisible = this.bendIcon.style.display != 'none';
+				var toolbarWidth = bendVisible ? this.iconSize * 2 + 1 : this.iconSize;
+				var toolbarHeight = this.iconSize;
 
-				this.icon.style.left = Math.round(x) + 'px';
-				this.icon.style.top = Math.round(y) + 'px';
+				// Default position: above the edge midpoint, centered
+				var x = mid.x - toolbarWidth / 2;
+				var y = mid.y - toolbarHeight - this.offset;
+
+				// Check for overlap with edge handler bends and reposition if needed
+				var handler = this.graph.selectionCellsHandler.getHandler(state.cell);
+
+				if (handler != null)
+				{
+					var minGap = 8;
+					var allBends = (handler.bends || []).concat(handler.virtualBends || []);
+
+					var checkOverlap = mxUtils.bind(this, function(tx, ty)
+					{
+						var bounds = new mxRectangle(Math.round(tx) - minGap,
+							Math.round(ty) - minGap, toolbarWidth + 2 * minGap,
+							toolbarHeight + 2 * minGap);
+
+						for (var i = 0; i < allBends.length; i++)
+						{
+							if (allBends[i] != null && allBends[i].bounds != null &&
+								allBends[i].node.style.visibility !== 'hidden' &&
+								mxUtils.intersects(bounds, allBends[i].bounds))
+							{
+								return true;
+							}
+						}
+
+						return false;
+					});
+
+					if (checkOverlap(x, y))
+					{
+						// Try below the edge midpoint instead
+						var belowY = mid.y + this.offset;
+
+						if (!checkOverlap(x, belowY))
+						{
+							y = belowY;
+						}
+						else
+						{
+							// Find nearest non-overlapping position by
+							// moving further away from the midpoint
+							for (var d = this.offset + minGap; d < 100; d += minGap)
+							{
+								if (!checkOverlap(x, mid.y - toolbarHeight - d))
+								{
+									y = mid.y - toolbarHeight - d;
+									break;
+								}
+								else if (!checkOverlap(x, mid.y + d))
+								{
+									y = mid.y + d;
+									break;
+								}
+							}
+						}
+					}
+				}
+
+				this.toolbar.style.left = Math.round(x) + 'px';
+				this.toolbar.style.top = Math.round(y) + 'px';
 			}
 		}
 	}
@@ -8433,6 +8608,40 @@ InlineToolbar.prototype.showMenu = function(evt)
 };
 
 /**
+ * Shows the bend style popup menu.
+ */
+InlineToolbar.prototype.showBendMenu = function(evt)
+{
+	var editorUi = this.editorUi;
+	editorUi.hideCurrentMenu();
+
+	editorUi.showPopupMenu(mxUtils.bind(this, function(menu, parent)
+	{
+		var menus = editorUi.menus;
+		var keys = [mxConstants.STYLE_ROUNDED, mxConstants.STYLE_CURVED];
+
+		Format.processMenuIcon(menus.edgeStyleChange(menu, '', keys,
+			['0', '0'], null, parent, false, Format.sharpBendImage.src))
+			.setAttribute('title', mxResources.get('sharp'));
+		Format.processMenuIcon(menus.edgeStyleChange(menu, '', keys,
+			['1', '0'], null, parent, false, Format.roundedBendImage.src))
+			.setAttribute('title', mxResources.get('rounded'));
+
+		if (this.currentState != null)
+		{
+			var style = this.graph.getCurrentCellStyle(this.currentState.cell);
+
+			if (this.supportsCurvedBend(style))
+			{
+				Format.processMenuIcon(menus.edgeStyleChange(menu, '', keys,
+					['0', '1'], null, parent, false, Format.curvedBendImage.src))
+					.setAttribute('title', mxResources.get('curved'));
+			}
+		}
+	}), mxEvent.getClientX(evt), mxEvent.getClientY(evt), evt);
+};
+
+/**
  * Removes all listeners and DOM elements.
  */
 InlineToolbar.prototype.destroy = function()
@@ -8445,9 +8654,9 @@ InlineToolbar.prototype.destroy = function()
 	this.graph.removeListener(this.hideHandler);
 	mxEvent.removeListener(this.graph.container, 'scroll', this.repaintHandler);
 
-	if (this.icon.parentNode != null)
+	if (this.toolbar.parentNode != null)
 	{
-		this.icon.parentNode.removeChild(this.icon);
+		this.toolbar.parentNode.removeChild(this.toolbar);
 	}
 };
 
@@ -11564,7 +11773,7 @@ if (typeof mxVertexHandler !== 'undefined')
 		 * Updates the font size of the given cell so that its label fits within
 		 * the cell bounds. Uses binary search over font sizes 1..999.
 		 */
-		Graph.prototype.updateAutosizeTextFontSize = function(cell)
+		Graph.prototype.updateAutosizeTextFontSize = function(cell, style)
 		{
 			var state = this.view.getState(cell);
 
@@ -11573,7 +11782,7 @@ if (typeof mxVertexHandler !== 'undefined')
 				state = this.view.createState(cell);
 			}
 
-			var style = state.style;
+			style = style || state.style;
 			var geo = this.getCellGeometry(cell);
 
 			if (geo == null || this.model.isEdge(cell))
@@ -12115,12 +12324,22 @@ if (typeof mxVertexHandler !== 'undefined')
 				var graph = this;
 				overlay.addListener(mxEvent.CLICK, function(sender, evt)
 				{
-					var mouseEvt = evt.getProperty('event');
-					var tip = graph.getTooltipForCell(evt.getProperty('cell'));
+					var cell = evt.getProperty('cell');
 
-					if (tip != null && tip.length > 0)
+					if (graph.isEnabled() && graph.isCellEditable(cell))
 					{
-						graph.tooltipHandler.show(tip, mouseEvt.clientX, mouseEvt.clientY);
+						graph.setSelectionCell(cell);
+						graph.editTooltip(cell);
+					}
+					else
+					{
+						var mouseEvt = evt.getProperty('event');
+						var tip = graph.getTooltipForCell(cell);
+
+						if (tip != null && tip.length > 0)
+						{
+							graph.tooltipHandler.show(tip, mouseEvt.clientX, mouseEvt.clientY);
+						}
 					}
 				});
 
@@ -12128,6 +12347,16 @@ if (typeof mxVertexHandler !== 'undefined')
 			}
 
 			return null;
+		};
+
+		/**
+		 * Opens the edit tooltip dialog for the given cell. This is a
+		 * hook that is implemented in EditorUi where the actions are
+		 * available.
+		 */
+		Graph.prototype.editTooltip = function(cell)
+		{
+			// empty - implemented in EditorUi
 		};
 
 		/**
@@ -13183,6 +13412,7 @@ if (typeof mxVertexHandler !== 'undefined')
 				ignoreSelection = (ignoreSelection != null) ? ignoreSelection : true;
 				showText = (showText != null) ? showText : true;
 				hasShadow = (hasShadow != null) ? hasShadow : false;
+				linkTarget = (linkTarget != null) ? linkTarget : this.defaultExportLinkTarget;
 	
 				var bounds = (exportType == 'page') ? this.view.getBackgroundPageBounds() :
 					(((ignoreSelection && lookup == null) || nocrop ||
@@ -15753,7 +15983,31 @@ if (typeof mxVertexHandler !== 'undefined')
 				!this.graph.isTableRow(this.state.cell) &&
 				!this.graph.isTable(this.state.cell);
 		};
-		
+
+		/**
+		 * Returns true if the connect handle should be showing.
+		 */
+		mxVertexHandler.prototype.isConnectHandleVisible = function()
+		{
+			return Editor.showConnectHandle && this.graph.isEnabled() &&
+				this.graph.isCellConnectable(this.state.cell) &&
+				!this.graph.isTableCell(this.state.cell) &&
+				!this.graph.isTableRow(this.state.cell) &&
+				!this.graph.isTable(this.state.cell);
+		};
+
+		/**
+		 * Returns the position of the connect handle.
+		 */
+		mxVertexHandler.prototype.connectHandleVSpacing = -12;
+		mxVertexHandler.prototype.getConnectHandlePosition = function()
+		{
+			var padding = this.getHandlePadding();
+
+			return new mxPoint(this.bounds.x + this.bounds.width - this.connectHandleVSpacing + padding.x / 2,
+				this.bounds.y + this.bounds.height - this.connectHandleVSpacing + padding.y / 2);
+		};
+
 		/**
 		 * Hides rotation handle for table cells and rows.
 		 */
@@ -16573,6 +16827,10 @@ if (typeof mxVertexHandler !== 'undefined')
 			'<path stroke="' + HoverIcons.prototype.arrowFill + '" fill="' + HoverIcons.prototype.arrowFill +
 				'" d="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z"/>',
 				24, 24);
+		HoverIcons.prototype.connectHandle = Graph.createSvgImage(16, 16,
+			'<circle cx="12" cy="12" r="10" stroke="#fff" fill="' + HoverIcons.prototype.arrowFill + '"/>' +
+				'<path transform="translate(5,5) scale(0.583)" d="M6 18v-3h7.6L4 5.4 5.4 4 15 13.6V6h3v12z" fill="#fff"/>',
+				24, 24);
 	
 		mxConstraintHandler.prototype.pointImage = Graph.createSvgImage(5, 5,
 			'<path d="m 0 0 L 5 5 M 0 5 L 5 0" stroke-width="2" style="stroke-opacity:0.4" stroke="#ffffff"/>' +
@@ -16989,11 +17247,94 @@ if (typeof mxVertexHandler !== 'undefined')
 		mxVertexHandler.prototype.createSizerShape = function(bounds, index, fillColor, image)
 		{
 			image = (index == mxEvent.ROTATION_HANDLE) ? HoverIcons.prototype.rotationHandle :
+				(index == mxEvent.CONNECT_HANDLE) ? HoverIcons.prototype.connectHandle :
 				(index == mxEvent.LABEL_HANDLE) ? this.secondaryHandleImage : image;
-			
+
 			return vertexHandlerCreateSizerShape.apply(this, arguments);
 		};
 		
+		// Adds the connect handle to the sizers
+		var vertexHandlerCreateSizers = mxVertexHandler.prototype.createSizers;
+		mxVertexHandler.prototype.createSizers = function()
+		{
+			var sizers = vertexHandlerCreateSizers.apply(this, arguments);
+
+			if (this.connectShape == null && this.isConnectHandleVisible())
+			{
+				this.connectShape = this.createSizer('copy', mxEvent.CONNECT_HANDLE,
+					mxConstants.HANDLE_SIZE + 3, mxConstants.HANDLE_FILLCOLOR);
+				sizers.push(this.connectShape);
+			}
+
+			return sizers;
+		};
+
+		// Nullifies connectShape when sizers are destroyed
+		var vertexHandlerDestroySizers = mxVertexHandler.prototype.destroySizers;
+		mxVertexHandler.prototype.destroySizers = function()
+		{
+			vertexHandlerDestroySizers.apply(this, arguments);
+			this.connectShape = null;
+		};
+
+		// Override getHandleForEvent to detect connect handle before other handles
+		var vertexHandlerGetHandleForEvent = mxVertexHandler.prototype.getHandleForEvent;
+		mxVertexHandler.prototype.getHandleForEvent = function(me)
+		{
+			if (this.connectShape != null && this.connectShape.node != null &&
+				this.connectShape.node.style.visibility != 'hidden')
+			{
+				var tol = (!mxEvent.isMouseEvent(me.getEvent())) ? this.tolerance : 1;
+				var hit = (this.allowHandleBoundsCheck && (mxClient.IS_IE || tol > 0)) ?
+					new mxRectangle(me.getGraphX() - tol, me.getGraphY() - tol, 2 * tol, 2 * tol) : null;
+
+				if (me.isSource(this.connectShape) ||
+					(hit != null && this.connectShape.intersectsRectangle(hit)))
+				{
+					return mxEvent.CONNECT_HANDLE;
+				}
+			}
+
+			return vertexHandlerGetHandleForEvent.apply(this, arguments);
+		};
+
+		// Override mouseDown to intercept connect handle and start connection
+		var mxVertexHandlerMouseDown2 = mxVertexHandler.prototype.mouseDown;
+		mxVertexHandler.prototype.mouseDown = function(sender, me)
+		{
+			if (!me.isConsumed() && this.graph.isEnabled() && this.connectShape != null)
+			{
+				var handle = this.getHandleForEvent(me);
+
+				if (handle == mxEvent.CONNECT_HANDLE)
+				{
+					var x = me.getGraphX();
+					var y = me.getGraphY();
+
+					this.graph.popupMenuHandler.hideMenu();
+					this.graph.stopEditing(false);
+					this.graph.connectHandleClickState = this.state;
+					this.graph.connectionHandler.start(this.state, x, y);
+					this.graph.isMouseTrigger = mxEvent.isMouseEvent(me.getEvent());
+					this.graph.isMouseDown = true;
+
+					// Hides handles for selection cell during connection drag
+					var handler = this.graph.selectionCellsHandler.getHandler(this.state.cell);
+
+					if (handler != null)
+					{
+						handler.setHandlesVisible(false);
+					}
+
+					me.consume();
+
+					return;
+				}
+			}
+
+			mxVertexHandlerMouseDown2.apply(this, arguments);
+		};
+
 		// Special case for single edge label handle moving in which case the text bounding box is used
 		var mxGraphHandlerGetBoundingBox = mxGraphHandler.prototype.getBoundingBox;
 		mxGraphHandler.prototype.getBoundingBox = function(cells)
@@ -17068,10 +17409,11 @@ if (typeof mxVertexHandler !== 'undefined')
 			var parent = model.getParent(this.state.cell);
 			var geo = this.graph.getCellGeometry(this.state.cell);
 			
-			// Lets rotation events through
+			// Lets rotation and connect events through
 			var handle = this.getHandleForEvent(me);
-			
-			if (handle == mxEvent.ROTATION_HANDLE || !model.isEdge(parent) || geo == null || !geo.relative ||
+
+			if (handle == mxEvent.ROTATION_HANDLE || handle == mxEvent.CONNECT_HANDLE ||
+				!model.isEdge(parent) || geo == null || !geo.relative ||
 				this.state == null || this.state.width >= 2 || this.state.height >= 2)
 			{
 				mxVertexHandlerMouseDown.apply(this, arguments);
@@ -17152,39 +17494,50 @@ if (typeof mxVertexHandler !== 'undefined')
 		mxVertexHandler.prototype.mouseMove = function(sender, me)
 		{
 			vertexHandlerMouseMove.apply(this, arguments);
-			
+
 			if (this.graph.graphHandler.first != null)
 			{
 				if (this.rotationShape != null && this.rotationShape.node != null)
 				{
 					this.rotationShape.node.style.display = 'none';
 				}
-				
+
+				if (this.connectShape != null && this.connectShape.node != null)
+				{
+					this.connectShape.node.style.display = 'none';
+				}
+
 				if (this.linkHint != null && this.linkHint.style.display != 'none')
 				{
 					this.linkHint.style.display = 'none';
 				}
 			}
 		};
-		
+
 		var vertexHandlerMouseUp = mxVertexHandler.prototype.mouseUp;
-		
+
 		mxVertexHandler.prototype.mouseUp = function(sender, me)
 		{
 			vertexHandlerMouseUp.apply(this, arguments);
-			
+
 			// Shows rotation handle only if one vertex is selected
 			if (this.rotationShape != null && this.rotationShape.node != null)
 			{
 				this.rotationShape.node.style.display = (this.graph.getSelectionCount() == 1) ? '' : 'none';
 			}
-			
+
+			// Shows connect handle only if one vertex is selected
+			if (this.connectShape != null && this.connectShape.node != null)
+			{
+				this.connectShape.node.style.display = (this.graph.getSelectionCount() == 1) ? '' : 'none';
+			}
+
 			if (this.linkHint != null && this.linkHint.style.display == 'none' &&
 				this.graph.getSelectionCount() == 1)
 			{
 				this.linkHint.style.display = '';
 			}
-			
+
 			// Resets state after gesture
 			this.blockDelayedSelection = null;
 		};
@@ -17437,6 +17790,32 @@ if (typeof mxVertexHandler !== 'undefined')
 			}
 
 			vertexHandlerRedrawHandles.apply(this);
+
+			// Shows connect handle only if one vertex is selected
+			// Must be after base redrawHandles to override sizer visibility
+			if (this.connectShape != null && this.connectShape.node != null)
+			{
+				this.connectShape.node.setAttribute('title', mxResources.get('plusTooltip'));
+
+				var showConnect = this.moveHandles == null &&
+					this.graph.getSelectionCount() == 1 &&
+					(this.index == null || this.index == mxEvent.CONNECT_HANDLE) &&
+					!this.graph.isEditing() && this.handlesVisible &&
+					this.isHandlesVisible() && this.isConnectHandleVisible();
+				this.connectShape.node.style.display = showConnect ? '' : 'none';
+				this.connectShape.node.style.visibility = showConnect ? '' : 'hidden';
+
+				if (showConnect)
+				{
+					var alpha = mxUtils.toRadians((this.currentAlpha != null) ?
+						this.currentAlpha : this.state.style[mxConstants.STYLE_ROTATION] || '0');
+					var cos = Math.cos(alpha);
+					var sin = Math.sin(alpha);
+					var ct = new mxPoint(this.state.getCenterX(), this.state.getCenterY());
+					var pt = mxUtils.getRotatedPoint(this.getConnectHandlePosition(), cos, sin, ct);
+					this.moveSizerTo(this.connectShape, pt.x, pt.y);
+				}
+			}
 
 			if (this.state != null && this.linkHint != null)
 			{

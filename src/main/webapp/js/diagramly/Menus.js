@@ -3637,26 +3637,30 @@
 		{
 			if (graph.isEnabled() && !graph.isCellLocked(graph.getDefaultParent()))
 			{
-				var cell = insertVertex('', 80, 80,
-					'shape=mxgraph.basic.polygon;polyCoords=[[0.5,0],[1,0.38],' +
-					'[0.81,1],[0.19,1],[0,0.38]];polyline=0;whiteSpace=wrap;html=1;',
-					(evt != null && !mxEvent.isControlDown(evt) &&
-					!mxEvent.isMetaDown(evt) && graph.isMouseInsertPoint()) ?
-					graph.getInsertPoint() : null);
-
-				if (cell != null)
+				var dlg = new PolygonDialog(editorUi, null, function(style)
 				{
-					var state = graph.view.getState(cell);
+					var cell = new mxCell('', new mxGeometry(0, 0, 80, 80), style);
+					cell.vertex = true;
 
-					if (state != null)
+					var pt = (evt != null && !mxEvent.isControlDown(evt) &&
+						!mxEvent.isMetaDown(evt) && graph.isMouseInsertPoint()) ?
+						graph.getInsertPoint() : null;
+
+					if (pt == null)
 					{
-						var dlg = new PolygonDialog(editorUi, cell);
-						editorUi.showDialog(dlg.container, 680, 540, true, true,
-							function() { dlg.destroy(); },
-							null, null, new mxRectangle(0, 0, 740, 600));
-						dlg.init();
+						pt = graph.getCenterInsertPoint(
+							graph.getBoundingBoxFromGeometry([cell], true));
 					}
-				}
+
+					cell.geometry.x = pt.x;
+					cell.geometry.y = pt.y;
+
+					return insertCell(cell);
+				});
+				editorUi.showDialog(dlg.container, 680, 540, true, true,
+					function() { dlg.destroy(); },
+					null, null, new mxRectangle(0, 0, 740, 600));
+				dlg.init();
 			}
 		})).isEnabled = isGraphEnabled;
 
@@ -3680,9 +3684,37 @@
 				(editorUi.sidebarWindow == null && editorUi.hsplitPosition > 0);
 		}));
 		
+		// Shape picker action for passiveScroll mode (shows inline shape picker instead of shapes panel)
+		editorUi.actions.put('showShapePicker', new Action(mxResources.get('shapes') + '...', function()
+		{
+			var screenPt = graph._contextMenuScreenPoint;
+			var x = (screenPt != null) ? screenPt.x : graph.container.clientWidth / 2;
+			var y = (screenPt != null) ? screenPt.y : graph.container.clientHeight / 2;
+
+			editorUi.showShapePicker(x, y);
+		}));
+
 		this.put('insert', new Menu(mxUtils.bind(this, function(menu, parent)
 		{
-			if (Editor.currentTheme == 'sketch')
+			if (Editor.passiveScroll)
+			{
+				editorUi.menus.addMenuItems(menu, ['showShapePicker'], parent);
+				editorUi.menus.addSubmenu('table', menu, parent);
+				menu.addSeparator(parent);
+				editorUi.menus.addMenuItems(menu, ['insertRectangle', 'insertEllipse', 'insertRhombus',
+					'-', 'insertEdge', 'insertNote', '-', 'insertText', 'insertLink',
+					'-', 'insertImage', 'createShape', 'insertPolygon', '-'], parent);
+
+				if (editorUi.insertTemplateEnabled && !editorUi.isOffline())
+				{
+					editorUi.menus.addMenuItems(menu, ['insertTemplate'], parent);
+				}
+
+				editorUi.menus.addMenuItems(menu, ['-', 'insertFreehand', 'generate', '-'], parent);
+				editorUi.menus.addSubmenu('layout', menu, parent);
+				editorUi.menus.addSubmenu('insertAdvanced', menu, parent, mxResources.get('advanced'));
+			}
+			else if (Editor.currentTheme == 'sketch')
 			{
 				editorUi.menus.addMenuItems(menu, ['toggleShapes'], parent);
 				editorUi.menus.addSubmenu('table', menu, parent);
@@ -3694,7 +3726,7 @@
 				{
 					editorUi.menus.addMenuItems(menu, ['insertTemplate'], parent);
 				}
-				
+
 				if (window.isMermaidEnabled)
 				{
 					editorUi.menus.addMenuItems(menu, ['mermaid'], parent);
@@ -3709,12 +3741,12 @@
 				this.addMenuItems(menu, ['insertRectangle', 'insertEllipse', 'insertRhombus',
 					'-', 'insertEdge', 'insertNote', '-', 'insertText', 'insertLink',
 					'-', 'insertImage', 'createShape', 'insertPolygon', '-'], parent);
-				
+
 				if (editorUi.insertTemplateEnabled && !editorUi.isOffline())
 				{
 					this.addMenuItems(menu, ['insertTemplate'], parent);
 				}
-				
+
 				if (window.isMermaidEnabled)
 				{
 					this.addMenuItems(menu, ['mermaid'], parent);

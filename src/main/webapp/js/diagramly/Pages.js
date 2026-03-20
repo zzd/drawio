@@ -446,6 +446,10 @@ EditorUi.prototype.pageSelected = function()
 			{
 				this.lightboxFit();
 			}
+			else if (Editor.fitDiagramOnPage)
+			{
+				this.initialFitDiagram();
+			}
 
 			if (this.chromelessResize != null)
 			{
@@ -724,7 +728,9 @@ Graph.prototype.createViewState = function(node)
 		//gridColor: node.getAttribute('gridColor') || mxSettings.getGridColor(Editor.isDarkMode()),
 		gridSize: parseFloat(node.getAttribute('gridSize')) || mxGraph.prototype.gridSize,
 		guidesEnabled: node.getAttribute('guides') != '0',
-		foldingEnabled: node.getAttribute('fold') != '0',
+		foldingEnabled: (function() { var fold = node.getAttribute('fold');
+			return fold != null && (Editor.config == null || Editor.config.defaultFoldingEnabled == null) ?
+			fold != '0' : Graph.prototype.defaultFoldingEnabled; })(),
 		shadowVisible: node.getAttribute('shadow') == '1',
 		pageVisible: (this.isLightboxView()) ? false : ((pv != null) ? (pv != '0') : this.defaultPageVisible),
 		background: (bg != null && bg.length > 0) ? bg : null,
@@ -734,8 +740,12 @@ Graph.prototype.createViewState = function(node)
 			((typeof mxSettings === 'undefined' || this.defaultPageFormat != null) ?
 				mxGraph.prototype.pageFormat : mxSettings.getPageFormat()),
 		tooltips: node.getAttribute('tooltips') != '0',
-		connect: node.getAttribute('connect') != '0',
-		arrows: node.getAttribute('arrows') != '0',
+		connect: (function() { var connect = node.getAttribute('connect');
+			return connect != null && (Editor.config == null || Editor.config.defaultConnectable == null) ?
+			connect != '0' : Graph.prototype.defaultConnectable; })(),
+		arrows: (function() { var arrows = node.getAttribute('arrows');
+			return arrows != null && (Editor.config == null || Editor.config.defaultConnectionArrowsEnabled == null) ?
+			arrows != '0' : Graph.prototype.defaultConnectionArrowsEnabled; })(),
 		mathEnabled: node.getAttribute('math') == '1',
 		adaptiveColors: node.getAttribute('adaptiveColors'),
 		selectionCells: null,
@@ -862,13 +872,13 @@ Graph.prototype.setViewState = function(state, removeOldExtFonts)
 		this.pasteCounter = state.pasteCounter || 0;
 		this.mathEnabled = state.mathEnabled;
 		this.adaptiveColors = state.adaptiveColors;
-		this.gridEnabled = state.gridEnabled;
+		this.gridEnabled = urlParams['grid'] != null ? urlParams['grid'] != '0' : state.gridEnabled;
 		this.gridSize = state.gridSize;
 		this.graphHandler.guidesEnabled = state.guidesEnabled;
 		this.foldingEnabled = state.foldingEnabled;
 		this.setShadowVisible(state.shadowVisible, false);
 		this.scrollbars = state.scrollbars;
-		this.pageVisible = !this.isViewer() && state.pageVisible;
+		this.pageVisible = !this.isViewer() && (urlParams['pv'] != null ? urlParams['pv'] != '0' : state.pageVisible);
 		this.background = state.background;
 		this.pageScale = state.pageScale;
 		this.pageFormat = state.pageFormat;
@@ -945,16 +955,16 @@ Graph.prototype.setViewState = function(state, removeOldExtFonts)
 		this.backgroundImage = null;
 		this.scrollbars = this.defaultScrollbars;
 		this.graphHandler.guidesEnabled = true;
-		this.foldingEnabled = true;
+		this.foldingEnabled = this.defaultFoldingEnabled;
 		this.setShadowVisible(false, false);
 		this.defaultParent = null;
 		this.setTooltips(true);
-		this.setConnectable(true);
+		this.setConnectable(this.defaultConnectable);
 		this.lastPasteXml = null;
 		this.pasteCounter = 0;
 		this.mathEnabled = this.defaultMathEnabled;
 		this.adaptiveColors = null;
-		this.connectionArrowsEnabled = true;
+		this.connectionArrowsEnabled = this.defaultConnectionArrowsEnabled;
 		this.hiddenTags = [];
 		this.extFonts = [];
 	}

@@ -1,3 +1,91 @@
+18-MAR-2026: 29.6.4
+
+- Tidies changelog
+- Add dev server launch configurations
+- Align custom paper size unit dropdown with other format panel elements
+- Removes exits from preprocessor
+- Fixes possible NPE in mxCellEditor.resize
+- Add noExitOnCancel option to template protocol action
+- Update InlineToolbar styles for improved dark mode support
+
+16-MAR-2026: 29.6.3
+
+- Fixes NPE
+
+16-MAR-2026: 29.6.2
+
+- Fixed swimlane business template [DID-17965]
+- Updates DOMPurify from 3.3.1 to 3.3.2
+- Update border color for dark mode dialog windows
+- Fix format=0 to hide format panel initially instead of disabling it
+- Disable window docking in embedInline mode
+- Add sidebarEnabled property to manage sidebar visibility in EditorUi
+- Reposition icon in InlineToolbar to avoid overlap with edge waypoint handles
+- Adjust minimum widths for toolbar and menus based on embed parameter; enhance flex properties
+- Remove minWidth attribute from viewMenu and adjust separator addition in Toolbar initialization
+- Enhance passive scroll mode handling in EditorUi to prevent keystroke capture and forward scroll events to parent frame
+- Enhance fitWindow method to support centering on page within viewport
+- Enhance theme handling for 'kennedy' in EditorUi; adjust format panel and sidebar visibility based on window size
+- Fixes delayed scroll for fitDiagramOnLoad option
+- Ignores invalid scratchpad data [jgraph/drawio-desktop#2341]
+- Adds fitDiagramOnPage switch [jgraph/drawio#5415]
+- Refactors getXml function to simplify XML serialization process
+- Refactors isRelativeUrl function to improve URL validation logic
+- Implements event firing for rubberband selection updates and adds UPDATE event constant
+- Adds default link target for SVG exports in Graph class
+- Sets mxIsElectron to false in embed mode for better compatibility
+- Adds support for plugin menu items and hides specified menu items
+- Enhances configuration options for EditorUi, adding support for compact mode, auto-focus suppression, and customizable message sources in embed mode.
+- Refactors updateAutosizeTextFontSize to accept style parameter for improved flexibility
+- Adds autosize text font size update on text spacing change
+- Refactors toggleShapesPanel to include noScroll parameter for improved control over scrolling behavior
+- Refactors diagram fitting logic to use initialFitDiagram method for improved readability and consistency
+- Adds optional connect handle functionality
+- Adds configuration option for connect handle visibility
+- Enables debug tooltip with dev-tooltips parameter
+- Adds support for passive scroll and no resizers configuration options
+- Removes unused code for IE
+- Adds support for pasting at mouse pointer if enabled
+- Adds edit tooltip functionality for cells in the graph
+- Adds support for internal clipboard configuration in Editor and EditorUi
+- Adds support for source metadata handling in diagram parsing
+- Adds load event for mermaid datain embedded editor
+- Disable auto focus in embedded editor with noAutoFocus
+- Refactor smartFit action to streamline lightbox resizing and integrate with button click
+- Conditional key binding for 'selectVertices' action based on dev parameter
+- Enhance connect handle by adding shape picker on click
+- Add default connection arrows and connectable settings to Graph prototype
+- Improve connectable and connection arrows settings handling in readGraphState
+- Add default folding enabled setting and update related configurations
+- Force show shape picker on connect handle click
+- Add URL parameters for grid and page visibility settings
+- Enhance GraphViewer responsiveness by adding max scale configuration
+- Refactor message handling in export and autosave processes
+- Add custom scale handling and margin adjustments for embedded diagrams
+- Add inline embedding support for graph translation adjustments
+- Enhance inline embedding by adding UI visibility controls for toolbar and windows
+- Enhance responsiveness in GraphViewer by adjusting viewBox calculations and adding border handling
+- Add context menu enhancements for passiveScroll mode with shape picker integration
+- Fixes insert for cancel in insert polygon
+- Adds support for styles in parsed mermaid diagrams [jgraph/drawio#3884]
+- Improve overlap detection for inline toolbar positioning
+- Delay fitting of popup menu to ensure it is rendered correctly in the viewport
+- Add clearSelection action to graph for improved user interaction
+- Refactor responsive border handling in GraphViewer for consistent scaling behavior
+- Add resetViewOnSave configuration to reset view position on save
+- Preserve original XML attribute values in readGraphState for consistent state management
+- Update view state management to preserve view position on save
+- Add copyStyle/pasteStyle to context menu in passiveScroll mode
+- Rename clearSelection embed action to resetEditor and hide menus
+- Add bend style dropdown to inline edge toolbar
+- Add modelBounds to embed protocol and xml export format
+- Honor preset maxWidth in responsive scaling for diagrams
+- Refactor maxWidth calculation for responsive scaling in GraphViewer
+- Sync fullscreen button state with actual panel visibility
+- feat: add noPrint and noExport URL params to hide chromeless toolbar buttons
+- Fix inline toolbar icons not visible in dark mode
+- Updates all actions to node 24
+
 05-MAR-2026: 29.6.1
 
 - Removes i18n updating from actions

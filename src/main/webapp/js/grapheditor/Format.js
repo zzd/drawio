@@ -63,6 +63,9 @@ Format.horizontalIsometricImage = Graph.createSvgImage(16, 18, '<path transform=
 Format.verticalIsometricImage = Graph.createSvgImage(16, 18, '<path transform="translate(32,4)scale(-1,1)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 4 26 L 19 17 L 10 12 L 26 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
 Format.curvedImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 2 26 Q 2 14 14 14 Q 28 14 28 4 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
 Format.entityImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 0 26 L 4 26 L 4 30 L 0 30 Z M 4 28 L 10 28 L 20 2 L 26 2 M 26 0 L 30 0 L 30 4 L 26 4 Z" stroke="black" fill="none"/>', 36, 36);
+Format.sharpBendImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 6 2 L 6 22 L 26 22" stroke="black" fill="none"/>', 36, 36);
+Format.roundedBendImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 6 2 L 6 12 Q 6 22 16 22 L 26 22" stroke="black" fill="none"/>', 36, 36);
+Format.curvedBendImage = Graph.createSvgImage(16, 18, '<path transform="translate(3,4)" stroke-width="2.5" d="M 6 2 Q 6 22 26 22" stroke="black" fill="none"/>', 36, 36);
 
 /**
  * Adds a style change item to the given menu.
@@ -471,6 +474,14 @@ BaseFormatPanel.prototype.installInputHandler = function(input, key, defaultValu
 						if (graph.model.getChildCount(cells[i]) == 0)
 						{
 							graph.autoSizeCell(cells[i], false);
+						}
+
+						if (key != mxConstants.STYLE_FONTSIZE &&
+							graph.isAutosizeTextCell(cells[i]) &&
+							graph.model.isVertex(cells[i]))
+						{
+							graph.updateAutosizeTextFontSize(cells[i],
+								graph.getCurrentCellStyle(cells[i], true));
 						}
 					}
 					

@@ -198,15 +198,19 @@ Editor.themes.push('atlas');
 					footer.appendChild(undoElt);
 					footer.appendChild(redoElt);
 					footer.appendChild(deleteElt);
-					
+
 					// Page menu only visible for multiple pages
 					var refreshMenu = mxUtils.bind(this, function()
 					{
 						var iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+						var eo = (urlParams['embed'] == '1' && this.buttonContainer != null) ?
+							(this.buttonContainer.offsetWidth || 300) : 0;
 
-						pagesElt.style.display = (iw < 480) ? 'none' : '';
-						zoomInput.style.display = (iw < 750) ? 'none' : '';
-						deleteElt.style.display = (iw < 290) ? 'none' : '';
+						pagesElt.style.display = (iw < 480 + eo) ? 'none' : '';
+						zoomInput.style.display = (iw < 750 + eo) ? 'none' : '';
+						deleteElt.style.display = (iw < 290 + eo) ? 'none' : '';
+						undoElt.style.display = (iw < 360 + eo) ? 'none' : '';
+						redoElt.style.display = (iw < 360 + eo) ? 'none' : '';
 					});
 
 					mxEvent.addListener(window, 'resize', refreshMenu);
@@ -368,14 +372,16 @@ Editor.themes.push('atlas');
 						if (!collapsed)
 						{
 							var iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+							var eo = (urlParams['embed'] == '1' && this.buttonContainer != null) ?
+								(this.buttonContainer.offsetWidth || 300) : 0;
 
 							// Thinner previews in simple toolbar
 							if (value == 'simple')
 							{
 								this.sidebar.graph.cellRenderer.minSvgStrokeWidth = 0.9;
 							}
-						
-							if (value != 'simple' || iw >= 660)
+
+							if (value != 'simple' || iw >= 660 + eo)
 							{
 								var textElt = this.sidebar.createVertexTemplate(graph.appendFontSize(Editor.defaultTextStyle,
 									graph.vertexFontSize), 60, 30, 'Text', mxResources.get('text') + ' (A)', true, false,
@@ -390,27 +396,27 @@ Editor.themes.push('atlas');
 
 							if (value == 'simple')
 							{
-								if (iw >= 600)
+								if (iw >= 600 + eo)
 								{
 									addElt(boxElt, mxResources.get('rectangle') + ' (D)', null, 'D');
 								}
 
-								if (iw >= 400)
+								if (iw >= 400 + eo)
 								{
 									this.sketchPickerMenuElt.appendChild(shapesElt);
 								}
-								
-								if (iw >= 460)
+
+								if (iw >= 460 + eo)
 								{
 									addElt(freehandElt, mxResources.get('freehand') + ' (X)', null, 'X');
 								}
 
-								if (iw >= 500)
+								if (iw >= 500 + eo)
 								{
 									addElt(generateElt, mxResources.get('generate'));
 								}
-	
-								if (iw >= 540)
+
+								if (iw >= 540 + eo)
 								{
 									this.sketchPickerMenuElt.appendChild(tableElt);
 								}
@@ -523,7 +529,8 @@ Editor.themes.push('atlas');
 				if (value == 'simple')
 				{
 					this.sketchPickerMenuElt.style.cssText = 'position:relative;white-space:nowrap;user-select:none;' +
-						'display:flex;align-items:center;justify-content:flex-end;flex-grow:1;gap:6px;flex-shrink:0;';
+						'display:flex;align-items:center;justify-content:flex-end;flex-grow:1;gap:6px;' +
+						'flex-shrink:0;';
 					this.sketchMainMenuElt.appendChild(this.sketchPickerMenuElt);
 				}
 				else
@@ -563,9 +570,9 @@ Editor.themes.push('atlas');
 
 				if (value == 'simple')
 				{
-					this.sketchMenubarElt.style.cssText = 'position:relative;flex-grow:0.5;' +
-						'overflow:visible;' + ((urlParams['embed'] != '1') ?
-						'flex-shrink:0;' : 'min-width:0;') + css;
+					this.sketchMenubarElt.style.cssText = 'position:relative;' +
+						((urlParams['embed'] != '1') ? 'flex-grow:0.5;overflow:visible;' : '') +
+						'flex-shrink:0;' + css;
 
 					if (this.commentElt == null)
 					{
@@ -635,20 +642,22 @@ Editor.themes.push('atlas');
 						else if (Editor.currentTheme == 'simple')
 						{
 							var iw = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+							var eo = (urlParams['embed'] == '1' && this.buttonContainer != null) ?
+								(this.buttonContainer.offsetWidth || 300) : 0;
 
 							if (this.commentElt != null)
 							{
-								this.commentElt.style.display = (iw > 560 && this.commentsSupported()) ? '' : 'none';
+								this.commentElt.style.display = (iw > 560 + eo && this.commentsSupported()) ? '' : 'none';
 							}
 
 							if (this.shareElt != null)
 							{
-								this.shareElt.style.display = (iw > 360) ? '' : 'none';
+								this.shareElt.style.display = (iw > 360 + eo) ? '' : 'none';
 							}
 
 							if (this.overflowMenuElt != null)
 							{
-								this.overflowMenuElt.style.display = (iw < 750) ? '' : 'none';
+								this.overflowMenuElt.style.display = (iw < 750 + eo) ? '' : 'none';
 							}
 						}
 					});
@@ -748,7 +757,13 @@ Editor.themes.push('atlas');
 				else
 				{
 					this.statusContainer.style.justifyContent = 'center';
-					this.statusContainer.style.width = '22%';
+					this.statusContainer.style.minWidth = '0';
+					this.statusContainer.style.overflow = 'hidden';
+
+					if (urlParams['embed'] != '1')
+					{
+						this.statusContainer.style.width = '22%';
+					}
 				}
 			}
 			

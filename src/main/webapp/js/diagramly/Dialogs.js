@@ -14027,7 +14027,7 @@ var ConnectionPointsDialog = function(editorUi, cell)
 /**
  * Constructs a new polygon editing dialog for mxgraph.basic.polygon shapes.
  */
-var PolygonDialog = function(editorUi, cell)
+var PolygonDialog = function(editorUi, cell, insertFn)
 {
 	var graph = editorUi.editor.graph;
 	var CANVAS_SIZE = 400;
@@ -15367,42 +15367,53 @@ var PolygonDialog = function(editorUi, cell)
 			newCurves.push(['Q', nx(points[0].cx), ny(points[0].cy)]);
 		}
 
-		// Update cell geometry to maintain visual position and size
-		var geo = graph.getCellGeometry(cell);
-
-		if (geo != null)
+		if (insertFn != null)
 		{
-			geo = geo.clone();
-
-			if (rangeX > 0)
-			{
-				geo.x = geo.x + (bminX / CANVAS_SIZE) * geo.width;
-				geo.width = (rangeX / CANVAS_SIZE) * geo.width;
-			}
-
-			if (rangeY > 0)
-			{
-				geo.y = geo.y + (bminY / CANVAS_SIZE) * geo.height;
-				geo.height = (rangeY / CANVAS_SIZE) * geo.height;
-			}
+			var style = 'shape=mxgraph.basic.polygon;polyCoords=' +
+				JSON.stringify(newCoords) + ';polyCurves=' +
+				JSON.stringify(newCurves) + ';polyline=' +
+				(closePath ? '0' : '1') + ';whiteSpace=wrap;html=1;';
+			insertFn(style);
 		}
-
-		graph.getModel().beginUpdate();
-
-		try
+		else
 		{
+			// Update cell geometry to maintain visual position and size
+			var geo = graph.getCellGeometry(cell);
+
 			if (geo != null)
 			{
-				graph.getModel().setGeometry(cell, geo);
+				geo = geo.clone();
+
+				if (rangeX > 0)
+				{
+					geo.x = geo.x + (bminX / CANVAS_SIZE) * geo.width;
+					geo.width = (rangeX / CANVAS_SIZE) * geo.width;
+				}
+
+				if (rangeY > 0)
+				{
+					geo.y = geo.y + (bminY / CANVAS_SIZE) * geo.height;
+					geo.height = (rangeY / CANVAS_SIZE) * geo.height;
+				}
 			}
 
-			graph.setCellStyles('polyCoords', JSON.stringify(newCoords), [cell]);
-			graph.setCellStyles('polyCurves', JSON.stringify(newCurves), [cell]);
-			graph.setCellStyles('polyline', closePath ? '0' : '1', [cell]);
-		}
-		finally
-		{
-			graph.getModel().endUpdate();
+			graph.getModel().beginUpdate();
+
+			try
+			{
+				if (geo != null)
+				{
+					graph.getModel().setGeometry(cell, geo);
+				}
+
+				graph.setCellStyles('polyCoords', JSON.stringify(newCoords), [cell]);
+				graph.setCellStyles('polyCurves', JSON.stringify(newCurves), [cell]);
+				graph.setCellStyles('polyline', closePath ? '0' : '1', [cell]);
+			}
+			finally
+			{
+				graph.getModel().endUpdate();
+			}
 		}
 
 		editorUi.hideDialog();

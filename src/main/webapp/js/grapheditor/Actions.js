@@ -36,26 +36,49 @@ Actions.prototype.init = function()
 
 	var smartFitAction = new Action('smartFit', function()
 	{
-		graph.popupMenuHandler.hideMenu();
+		if (ui.chromelessResize)
+		{
+			if (graph.isLightboxView())
+			{
+				if (graph.view.scale == 1)
+				{
+					ui.lightboxFit();
+				}
+				else
+				{
+					graph.zoomTo(1);
+				}
+				
+				ui.chromelessResize(false);
+			}
+			else
+			{
+				ui.chromelessResize(true);
+			}
+		}
+		else
+		{
+			graph.popupMenuHandler.hideMenu();
 
-		var scale = graph.view.scale;
-		var sx = graph.container.scrollLeft;
-		var sy = graph.container.scrollTop;
-        var tx = graph.view.translate.x;
-        var ty = graph.view.translate.y;
-		var thresh = 5;
+			var scale = graph.view.scale;
+			var sx = graph.container.scrollLeft;
+			var sy = graph.container.scrollTop;
+			var tx = graph.view.translate.x;
+			var ty = graph.view.translate.y;
+			var thresh = 5;
 
-    	ui.actions.get('resetView').funct();
-    	
-        // Toggle scale if nothing has changed
-        if (Math.abs(scale - graph.view.scale) < 0.00001 &&
-			Math.abs(sx - graph.container.scrollLeft) < thresh &&
-			Math.abs(sy - graph.container.scrollTop) < thresh &&
-			tx == graph.view.translate.x &&
-			ty == graph.view.translate.y)
-        {
-			ui.actions.get('fitWindow').funct();
-        }
+			ui.actions.get('resetView').funct();
+			
+			// Toggle scale if nothing has changed
+			if (Math.abs(scale - graph.view.scale) < 0.00001 &&
+				Math.abs(sx - graph.container.scrollLeft) < thresh &&
+				Math.abs(sy - graph.container.scrollTop) < thresh &&
+				tx == graph.view.translate.x &&
+				ty == graph.view.translate.y)
+			{
+				ui.actions.get('fitWindow').funct();
+			}
+		}
 	}, null, null, 'Enter');
 
 	smartFitAction.getTitle = function()
