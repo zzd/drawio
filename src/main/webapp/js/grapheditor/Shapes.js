@@ -244,20 +244,8 @@
 	
 	mxUtils.extend(TableShape, mxSwimlane);
 
-	TableShape.prototype.getLabelBounds = function(rect)
-	{
-		var start = this.getTitleSize();
-		
-		if (start == 0)
-		{
-			return mxShape.prototype.getLabelBounds.apply(this, arguments);
-		}
-		else
-		{
-			return mxSwimlane.prototype.getLabelBounds.apply(this, arguments);
-		}
-	};
-	
+	TableShape.prototype.fixedHeaderDefault = false;
+
 	TableShape.prototype.paintVertexShape = function(c, x, y, w, h)
 	{
 		// LATER: Split background to add striping, paint rows and cells
@@ -266,8 +254,10 @@
 			isCellCollapsed(this.state.cell) : false;
 		var horizontal = this.isHorizontal();
 		var start = this.getTitleSize();
-		
-		if (start == 0 || this.outline)
+		var fixedHeader = mxUtils.getValue(this.style,
+			mxConstants.STYLE_FIXED_HEADER, this.fixedHeaderDefault);
+
+		if ((start == 0 && !fixedHeader) || this.outline)
 		{
 			PartialRectangleShape.prototype.paintVertexShape.apply(this, arguments);
 		}

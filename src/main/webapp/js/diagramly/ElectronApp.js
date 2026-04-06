@@ -86,7 +86,15 @@ mxStencilRegistry.allowEval = false;
 				color: graph.view.gridColor
 			};
 		}
-		
+
+		// Passes hidden tags per page to export backend
+		var hiddenTagsMap = editorUi.getHiddenTagsMap();
+
+		if (hiddenTagsMap != null)
+		{
+			extras.hiddenTags = hiddenTagsMap;
+		}
+
 		new mxElectronRequest('export', {
 			fileTitle: editorUi.getBaseFilename(true),
 			print: true,
@@ -216,7 +224,7 @@ mxStencilRegistry.allowEval = false;
 		}
 
 		mxmeta(null, 'default-src \'self\'; connect-src \'self\' https://fonts.googleapis.com https://fonts.gstatic.com; img-src * data:; ' +
-			'media-src *; font-src * data:; style-src \'self\' \'unsafe-inline\' https://fonts.googleapis.com', 'Content-Security-Policy');
+			'media-src *; font-src * data:; frame-src \'self\'; style-src \'self\' \'unsafe-inline\' https://fonts.googleapis.com', 'Content-Security-Policy');
 
 		//Disable web plugins loading
 		urlParams['plugins'] = '0';
@@ -233,6 +241,26 @@ mxStencilRegistry.allowEval = false;
 			if (config.desktopAutoSync != null)
 			{
 				Editor.desktopAutoSync = config.desktopAutoSync;
+			}
+
+			if (Editor.enableLocalFonts)
+			{
+				requestSync({action: 'getLocalFonts'}).then(function(fonts)
+				{
+					if (fonts != null && fonts.length > 0)
+					{
+						Editor.localFonts = fonts;
+
+						if (config.defaultFonts == null &&
+							config.customFonts == null)
+						{
+							Menus.prototype.defaultFonts = fonts;
+						}
+					}
+				}).catch(function()
+				{
+					// Ignore errors from font enumeration
+				});
 			}
 		}
 	};

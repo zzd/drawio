@@ -1949,41 +1949,31 @@ var ExportDialog = function(editorUi)
 	var width = Math.ceil(bounds.width / scale);
 	var height = Math.ceil(bounds.height / scale);
 
-	var row, td;
-	
-	var table = document.createElement('table');
-	var tbody = document.createElement('tbody');
-	table.setAttribute('cellpadding', (mxClient.IS_SF) ? '0' : '2');
-	
-	row = document.createElement('tr');
-	
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	td.style.width = '100px';
-	mxUtils.write(td, mxResources.get('filename') + ':');
-	
-	row.appendChild(td);
-	
-	var nameInput = document.createElement('input');
-	nameInput.setAttribute('value', editorUi.editor.getOrCreateFilename());
-	nameInput.style.width = '180px';
+	var container = document.createElement('div');
 
-	td = document.createElement('td');
-	td.appendChild(nameInput);
-	row.appendChild(td);
-	
-	tbody.appendChild(row);
-		
-	row = document.createElement('tr');
-	
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('format') + ':');
-	
-	row.appendChild(td);
-	
+	// --- File section ---
+	var section = document.createElement('div');
+	section.className = 'geDialogSection';
+
+	var formRow = document.createElement('div');
+	formRow.className = 'geDialogFormRow';
+	var lbl = document.createElement('span');
+	lbl.className = 'geDialogFormLabel';
+	mxUtils.write(lbl, mxResources.get('filename') + ':');
+	formRow.appendChild(lbl);
+	var nameInput = document.createElement('input');
+	nameInput.setAttribute('type', 'text');
+	nameInput.setAttribute('value', editorUi.editor.getOrCreateFilename());
+	formRow.appendChild(nameInput);
+	section.appendChild(formRow);
+
+	formRow = document.createElement('div');
+	formRow.className = 'geDialogFormRow';
+	lbl = document.createElement('span');
+	lbl.className = 'geDialogFormLabel';
+	mxUtils.write(lbl, mxResources.get('format') + ':');
+	formRow.appendChild(lbl);
 	var imageFormatSelect = document.createElement('select');
-	imageFormatSelect.style.width = '180px';
 
 	var pngOption = document.createElement('option');
 	pngOption.setAttribute('value', 'png');
@@ -1991,24 +1981,24 @@ var ExportDialog = function(editorUi)
 	imageFormatSelect.appendChild(pngOption);
 
 	var gifOption = document.createElement('option');
-	
+
 	if (ExportDialog.showGifOption)
 	{
 		gifOption.setAttribute('value', 'gif');
 		mxUtils.write(gifOption, mxResources.get('formatGif'));
 		imageFormatSelect.appendChild(gifOption);
 	}
-	
+
 	var jpgOption = document.createElement('option');
 	jpgOption.setAttribute('value', 'jpg');
 	mxUtils.write(jpgOption, mxResources.get('formatJpg'));
 	imageFormatSelect.appendChild(jpgOption);
-	
+
 	var svgOption = document.createElement('option');
 	svgOption.setAttribute('value', 'svg');
 	mxUtils.write(svgOption, mxResources.get('formatSvg'));
 	imageFormatSelect.appendChild(svgOption);
-	
+
 	if (ExportDialog.showXmlOption)
 	{
 		var xmlOption = document.createElement('option');
@@ -2017,77 +2007,60 @@ var ExportDialog = function(editorUi)
 		imageFormatSelect.appendChild(xmlOption);
 	}
 
-	td = document.createElement('td');
-	td.appendChild(imageFormatSelect);
-	row.appendChild(td);
-	
-	tbody.appendChild(row);
-	
-	row = document.createElement('tr');
+	formRow.appendChild(imageFormatSelect);
+	section.appendChild(formRow);
+	container.appendChild(section);
 
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('zoom') + ' (%):');
-	
-	row.appendChild(td);
-	
+	// --- Size section ---
+	section = document.createElement('div');
+	section.className = 'geDialogSection';
+
+	formRow = document.createElement('div');
+	formRow.className = 'geDialogFormRow';
+	lbl = document.createElement('span');
+	lbl.className = 'geDialogFormLabel';
+	mxUtils.write(lbl, mxResources.get('zoom') + ' (%):');
+	formRow.appendChild(lbl);
 	var zoomInput = document.createElement('input');
 	zoomInput.setAttribute('type', 'number');
 	zoomInput.setAttribute('value', '100');
-	zoomInput.style.width = '180px';
+	formRow.appendChild(zoomInput);
+	section.appendChild(formRow);
 
-	td = document.createElement('td');
-	td.appendChild(zoomInput);
-	row.appendChild(td);
+	var inlineRow = document.createElement('div');
+	inlineRow.className = 'geDialogInlineFields';
+	inlineRow.style.marginTop = '6px';
 
-	tbody.appendChild(row);
-
-	row = document.createElement('tr');
-
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('width') + ':');
-	
-	row.appendChild(td);
-	
+	var field = document.createElement('div');
+	field.className = 'geDialogInlineField';
+	lbl = document.createElement('label');
+	mxUtils.write(lbl, mxResources.get('width') + ':');
+	field.appendChild(lbl);
 	var widthInput = document.createElement('input');
+	widthInput.setAttribute('type', 'number');
 	widthInput.setAttribute('value', width);
-	widthInput.style.width = '180px';
+	field.appendChild(widthInput);
+	inlineRow.appendChild(field);
 
-	td = document.createElement('td');
-	td.appendChild(widthInput);
-	row.appendChild(td);
-
-	tbody.appendChild(row);
-	
-	row = document.createElement('tr');
-	
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('height') + ':');
-	
-	row.appendChild(td);
-	
+	field = document.createElement('div');
+	field.className = 'geDialogInlineField';
+	lbl = document.createElement('label');
+	mxUtils.write(lbl, mxResources.get('height') + ':');
+	field.appendChild(lbl);
 	var heightInput = document.createElement('input');
+	heightInput.setAttribute('type', 'number');
 	heightInput.setAttribute('value', height);
-	heightInput.style.width = '180px';
+	field.appendChild(heightInput);
+	inlineRow.appendChild(field);
+	section.appendChild(inlineRow);
 
-	td = document.createElement('td');
-	td.appendChild(heightInput);
-	row.appendChild(td);
-
-	tbody.appendChild(row);
-	
-	row = document.createElement('tr');
-	
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('dpi') + ':');
-	
-	row.appendChild(td);
-	
+	formRow = document.createElement('div');
+	formRow.className = 'geDialogFormRow';
+	lbl = document.createElement('span');
+	lbl.className = 'geDialogFormLabel';
+	mxUtils.write(lbl, mxResources.get('dpi') + ':');
+	formRow.appendChild(lbl);
 	var dpiSelect = document.createElement('select');
-	dpiSelect.style.width = '180px';
 
 	var dpi100Option = document.createElement('option');
 	dpi100Option.setAttribute('value', '100');
@@ -2098,29 +2071,37 @@ var ExportDialog = function(editorUi)
 	dpi200Option.setAttribute('value', '200');
 	mxUtils.write(dpi200Option, '200dpi');
 	dpiSelect.appendChild(dpi200Option);
-	
+
 	var dpi300Option = document.createElement('option');
 	dpi300Option.setAttribute('value', '300');
 	mxUtils.write(dpi300Option, '300dpi');
 	dpiSelect.appendChild(dpi300Option);
-	
+
 	var dpi400Option = document.createElement('option');
 	dpi400Option.setAttribute('value', '400');
 	mxUtils.write(dpi400Option, '400dpi');
 	dpiSelect.appendChild(dpi400Option);
-	
+
 	var dpiCustOption = document.createElement('option');
 	dpiCustOption.setAttribute('value', 'custom');
 	mxUtils.write(dpiCustOption, mxResources.get('custom'));
 	dpiSelect.appendChild(dpiCustOption);
 
 	var customDpi = document.createElement('input');
-	customDpi.style.width = '180px';
 	customDpi.style.display = 'none';
 	customDpi.setAttribute('value', '100');
 	customDpi.setAttribute('type', 'number');
 	customDpi.setAttribute('min', '50');
 	customDpi.setAttribute('step', '50');
+
+	formRow.appendChild(dpiSelect);
+	formRow.appendChild(customDpi);
+	section.appendChild(formRow);
+	container.appendChild(section);
+
+	// Options section (populated after DPI handlers below)
+	var optSection = document.createElement('div');
+	optSection.className = 'geDialogSection';
 	
 	var zoomUserChanged = false;
 	
@@ -2162,71 +2143,40 @@ var ExportDialog = function(editorUi)
 		}	
 	});
 	
-	td = document.createElement('td');
-	td.appendChild(dpiSelect);
-	td.appendChild(customDpi);
-	row.appendChild(td);
-
-	tbody.appendChild(row);
-	
-	row = document.createElement('tr');
-	
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('background') + ':');
-	
-	row.appendChild(td);
-	
+	var checkRow = document.createElement('div');
+	checkRow.className = 'geDialogCheckRow';
 	var transparentCheckbox = document.createElement('input');
 	transparentCheckbox.setAttribute('type', 'checkbox');
 	transparentCheckbox.checked = graph.background == null || graph.background == mxConstants.NONE;
+	checkRow.appendChild(transparentCheckbox);
+	lbl = document.createElement('label');
+	mxUtils.write(lbl, mxResources.get('transparent'));
+	checkRow.appendChild(lbl);
+	optSection.appendChild(checkRow);
 
-	td = document.createElement('td');
-	td.appendChild(transparentCheckbox);
-	mxUtils.write(td, mxResources.get('transparent'));
-	
-	row.appendChild(td);
-	
-	tbody.appendChild(row);
-	
-	row = document.createElement('tr');
-	
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('grid') + ':');
-	
-	row.appendChild(td);
-	
+	checkRow = document.createElement('div');
+	checkRow.className = 'geDialogCheckRow';
 	var gridCheckbox = document.createElement('input');
 	gridCheckbox.setAttribute('type', 'checkbox');
 	gridCheckbox.checked = false;
+	checkRow.appendChild(gridCheckbox);
+	lbl = document.createElement('label');
+	mxUtils.write(lbl, mxResources.get('grid'));
+	checkRow.appendChild(lbl);
+	optSection.appendChild(checkRow);
 
-	td = document.createElement('td');
-	td.appendChild(gridCheckbox);
-	
-	row.appendChild(td);
-	
-	tbody.appendChild(row);
-	
-	row = document.createElement('tr');
-
-	td = document.createElement('td');
-	td.style.fontSize = '10pt';
-	mxUtils.write(td, mxResources.get('borderWidth') + ':');
-	
-	row.appendChild(td);
-	
+	formRow = document.createElement('div');
+	formRow.className = 'geDialogFormRow';
+	lbl = document.createElement('span');
+	lbl.className = 'geDialogFormLabel';
+	mxUtils.write(lbl, mxResources.get('borderWidth') + ':');
+	formRow.appendChild(lbl);
 	var borderInput = document.createElement('input');
 	borderInput.setAttribute('type', 'number');
 	borderInput.setAttribute('value', ExportDialog.lastBorderValue);
-	borderInput.style.width = '180px';
-
-	td = document.createElement('td');
-	td.appendChild(borderInput);
-	row.appendChild(td);
-
-	tbody.appendChild(row);
-	table.appendChild(tbody);
+	formRow.appendChild(borderInput);
+	optSection.appendChild(formRow);
+	container.appendChild(optSection);
 	
 	// Handles changes in the export format
 	function formatChanged()
@@ -2371,12 +2321,10 @@ var ExportDialog = function(editorUi)
 		checkValues();
 	});
 	
-	row = document.createElement('tr');
-	td = document.createElement('td');
-	td.setAttribute('align', 'right');
-	td.style.paddingTop = '22px';
-	td.colSpan = 2;
-	
+	var btnRow = document.createElement('div');
+	btnRow.style.textAlign = 'right';
+	btnRow.style.paddingTop = '16px';
+
 	var saveBtn = mxUtils.button(mxResources.get('export'), mxUtils.bind(this, function()
 	{
 		if (parseInt(zoomInput.value) <= 0)
@@ -2391,7 +2339,7 @@ var ExportDialog = function(editorUi)
 			var b = Math.max(0, parseInt(borderInput.value));
 			var bg = graph.background;
 			var dpi = Math.max(1, parseInt(customDpi.value));
-			
+
 			if ((format == 'svg' || format == 'png' || format == 'pdf') && transparentCheckbox.checked)
 			{
 				bg = null;
@@ -2400,34 +2348,32 @@ var ExportDialog = function(editorUi)
 			{
 				bg = '#ffffff';
 			}
-			
+
 			ExportDialog.lastBorderValue = b;
 			ExportDialog.exportFile(editorUi, name, format, bg, s, b, dpi, gridCheckbox.checked);
 		}
 	}));
 	saveBtn.className = 'geBtn gePrimaryBtn';
-	
+
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
 		editorUi.hideDialog();
 	});
 	cancelBtn.className = 'geBtn';
-	
+
 	if (editorUi.editor.cancelFirst)
 	{
-		td.appendChild(cancelBtn);
-		td.appendChild(saveBtn);
+		btnRow.appendChild(cancelBtn);
+		btnRow.appendChild(saveBtn);
 	}
 	else
 	{
-		td.appendChild(saveBtn);
-		td.appendChild(cancelBtn);
+		btnRow.appendChild(saveBtn);
+		btnRow.appendChild(cancelBtn);
 	}
 
-	row.appendChild(td);
-	tbody.appendChild(row);
-	table.appendChild(tbody);
-	this.container = table;
+	container.appendChild(btnRow);
+	this.container = container;
 };
 
 /**
@@ -2776,7 +2722,7 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 	var nameInput = document.createElement('input');
 	nameInput.setAttribute('placeholder', mxResources.get('enterPropertyName'));
 	nameInput.setAttribute('type', 'text');
-	nameInput.setAttribute('size', (mxClient.IS_IE || mxClient.IS_IE11) ? '36' : '40');
+	nameInput.setAttribute('size', '40');
 	nameInput.style.boxSizing = 'border-box';
 	nameInput.style.borderWidth = '1px';
 	nameInput.style.borderStyle = 'solid';

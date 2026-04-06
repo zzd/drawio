@@ -138,7 +138,7 @@ mxGraphHandler.prototype.graph = null;
  * displayed. This is only recommended if the number of
  * cells in the graph is limited to a small number.
  */
-mxGraphHandler.prototype.maxCells = (mxClient.IS_IE) ? 20 : 50;
+mxGraphHandler.prototype.maxCells = 50;
 
 /**
  * Variable: enabled

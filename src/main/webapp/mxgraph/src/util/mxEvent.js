@@ -551,7 +551,9 @@ var mxEvent =
 	isMouseEvent: function(evt)
 	{
 		// Workaround for mixed event types during one gesture in Chrome on Linux
-		if (!mxClient.IS_ANDROID && mxClient.IS_LINUX && mxClient.IS_GC)
+		// but not on touch-capable devices (eg Android tablets in desktop UA mode)
+		if (!mxClient.IS_ANDROID && mxClient.IS_LINUX && mxClient.IS_GC &&
+			navigator.maxTouchPoints <= 1)
 		{
 			return true;
 		}

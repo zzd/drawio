@@ -236,10 +236,9 @@ App.DROPBOX_URL = 'js/dropbox/Dropbox-sdk.min.js';
 App.DROPINS_URL = 'https://www.dropbox.com/static/api/2/dropins.js';
 
 /**
- * OneDrive Client JS (file/folder picker). This is a slightly modified version to allow using accessTokens
- * But it doesn't work for IE11, so we fallback to the original one
+ * OneDrive Client JS (file/folder picker). This is a slightly modified version to allow using accessTokens.
  */
-App.ONEDRIVE_URL = mxClient.IS_IE11? 'https://js.live.net/v7.2/OneDrive.js' : 'js/onedrive/OneDrive.js';
+App.ONEDRIVE_URL = 'js/onedrive/OneDrive.js';
 
 /**
  * Trello URL
@@ -518,11 +517,10 @@ App.getStoredMode = function()
 					}
 				}
 				
-				// Loads Trello for all browsers but < IE10 if not disabled or if enabled and in embed mode
+				// Loads Trello if not disabled or if enabled and in embed mode
 				if (typeof window.TrelloClient === 'function')
 				{
-					if (urlParams['tr'] == '1' && isSvgBrowser && !mxClient.IS_IE11 &&
-						(document.documentMode == null || document.documentMode >= 10))
+					if (urlParams['tr'] == '1' && isSvgBrowser)
 					{
 						// Immediately loads client
 						if (App.mode == App.MODE_TRELLO || (window.location.hash != null &&
@@ -648,6 +646,17 @@ App.main = function(callback, createUi)
 		Editor.loadCompatibleCss();
 		
 		App.isMainCalled = true;
+
+		// Detects Android tablets using Chrome's "Request Desktop Site"
+		// mode where the user agent shows Linux instead of Android.
+		// Use android=1 to force or android=0 to suppress detection.
+		if (urlParams['android'] == '1' || (urlParams['android'] != '0' &&
+			!mxClient.IS_ANDROID && mxClient.IS_LINUX && mxClient.IS_GC &&
+			navigator.maxTouchPoints > 1))
+		{
+			mxClient.IS_ANDROID = true;
+		}
+
 		// Handles uncaught errors before the app is loaded
 		window.onerror = function(message, url, linenumber, colno, err)
 		{
@@ -1033,11 +1042,10 @@ App.main = function(callback, createUi)
 								window.OneDriveClient = null;
 							}
 							
-							// Loads Trello for all browsers but < IE10 if not disabled or if enabled and in embed mode
-							if (typeof window.TrelloClient === 'function' && !mxClient.IS_IE11 &&
+							// Loads Trello if not disabled or if enabled and in embed mode
+							if (typeof window.TrelloClient === 'function' &&
 								typeof window.Trello === 'undefined' && window.DrawTrelloClientCallback != null &&
-								urlParams['tr'] == '1' && (navigator.userAgent == null ||
-								navigator.userAgent.indexOf('MSIE') < 0 || document.documentMode >= 10))
+								urlParams['tr'] == '1')
 							{
 								mxscript(App.TRELLO_JQUERY_URL, function()
 								{
@@ -1518,9 +1526,7 @@ App.prototype.init = function()
 	 */
 	try
 	{
-		this.gitHub = (!mxClient.IS_IE || document.documentMode == 10 ||
-				mxClient.IS_IE11 || mxClient.IS_EDGE) &&
-				(urlParams['gh'] != '0' && (urlParams['embed'] != '1' ||
+		this.gitHub = (urlParams['gh'] != '0' && (urlParams['embed'] != '1' ||
 				urlParams['gh'] == '1')) ? new GitHubClient(this) : null;
 		
 		if (this.gitHub != null)
@@ -1545,9 +1551,7 @@ App.prototype.init = function()
 	 */
 	try
 	{
-		this.gitLab = (!mxClient.IS_IE || document.documentMode == 10 ||
-			mxClient.IS_IE11 || mxClient.IS_EDGE) &&
-			(urlParams['gl'] != '0' && (urlParams['embed'] != '1' ||
+		this.gitLab = (urlParams['gl'] != '0' && (urlParams['embed'] != '1' ||
 			urlParams['gl'] == '1')) ? new GitLabClient(this) : null;
 
 		if (this.gitLab != null)
@@ -2952,6 +2956,14 @@ App.prototype.open = function()
 					this.fileLoaded((mxClient.IS_IOS) ?
 						new StorageFile(this, xml, filename) :
 						new LocalFile(this, xml, filename, temp));
+					
+					// Marks temp files as changed to trigger draft save
+					var file = this.getCurrentFile();
+
+					if (temp && file != null)
+					{
+						file.fileChanged();
+					}
 				}));
 			}
 		}
@@ -3692,13 +3704,30 @@ App.prototype.executeCreateObject = function(value, done)
 					// Fits diagram to window
 					this.initialFitDiagram(1.2);
 
+					// Easter egg: pop effect animates all cells on load
+					if (value.effect == 'pop')
+					{
+						var graph = this.editor.graph;
+						var cells = graph.model.getDescendants(
+							graph.model.getRoot());
+						var nodes = graph.getNodesForCells(cells);
+						Graph.setOpacityForNodes(nodes, 0);
+
+						window.setTimeout(mxUtils.bind(this, function()
+						{
+							var animations = graph.createPopAnimations(
+								cells, true);
+							graph.executeAnimations(animations);
+						}), 200);
+					}
+
 					// Needs to go before upate of hash if
 					// it replaces the history state
 					if (done != null)
 					{
 						done();
 					}
-					
+
 					// Sets create value with compressed XML
 					value.type = 'xml';
 					value.compressed = true;
@@ -3777,7 +3806,7 @@ App.prototype.openGenerateDialog = function(prompt)
 {
 	if (this.chatWindow == null)
 	{
-		this.chatWindow = new ChatWindow(this, 224, 104, 280, 320);
+		this.chatWindow = new ChatWindow(this, 224, 104, 360, 480);
 		this.chatWindow.window.addListener('show', mxUtils.bind(this, function()
 		{
 			this.fireEvent(new mxEventObject('chat'));
@@ -4393,21 +4422,29 @@ App.prototype.pickFile = function(mode)
 				this.openFile();
 				
 				// Installs local handler for opened files in same window
-				window.openFile.setConsumer(mxUtils.bind(this, function(xml, filename)
+				window.openFile.setConsumer(mxUtils.bind(this, function(xml, filename, temp)
 				{
 					var doOpenFile = mxUtils.bind(this, function()
 					{
 						// Replaces PNG with XML extension
 						var dot = !Editor.useCanvasForExport && filename.substring(filename.length - 4) == '.png';
-						
+
 						if (dot)
 						{
 							filename = filename.substring(0, filename.length - 4) + '.drawio';
 						}
-		
+
 						this.fileLoaded((mode == App.MODE_BROWSER) ?
 							new StorageFile(this, xml, filename) :
-							new LocalFile(this, xml, filename));
+							new LocalFile(this, xml, filename, temp));
+
+						// Marks temp files as changed to trigger draft save
+						var file = this.getCurrentFile();
+
+						if (temp && file != null)
+						{
+							file.fileChanged();
+						}
 					});
 					
 					var currentFile = this.getCurrentFile();
@@ -4982,7 +5019,7 @@ App.prototype.loadTemplate = function(url, onload, onerror, templateFilename, as
 	{
 		try
 		{
-			var data = (!base64) ? responseData : ((window.atob && !mxClient.IS_IE && !mxClient.IS_IE11) ?
+			var data = (!base64) ? responseData : ((window.atob) ?
 				atob(responseData) : Base64.decode(responseData));
 			
 			if (isVisioFilename || this.isVisioData(data))
@@ -7428,7 +7465,7 @@ App.prototype.convertFile = function(url, filename, mimeType, extension, success
 				    		else
 					    	{
 					    		// Workaround for character encoding issues in IE10/11
-					    		data = (window.atob && !mxClient.IS_IE && !mxClient.IS_IE11) ? atob(data) : Base64.decode(data);
+					    		data = (window.atob) ? atob(data) : Base64.decode(data);
 					    	}
 				    	}
 				    	

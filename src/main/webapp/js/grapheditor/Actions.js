@@ -131,7 +131,7 @@ Actions.prototype.init = function()
 	}).isEnabled = isGraphEnabled;
 	this.addAction('save', function() { ui.saveFile(false); }, null, null, Editor.ctrlKey + '+S').isEnabled = isGraphEnabled;
 	this.addAction('saveAs...', function() { ui.saveFile(true); }, null, null, Editor.ctrlKey + '+' + Editor.shiftKey + '+S');
-	this.addAction('export...', function() { ui.showDialog(new ExportDialog(ui).container, 300, 340, true, true); });
+	this.addAction('export...', function() { ui.showDialog(new ExportDialog(ui).container, 360, 396, true, true); });
 	this.addAction('editDiagram...', function()
 	{
 		var dlg = new EditDiagramDialog(ui);

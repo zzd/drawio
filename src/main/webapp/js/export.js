@@ -262,6 +262,12 @@ function render(data)
 	{
 		data.xml = Editor.extractGraphModelFromPng('data:image/png;base64,' + data.xml);
 	}
+
+	// PDF+XML format
+	if (data.xml.substring(0, 5) == 'JVBER' || (extras != null && extras.isPdf))
+	{
+		data.xml = Editor.extractGraphModelFromPdf('data:application/pdf;base64,' + data.xml);
+	}
 	
 	// IE11 sends incorrect xml
 	if (data.xml.substring(0, 11) == '<#document>')
@@ -467,7 +473,7 @@ function render(data)
 
 								if (editable)
 								{
-									svgRoot.setAttribute('content', getFileXml());
+									svgRoot.setAttribute('content', getFileXml(data.uncompressed));
 								}
 
 								electron.sendMessage('svg-data',
@@ -847,7 +853,23 @@ function render(data)
 				}
 			}
 		}
-		
+
+		// Handle hidden tags
+		if (extras != null && extras.hiddenTags != null)
+		{
+			var pageTags = extras.hiddenTags[currentPageId] ||
+				extras.hiddenTags[0];
+
+			if (pageTags != null && pageTags.length > 0)
+			{
+				graph.hiddenTags = pageTags;
+			}
+			else
+			{
+				graph.hiddenTags = [];
+			}
+		}
+
 		// Sets initial value for PDF page background
 		var gb = graph.getGraphBounds();
 		graph.pdfPageVisible = false;
@@ -945,6 +967,13 @@ function render(data)
 					this.scale * layout.width * page.width,
 					this.scale * layout.height * page.height);
 			};
+		}
+
+		// Disables page-based layout when width/height is specified
+		// to scale diagram to fit the given dimensions
+		if (graph.pdfPageVisible && (data.w > 0 || data.h > 0))
+		{
+			graph.pdfPageVisible = false;
 		}
 
 		if (!graph.pdfPageVisible)
@@ -1221,7 +1250,7 @@ function render(data)
 				return (diagrams == null) ? 'Page-1' :
 					(diagrams[from].getAttribute('name') || ('Page-' + (from + 1)));
 			}
-			else if (name == 'pagenumber' && data.from != null)
+			else if (name == 'pagenumber')
 			{
 				return from + 1;
 			}
@@ -1262,6 +1291,17 @@ function render(data)
 
 	if (preview != null)
 	{
+		// Expands fill patterns to inline geometry for vector PDF output
+		if (Editor.expandPatternsForPrint)
+		{
+			var svgs = document.getElementsByTagName('svg');
+
+			for (var i = 0; i < svgs.length; i++)
+			{
+				Editor.expandSvgPatterns(svgs[i]);
+			}
+		}
+
 		preview.addPendingCss(document);
 		Graph.rewritePageLinks(document, true);
 	}

@@ -1831,7 +1831,7 @@ OneDriveClient.prototype.pickFolderOD = function(fn, direct)
 				openInNewWindow: true,
 				advanced:
 				{
-					'endpointHint': mxClient.IS_IE11? null : this.endpointHint, //IE11 doen't work with our modified version, so, setting endpointHint disable using our token BUT will force relogin!
+					'endpointHint': this.endpointHint,
 					'redirectUri': this.pickerRedirectUri,
 					'queryParameters': 'select=id,name,parentReference',
 					'accessToken': _token,
@@ -1840,12 +1840,6 @@ OneDriveClient.prototype.pickFolderOD = function(fn, direct)
 				success: mxUtils.bind(this, function(files)
 				{
 					fn(files);
-					
-					//Update the token in case a login with a different user
-					if (mxClient.IS_IE11)
-					{
-						_token = files.accessToken;
-					}
 				}),
 				cancel: mxUtils.bind(this, function()
 				{
@@ -1913,7 +1907,7 @@ OneDriveClient.prototype.pickFileOD = function(fn, acceptAllFiles)
 			multiSelect: false,
 			advanced:
 			{
-				'endpointHint': mxClient.IS_IE11? null : this.endpointHint, //IE11 doen't work with our modified version, so, setting endpointHint disable using our token BUT will force relogin!
+				'endpointHint': this.endpointHint,
 				'redirectUri': this.pickerRedirectUri,
 				'queryParameters': 'select=id,name,parentReference,webUrl', //We can also get @microsoft.graph.downloadUrl within this request but it will break the normal process
 				'accessToken': _token,
@@ -1923,12 +1917,6 @@ OneDriveClient.prototype.pickFileOD = function(fn, acceptAllFiles)
 			{
 				if (files != null && files.value != null && files.value.length > 0)
 				{
-					//Update the token in case a login with a different user
-					if (mxClient.IS_IE11)
-					{
-						_token = files.accessToken;
-					}
-					
 					fn(OneDriveFile.prototype.getIdOf(files.value[0]), files);
 				}
 			}),

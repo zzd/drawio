@@ -307,24 +307,7 @@
 							
 							graph.doResizeContainer = function(width, height)
 							{
-								// Fixes container size for different box models
-								if (mxClient.IS_IE)
-								{
-									if (document.documentMode >= 9)
-									{
-										width += 3;
-										height += 5;
-									}
-									else
-									{
-										width += 1;
-										height += 1;
-									}
-								}
-								else
-								{
-									height += 1;
-								}
+								height += 1;
 								
 								if (this.maximumContainerSize != null)
 								{

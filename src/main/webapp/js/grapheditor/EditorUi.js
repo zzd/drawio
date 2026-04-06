@@ -285,15 +285,8 @@ EditorUi = function(editor, container, lightbox)
 				return textEditing(evt);
 			};
 			
-			if (mxClient.IS_IE && (typeof(document.documentMode) === 'undefined' || document.documentMode < 9))
-			{
-				mxEvent.addListener(this.diagramContainer, 'contextmenu', linkHandler);
-			}
-			else
-			{
-				// Allows browser context menu outside of diagram and sidebar
-				this.diagramContainer.oncontextmenu = linkHandler;
-			}
+			// Allows browser context menu outside of diagram and sidebar
+			this.diagramContainer.oncontextmenu = linkHandler;
 		}
 		else
 		{
@@ -349,22 +342,83 @@ EditorUi = function(editor, container, lightbox)
 		{
 			var graphHandlerStart = graph.graphHandler.start;
 
-			graph.graphHandler.start = function()
+			graph.graphHandler.start = function(cell)
 			{
 				if (ui.hoverIcons != null)
 				{
 					ui.hoverIcons.reset();
 				}
 
-				if (ui.inlineToolbar != null && this.cell != null)
+				if (ui.inlineToolbar != null && cell != null)
 				{
 					ui.inlineToolbar.hide();
 				}
 
 				graphHandlerStart.apply(this, arguments);
 			};
+
+			var graphHandlerMouseUp = graph.graphHandler.mouseUp;
+
+			graph.graphHandler.mouseUp = function()
+			{
+				graphHandlerMouseUp.apply(this, arguments);
+
+				if (ui.inlineToolbar != null)
+				{
+					ui.inlineToolbar.updateSelection();
+				}
+			};
 		}
-		
+
+		// Hides inline toolbar when handles are being dragged
+		var vertexHandlerStart = mxVertexHandler.prototype.start;
+
+		mxVertexHandler.prototype.start = function()
+		{
+			if (ui.inlineToolbar != null)
+			{
+				ui.inlineToolbar.hide();
+			}
+
+			vertexHandlerStart.apply(this, arguments);
+		};
+
+		var vertexHandlerMouseUp2 = mxVertexHandler.prototype.mouseUp;
+
+		mxVertexHandler.prototype.mouseUp = function()
+		{
+			vertexHandlerMouseUp2.apply(this, arguments);
+
+			if (ui.inlineToolbar != null)
+			{
+				ui.inlineToolbar.updateSelection();
+			}
+		};
+
+		var edgeHandlerStart = mxEdgeHandler.prototype.start;
+
+		mxEdgeHandler.prototype.start = function()
+		{
+			if (ui.inlineToolbar != null)
+			{
+				ui.inlineToolbar.hide();
+			}
+
+			edgeHandlerStart.apply(this, arguments);
+		};
+
+		var edgeHandlerMouseUp2 = mxEdgeHandler.prototype.mouseUp;
+
+		mxEdgeHandler.prototype.mouseUp = function()
+		{
+			edgeHandlerMouseUp2.apply(this, arguments);
+
+			if (ui.inlineToolbar != null)
+			{
+				ui.inlineToolbar.updateSelection();
+			}
+		};
+
 		// Adds tooltip when mouse is over scrollbars to show space-drag panning option
 		mxEvent.addListener(this.diagramContainer, 'mousemove', mxUtils.bind(this, function(evt)
 		{
@@ -411,13 +465,14 @@ EditorUi = function(editor, container, lightbox)
 			}
 			else if (evt.which == 32 /* Space */ && !graph.isEditing())
 			{
-				this.spaceDown = true;
-				this.hoverIcons.reset();
-				graph.container.style.cursor = 'move';
-				
-				// Disables scroll after space keystroke with scrollbars
-				if (!graph.isEditing() && mxEvent.getSource(evt) == graph.container)
+				var source = mxEvent.getSource(evt);
+
+				if (source.nodeName != 'INPUT' && source.nodeName != 'TEXTAREA' &&
+					source.nodeName != 'SELECT' && !source.isContentEditable)
 				{
+					this.spaceDown = true;
+					this.hoverIcons.reset();
+					graph.container.style.cursor = 'move';
 					mxEvent.consume(evt);
 				}
 			}
@@ -1074,7 +1129,7 @@ EditorUi.prototype.formatWidth = 240;
  * Specifies the default sidebar width.
  */
 EditorUi.prototype.defaultSidebarWidth = Math.min(screen.width / 2,
-	(urlParams['sidebar-entries'] != 'large') ? 220 : 230);
+	(urlParams['sidebar-entries'] != 'large') ? 232 : 242);
 
 /**
  * Specifies the position of the horizontal split bar.
@@ -2192,16 +2247,22 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 			// Wrapper needed to catch events
 			var node = document.createElement('a');
 			div.appendChild(node);
-			
-			if (style != null && urlParams['sketch'] != '1')
+
+			var fixed = cell.shapePickerKeepStyle;
+			delete cell.shapePickerKeepStyle;
+
+			if (!fixed)
 			{
-				this.sidebar.graph.pasteStyle(style, [cell]);
-			}
-			else
-			{
-				this.sidebar.graph.pasteCellStyles([cell],
-					graph.currentVertexStyle,
-					graph.currentEdgeStyle);
+				if (style != null && urlParams['sketch'] != '1')
+				{
+					this.sidebar.graph.pasteStyle(style, [cell]);
+				}
+				else
+				{
+					this.sidebar.graph.pasteCellStyles([cell],
+						graph.currentVertexStyle,
+						graph.currentEdgeStyle);
+				}
 			}
 
 			var geo = cell.geometry;
@@ -2215,7 +2276,7 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 			if (geo != null)
 			{
 				var temp = this.sidebar.createVertexTemplateFromCells([cell],
-					geo.width, geo.height, '', true, false, null, false,
+					geo.width, geo.height, '', true, false, null, true,
 					mxUtils.bind(this, function(evt)
 				{
 					if (!mxEvent.isAltDown(evt) || graph.getSelectionCount() != 1)
@@ -2323,6 +2384,11 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 /**
  * Creates a temporary graph instance for rendering off-screen content.
  */
+EditorUi.prototype.defaultShapePickerEntries = null;
+
+/**
+ * Creates cells for the shape picker popup.
+ */
 EditorUi.prototype.getCellsForShapePicker = function(cell, hovering, showEdges)
 {
 	var graph = this.editor.graph;
@@ -2350,7 +2416,7 @@ EditorUi.prototype.getCellsForShapePicker = function(cell, hovering, showEdges)
 		try
 		{
 			cell = graph.cloneCell(cell);
-			
+
 			if (graph.model.isVertex(cell) && cell.geometry != null)
 			{
 				cell.geometry.x = 0;
@@ -2362,7 +2428,81 @@ EditorUi.prototype.getCellsForShapePicker = function(cell, hovering, showEdges)
 			cell = null;
 		}
 	}
-	
+
+	if (this.defaultShapePickerEntries != null)
+	{
+		var vertices = [];
+		var edges = [];
+
+		var createUserObject = function(value)
+		{
+			if (value != null && typeof value === 'object')
+			{
+				var doc = mxUtils.createXmlDocument();
+				var obj = doc.createElement('UserObject');
+
+				for (var key in value)
+				{
+					if (value.hasOwnProperty(key))
+					{
+						obj.setAttribute(key, value[key]);
+					}
+				}
+
+				if (obj.getAttribute('label') == null)
+				{
+					obj.setAttribute('label', '');
+				}
+
+				return obj;
+			}
+
+			return value;
+		};
+
+		for (var i = 0; i < this.defaultShapePickerEntries.length; i++)
+		{
+			var entry = this.defaultShapePickerEntries[i];
+
+			if (entry.style != null)
+			{
+				var value = createUserObject(entry.value);
+
+				if (entry.edge)
+				{
+					edges.push(createEdge(entry.style, entry.y, value));
+				}
+				else
+				{
+					var vertex = createVertex(entry.style, entry.width,
+						entry.height, value);
+
+					if (entry.keepStyle)
+					{
+						vertex.shapePickerKeepStyle = true;
+					}
+
+					vertices.push(vertex);
+				}
+			}
+		}
+
+		// Prepend cloned source cell or use first configured vertex entry
+		if (cell != null)
+		{
+			vertices[0] = cell;
+		}
+
+		var cells = vertices;
+
+		if (showEdges)
+		{
+			cells = cells.concat(edges);
+		}
+
+		return cells;
+	}
+
 	if (cell == null)
 	{
 		cell = createVertex(graph.appendFontSize(Editor.defaultTextStyle,
@@ -2385,7 +2525,7 @@ EditorUi.prototype.getCellsForShapePicker = function(cell, hovering, showEdges)
 		createVertex('shape=singleArrow;whiteSpace=wrap;html=1;arrowWidth=0.4;arrowSize=0.4;', 80, 60),
 		createVertex('shape=waypoint;sketch=0;size=6;pointerEvents=1;points=[];fillColor=none;resizable=0;' +
 			'rotatable=0;perimeter=centerPerimeter;snapToPoint=1;', 20, 20)];
-	
+
 	if (showEdges)
 	{
 		cells = cells.concat([
@@ -2472,7 +2612,7 @@ EditorUi.prototype.onKeyDown = function(evt)
 					var nesting = graph.cellEditor.isContentEditing() && graph.cellEditor.isTextSelected();
 
 					if (window.getSelection && graph.cellEditor.isContentEditing() &&
-						!nesting && !mxClient.IS_IE && !mxClient.IS_IE11)
+						!nesting)
 					{
 						var selection = window.getSelection();
 						var container = (selection.rangeCount > 0) ? selection.getRangeAt(0).commonAncestorContainer : null;
@@ -2570,6 +2710,16 @@ EditorUi.prototype.installTypingShim = function()
 	shim.setAttribute('autocorrect', 'off');
 	shim.setAttribute('autocapitalize', 'off');
 	shim.setAttribute('spellcheck', 'false');
+
+	// Suppress virtual keyboard on touch devices (Android/iOS tablets).
+	// The shim is for capturing keystrokes from physical keyboards and IME;
+	// on touch-only devices focusing a textarea triggers the soft keyboard.
+	if (mxClient.IS_ANDROID || mxClient.IS_IOS ||
+		('ontouchstart' in document.documentElement && navigator.maxTouchPoints > 1))
+	{
+		shim.setAttribute('inputmode', 'none');
+	}
+
 	shim.tabIndex = -1;
 	shim.className = 'mxTypingShim';
 	shim.style.cssText = 'position:absolute;overflow:hidden;resize:none;' +
@@ -3335,15 +3485,7 @@ EditorUi.prototype.initCanvas = function()
 			this.chromelessToolbar.style.padding = '10px 10px 8px 10px';
 			this.chromelessToolbar.style.left = (graph.isViewer()) ? '0' : '50%';
 
-			if (!mxClient.IS_IE && !mxClient.IS_IE11)
-			{
-				this.chromelessToolbar.style.backgroundColor = '#000000';
-			}
-			else
-			{
-				this.chromelessToolbar.style.backgroundColor = '#ffffff';
-				this.chromelessToolbar.style.border = '3px solid black';
-			}
+			this.chromelessToolbar.style.backgroundColor = '#000000';
 			
 			mxUtils.setPrefixedStyle(this.chromelessToolbar.style, 'borderRadius', '16px');
 			mxUtils.setPrefixedStyle(this.chromelessToolbar.style, 'transition', 'opacity 600ms ease-in-out');
@@ -3426,14 +3568,7 @@ EditorUi.prototype.initCanvas = function()
 				pageInfo.style.fontSize = '14px';
 				pageInfo.style.cursor = 'default';
 
-				if (!mxClient.IS_IE && !mxClient.IS_IE11)
-				{
-					pageInfo.style.color = '#ffffff';
-				}
-				else
-				{
-					pageInfo.style.color = '#000000';
-				}
+				pageInfo.style.color = '#ffffff';
 
 				this.chromelessToolbar.appendChild(pageInfo);
 				
@@ -3622,18 +3757,9 @@ EditorUi.prototype.initCanvas = function()
 						this.layersDialog.style.bottom = parseInt(this.chromelessToolbar.style.bottom) +
 							this.chromelessToolbar.offsetHeight + 4 + 'px';
 
-						if (!mxClient.IS_IE && !mxClient.IS_IE11)
-						{
-							this.layersDialog.style.backgroundColor = '#000000';
-							this.layersDialog.style.color = '#ffffff';
-							mxUtils.setOpacity(this.layersDialog, 80);
-						}
-						else
-						{
-							this.layersDialog.style.backgroundColor = '#ffffff';
-							this.layersDialog.style.border = '2px solid black';
-							this.layersDialog.style.color = '#000000';
-						}
+						this.layersDialog.style.backgroundColor = '#000000';
+						this.layersDialog.style.color = '#ffffff';
+						mxUtils.setOpacity(this.layersDialog, 80);
 
 						// Puts the dialog on top of the container z-index
 						var style = mxUtils.getCurrentStyle(this.editor.graph.container);
@@ -6607,6 +6733,14 @@ EditorUi.prototype.createKeyHandler = function(editor)
 	var isEventIgnored = keyHandler.isEventIgnored;
 	keyHandler.isEventIgnored = function(evt)
 	{
+		// Ignores Ctrl+, (188) when not content editing to allow
+		// browser default (eg. Cmd+, for Chrome settings on macOS)
+		if (evt.keyCode == 188 && this.isControlDown(evt) &&
+			!this.graph.cellEditor.isContentEditing())
+		{
+			return true;
+		}
+
 		// Handles undo/redo/ctrl+./,/u via action and allows ctrl+b/i
 		// only if editing value is HTML (except for FF and Safari)
 		// 66, 73 are keycodes for editing actions like bold, italic,

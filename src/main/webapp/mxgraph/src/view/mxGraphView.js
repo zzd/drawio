@@ -549,34 +549,7 @@ mxGraphView.prototype.validate = function(cell)
 		this.updatingDocumentResource;
 	
 	this.resetValidationState();
-	
-	// Improves IE rendering speed by minimizing reflows
-	var prevDisplay = null;
-	
-	if (this.canvas != null && this.textDiv == null &&
-		(document.documentMode == 8 && !mxClient.IS_EM))
-	{
-		// Placeholder keeps scrollbar positions when canvas is hidden
-		this.placeholder = document.createElement('div');
-		this.placeholder.style.position = 'absolute';
-		this.placeholder.style.width = this.canvas.clientWidth + 'px';
-		this.placeholder.style.height = this.canvas.clientHeight + 'px';
-		this.canvas.parentNode.appendChild(this.placeholder);
 
-		prevDisplay = this.drawPane.style.display;
-		this.canvas.style.display = 'none';
-		
-		// Creates temporary DIV used for text measuring in mxText.updateBoundingBox
-		this.textDiv = document.createElement('div');
-		this.textDiv.style.position = 'absolute';
-		this.textDiv.style.whiteSpace = 'nowrap';
-		this.textDiv.style.visibility = 'hidden';
-		this.textDiv.style.display = 'inline-block';
-		this.textDiv.style.zoom = '1';
-		
-		document.body.appendChild(this.textDiv);
-	}
-	
 	var cell = (cell != null) ? cell : ((this.currentRoot != null) ?
 		this.currentRoot : this.graph.getModel().getRoot());
 	var state = this.validateCellState(this.validateCell(cell));
@@ -584,21 +557,7 @@ mxGraphView.prototype.validate = function(cell)
 	this.setGraphBounds((graphBounds != null) ?
 		graphBounds : this.getEmptyBounds());
 	this.validateBackground();
-	
-	if (prevDisplay != null)
-	{
-		this.canvas.style.display = prevDisplay;
-		this.textDiv.parentNode.removeChild(this.textDiv);
-		
-		if (this.placeholder != null)
-		{
-			this.placeholder.parentNode.removeChild(this.placeholder);
-		}
-				
-		// Textdiv cannot be reused
-		this.textDiv = null;
-	}
-	
+
 	this.resetValidationState();
 	
 	window.status = mxResources.get(this.doneResource) ||
@@ -2622,8 +2581,8 @@ mxGraphView.prototype.installListeners = function()
 		mxEvent.addGestureListeners(container, mxUtils.bind(this, function(evt)
 		{
 			// Condition to avoid scrollbar events starting a rubberband selection
-			if (this.isContainerEvent(evt) &&  ((!mxClient.IS_IE && !mxClient.IS_IE11 &&
-				!mxClient.IS_GC && !mxClient.IS_OP && !mxClient.IS_SF) ||
+			if (this.isContainerEvent(evt) && ((!mxClient.IS_GC &&
+				!mxClient.IS_OP && !mxClient.IS_SF) ||
 				!this.isScrollEvent(evt)))
 			{
 				graph.fireMouseEvent(mxEvent.MOUSE_DOWN, new mxMouseEvent(evt));
@@ -2848,12 +2807,6 @@ mxGraphView.prototype.createSvg = function()
 	root.style.display = 'block';
 	root.appendChild(this.canvas);
 	
-	// Workaround for scrollbars in IE11 and below
-	if (mxClient.IS_IE || mxClient.IS_IE11)
-	{
-		root.style.overflow = 'hidden';
-	}
-
 	if (container != null)
 	{
 		container.appendChild(root);

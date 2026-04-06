@@ -6970,9 +6970,8 @@ LucidImporter = {};
 		LucidImporter.hasTimeLine = false;
 		LucidImporter.hasExtImgs = false;
 		LucidImporter.lucidchartObjects = {};
-		var xml = ['<?xml version=\"1.0\" encoding=\"UTF-8\"?>', '<mxfile type="Lucidchart-Import" version="' +
-			EditorUi.VERSION + '" host="' + mxUtils.htmlEntities(window.location.hostname) + 
-			'" agent="' + mxUtils.htmlEntities(navigator.appVersion) + 
+		var xml = ['<?xml version=\"1.0\" encoding=\"UTF-8\"?>', '<mxfile type="Lucidchart-Import"' +
+			' host="' + mxUtils.htmlEntities(window.location.hostname) +
 			'" modified="' + mxUtils.htmlEntities(new Date().toISOString()) + '">'];
 
 		if (advImpConfig && advImpConfig.transparentEdgeLabels)

@@ -408,8 +408,13 @@ OUTPUT FILES (in src/main/webapp/js/):
 			<sources dir="${basedir}">
 				<file name="Graph-Stylesheet.js" />
 			</sources>
+
+			<sources dir="${war.dir}/js/diagramly/gif">
+				<file name="GifEncoder.js" />
+				<file name="AnimatedExport.js" />
+			</sources>
 		</jscomp>
-			
+
 		<!-- Build base.min.js (intermediate bundle) -->
 		<concat destfile="${basedir}/base.min.js" fixlastline="yes" append="no">
 			<filelist dir="${war.dir}/js/spin" files="spin.min.js"/>

@@ -340,18 +340,22 @@
 			var div = document.createElement('div');
 			div.style.whiteSpace = 'nowrap';
 			var noPages = editorUi.pages == null || editorUi.pages.length <= 1;
-			
+
 			var hd = document.createElement('h3');
 			mxUtils.write(hd, mxResources.get('formatXml'));
-			hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:4px';
+			hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px';
 			div.appendChild(hd);
-			
-			var selection = editorUi.addCheckbox(div, mxResources.get('selectionOnly'),
+
+			var section = document.createElement('div');
+			section.className = 'geDialogSection';
+
+			var selection = editorUi.addCheckbox(section, mxResources.get('selectionOnly'),
 				false, graph.isSelectionEmpty());
-			var compressed = editorUi.addCheckbox(div, mxResources.get('compressed'), Editor.defaultCompressed);
-			var pages = editorUi.addCheckbox(div, mxResources.get('allPages'), !noPages, noPages);
-			pages.style.marginBottom = '16px';
-			
+			var compressed = editorUi.addCheckbox(section, mxResources.get('compressed'), Editor.defaultCompressed);
+			var pages = editorUi.addCheckbox(section, mxResources.get('allPages'), !noPages, noPages);
+
+			div.appendChild(section);
+
 			mxEvent.addListener(selection, 'change', function()
 			{
 				if (selection.checked)
@@ -363,13 +367,13 @@
 					pages.removeAttribute('disabled');
 				}
 			});
-			
+
 			var dlg = new CustomDialog(editorUi, div, mxUtils.bind(this, function()
 			{
 				editorUi.downloadFile('xml', !compressed.checked, null,
 					!selection.checked, noPages || !pages.checked);
 			}), null, mxResources.get('export'));
-			
+
 			editorUi.showDialog(dlg.container, 300, 200, true, true);
 		}));
 		
@@ -379,13 +383,15 @@
 			{
 				editorUi.showPublishLinkDialog(mxResources.get('url'), null, null, null, null, null, null, null,
 					function(linkTarget, linkColor, currentPage, lightbox, editLink, layers, width, height,
-						tags, link, transparent, darkMode, allPages)
+						tags, link, transparent, darkMode, allPages, useTagSettings)
 					{
 						var params = [];
 
 						if (lightbox && tags)
 						{
-							params.push('tags=%7B%7D');
+							var hiddenTagsMap = useTagSettings ? editorUi.getHiddenTagsMap() : null;
+							params.push('tags=' + encodeURIComponent(
+								JSON.stringify(hiddenTagsMap || {})));
 						}
 
 						var dlg = new EmbedDialog(editorUi, editorUi.createLink(linkTarget, linkColor,
@@ -402,7 +408,8 @@
 			editorUi.getPublicUrl(editorUi.getCurrentFile(), function(url)
 			{
 				editorUi.showHtmlDialog(mxResources.get('export'), null, url, function(publicUrl, zoomEnabled,
-					initialZoom, linkTarget, linkColor, fit, allPages, layers, tags, lightbox, editLink, theme)
+					initialZoom, linkTarget, linkColor, fit, allPages, layers, tags, lightbox, editLink, theme,
+					useTagSettings)
 				{
 					editorUi.createHtml(publicUrl, zoomEnabled, initialZoom, linkTarget, linkColor, fit, allPages,
 						layers, tags, lightbox, editLink, mxUtils.bind(this, function(html, scriptTag)
@@ -413,7 +420,7 @@
 								'<meta charset="utf-8"/>\n</head>\n<body>' + html + '\n' + scriptTag + '\n</body>\n</html>';
 							editorUi.saveData(basename + ((basename.substring(basename.lenth - 7) ==
 								'.drawio') ? '' : '.drawio') + '.html', 'html', result, 'text/html');
-						}), theme);
+						}), theme, useTagSettings);
 				});
 			});
 		}));
@@ -784,8 +791,7 @@
 		action = editorUi.actions.addAction('copyAsImage', mxUtils.bind(this, function()
 		{
 			var cells = mxUtils.sortCells(graph.model.getTopmostCells(graph.getSelectionCells()));
-			var xml = mxUtils.getXml((cells.length == 0) ? editorUi.editor.getGraphXml() : graph.encodeCells(cells));
-			editorUi.copyImage(cells, xml);
+			editorUi.copyImage(cells);
 		}), null, null, Editor.ctrlKey + '+' + Editor.altKey + '+X');
 
 		action.visible = Editor.enableNativeClipboard && editorUi.editor.isExportToCanvas();
@@ -793,8 +799,7 @@
 		action = editorUi.actions.addAction('copyAsSvg', mxUtils.bind(this, function()
 		{
 			var cells = mxUtils.sortCells(graph.model.getTopmostCells(graph.getSelectionCells()));
-			var xml = mxUtils.getXml((cells.length == 0) ? editorUi.editor.getGraphXml() : graph.encodeCells(cells));
-			editorUi.copySvg(cells, xml);
+			editorUi.copySvg(cells);
 		}), null, null, Editor.ctrlKey + '+' + Editor.altKey + '+' + Editor.shiftKey + '+X');
 
 		action.visible = Editor.enableNativeClipboard && editorUi.editor.isExportToCanvas();
@@ -898,21 +903,21 @@
 		action.setSelectedCallback(mxUtils.bind(this, function() { return this.tagsWindow != null && this.tagsWindow.window.isVisible(); }));
 		
 		// Shown on aj/ac domains
-		if ((Editor.enableAi || ((Editor.config == null ||
+		if ((EditorUi.isElectronApp ||
+			(Editor.enableAi || ((Editor.config == null ||
 			Editor.config.enableAi == null) &&
 			(/ac\.draw\.io$/.test(window.location.hostname)) ||
 			(/aj\.draw\.io$/.test(window.location.hostname)))) &&
 			!editorUi.isOffline() &&
-			!EditorUi.isElectronApp && 
 			Editor.aiActions.length > 0 &&
-			editorUi.isExternalDataComms() &&
+			editorUi.isExternalDataComms()) &&
 			editorUi.getServiceName() == 'draw.io' &&
 			typeof mxMermaidToDrawio !== 'undefined' &&
 			window.isMermaidEnabled)
 		{
 			var generateAction = editorUi.actions.put('generate', new Action('generate', function()
 			{
-				if (!Editor.enableAi)
+				if (!EditorUi.isElectronApp && !Editor.enableAi)
 				{
 					editorUi.alert('AI features require admin approval' +
 						'<br><a href="https://www.drawio.com/doc/faq/confluence-ai-options" target="_blank">Learn more</a>');
@@ -963,18 +968,22 @@
 
 				var hd = document.createElement('h3');
 				mxUtils.write(hd, mxResources.get('formatVsdx'));
-				hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:4px';
+				hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px';
 				div.appendChild(hd);
-				
-				var pages = editorUi.addCheckbox(div, mxResources.get('allPages'), !noPages, noPages);
-				pages.style.marginBottom = '16px';
-				
+
+				var section = document.createElement('div');
+				section.className = 'geDialogSection';
+
+				var pages = editorUi.addCheckbox(section, mxResources.get('allPages'), !noPages, noPages);
+
+				div.appendChild(section);
+
 				var dlg = new CustomDialog(editorUi, div, mxUtils.bind(this, function()
 				{
 					editorUi.exportVisio(!pages.checked);
 				}), null, mxResources.get('export'));
-				
-				editorUi.showDialog(dlg.container, 300, 130, true, true);
+
+				editorUi.showDialog(dlg.container, 300, 146, true, true);
 			}
 		});
 
@@ -1102,7 +1111,7 @@
 					}]);
 				}
 				
-				editorUi.showLocalStorageDialog(mxResources.get('configuration') + ':', Editor.configurationKey,
+				editorUi.showConfigurationEditorDialog(mxResources.get('configuration') + ':', Editor.configurationKey,
 					buttons, splashCb.parentNode, 'https://www.drawio.com/doc/faq/configure-diagram-editor',
 					function()
 					{
@@ -2305,8 +2314,8 @@
 		{
 			if (mxClient.IS_CHROMEAPP || !editorUi.isOffline())
 			{
-				editorUi.showDialog(new MoreShapesDialog(editorUi, true).container, 640, (isLocalStorage) ?
-						((mxClient.IS_IOS) ? 480 : 460) : 440, true, true);
+				editorUi.showDialog(new MoreShapesDialog(editorUi, true).container, 680, (isLocalStorage) ?
+						((mxClient.IS_IOS) ? 500 : 480) : 460, true, true);
 			}
 			else
 			{
@@ -2368,13 +2377,15 @@
 						editorUi.showPublishLinkDialog(mxResources.get('notion'), null, null, true,
 							'https://www.drawio.com/blog/drawio-notion', footer, publicUrl, editorUi.getCurrentFile(),
 							function(linkTarget, linkColor, currentPage, lightbox, editLink, layers, width, height,
-								tags, link, transparent, darkMode)
+								tags, link, transparent, darkMode, allPages, useTagSettings)
 							{
 								var params = ['border=0'];
 
 								if (tags)
 								{
-									params.push('tags=%7B%7D');
+									var hiddenTagsMap = useTagSettings ? editorUi.getHiddenTagsMap() : null;
+									params.push('tags=' + encodeURIComponent(
+										JSON.stringify(hiddenTagsMap || {})));
 								}
 
 								var dlg = new EmbedDialog(editorUi, editorUi.createLink(linkTarget, linkColor,
@@ -2426,7 +2437,7 @@
 											doc.writeln('<body>');
 											doc.writeln(html);
 											
-											var direct = mxClient.IS_IE || mxClient.IS_EDGE || document.documentMode != null;
+											var direct = mxClient.IS_EDGE;
 											
 											if (direct)
 											{
@@ -2558,15 +2569,17 @@
 						Math.ceil(Math.max(100, bounds.height / graph.view.scale)) + 2, null, null, null,
 						publicUrl, editorUi.getCurrentFile(), function(linkTarget, linkColor,
 							currentPage, lightbox, editLink, layers, width, height, tags, link,
-							transparent, darkMode)
+							transparent, darkMode, allPages, useTagSettings)
 						{
 							var params = [];
 
 							if (tags)
 							{
-								params.push('tags=%7B%7D');
+								var hiddenTagsMap = useTagSettings ? editorUi.getHiddenTagsMap() : null;
+								params.push('tags=' + encodeURIComponent(
+									JSON.stringify(hiddenTagsMap || {})));
 							}
-							
+
 							var dlg = new EmbedDialog(editorUi, '<iframe frameborder="0" style="width:' + width +
 								';height:' + height + ';" src="' + editorUi.createLink(linkTarget, linkColor,
 								true, lightbox, editLink, layers, (link == 'public') ? publicUrl : null,
@@ -2585,13 +2598,15 @@
 			{
 				editorUi.showPublishLinkDialog(null, null, null, null, null, null, publicUrl, editorUi.getCurrentFile(),
 					function(linkTarget, linkColor, currentPage, lightbox, editLink, layers, width, height,
-						tags, link, transparent, darkMode)
+						tags, link, transparent, darkMode, allPages, useTagSettings)
 					{
 						var params = [];
 
 						if (lightbox && tags)
 						{
-							params.push('tags=%7B%7D');
+							var hiddenTagsMap = useTagSettings ? editorUi.getHiddenTagsMap() : null;
+							params.push('tags=' + encodeURIComponent(
+								JSON.stringify(hiddenTagsMap || {})));
 						}
 
 						var dlg = new EmbedDialog(editorUi, editorUi.createLink(linkTarget, linkColor,
@@ -2806,7 +2821,7 @@
 				this.addMenuItems(menu, ['exportPdf'], parent);
 			}
 
-			if (editorUi.vsdxExportEnabled() && !mxClient.IS_IE &&
+			if (editorUi.vsdxExportEnabled() &&
 				(typeof(VsdxExport) !== 'undefined' || !editorUi.isOffline()))
 			{
 				this.addMenuItems(menu, ['exportVsdx'], parent);

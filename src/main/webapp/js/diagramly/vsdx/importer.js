@@ -940,11 +940,36 @@ var com;
 							{
 								try
 								{
-									graph.setAttributeForCell(v1, props[i].key, props[i].val);	
+									graph.setAttributeForCell(v1, props[i].key, props[i].val);
 								}
 								catch(e)
 								{
-									console.log('Attribute: "', props[i].key, '" with value "', props[i].val, '" not allowed in HTML');
+									// Sanitize attribute name: trim and replace spaces with dashes
+									try
+									{
+										var sanitizedKey = props[i].key.trim().replace(/\s+/g, '-');
+										var sanitizedVal = props[i].val != null ? props[i].val.trim() : props[i].val;
+
+                                        if (sanitizedVal != '')
+                                        {
+                                            // Find unused attribute name (append -2, -3, ... if needed)
+                                            var finalKey = sanitizedKey;
+                                            var suffix = 2;
+                                            var valueElem = (v1.value != null && typeof(v1.value) == 'object') ? v1.value : null;
+
+                                            while (valueElem != null && valueElem.hasAttribute(finalKey))
+                                            {
+                                                finalKey = sanitizedKey + '-' + suffix;
+                                                suffix++;
+                                            }
+
+                                            graph.setAttributeForCell(v1, finalKey, sanitizedVal);
+                                        }
+									}
+									catch(e2)
+									{
+										console.log('Attribute: "', props[i].key, '" with value "', props[i].val, '" not allowed in HTML');
+									}
 								}
 							}
 							

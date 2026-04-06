@@ -1581,20 +1581,15 @@ EditorUi.prototype.updateTabContainer = function()
 		var wrapper = document.createElement('div');
 		wrapper.className = 'geTabScroller';
 		var startIndex = null;
+		var activeTab = null;
 
 		for (var i = 0; i < this.pages.length; i++)
 		{
 			// Install drag and drop for page reorder
 			(mxUtils.bind(this, function(index, tab)
 			{
-				tab.className = 'geTab gePageTab';
-
-				if (this.pages[index] == this.currentPage)
-				{
-					tab.classList.add('geActivePage');
-				}
-				
 				tab.setAttribute('draggable', 'true');
+				tab.className = 'geTab gePageTab';
 				
 				mxEvent.addListener(tab, 'dragstart', mxUtils.bind(this, function(evt)
 				{
@@ -1645,6 +1640,11 @@ EditorUi.prototype.updateTabContainer = function()
 					evt.stopPropagation();
 					evt.preventDefault();
 				}));
+				
+				if (this.pages[index] == this.currentPage)
+				{
+					activeTab = tab;
+				}
 				
 				wrapper.appendChild(tab);
 			}))(i, this.createTabForPage(this.pages[i], i + 1));
@@ -1705,6 +1705,13 @@ EditorUi.prototype.updateTabContainer = function()
 		});
 
 		this.tabContainer.appendChild(ghLink);
+
+		if (activeTab != null)
+		{
+			 activeTab.classList.add('geActivePage');
+			 activeTab.scrollIntoView({behavior: 'smooth',
+				block: 'nearest', inline: 'nearest'});
+		}
 	}
 };
 
@@ -1766,6 +1773,11 @@ EditorUi.prototype.createTab = function()
 {
 	var tab = document.createElement('div');
 	tab.className = 'geTab';
+
+	mxEvent.addListener(tab, 'click', mxUtils.bind(this, function(evt)
+	{
+		tab.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'nearest'});
+	}));
 
 	return tab;
 };

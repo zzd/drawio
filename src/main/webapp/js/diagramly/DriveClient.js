@@ -1169,7 +1169,7 @@ DriveClient.prototype.getXmlFile = function(resp, success, error, ignoreMime, re
 										try
 										{
 											var xml = data.substring(index + 1);
-											var temp = (window.atob && !mxClient.IS_IE && !mxClient.IS_IE11) ?
+											var temp = (window.atob) ?
 												atob(xml) : Base64.decode(xml);
 											var node = this.ui.editor.extractGraphModel(
 												mxUtils.parseXml(temp).documentElement, true);
@@ -2095,7 +2095,7 @@ DriveClient.prototype.createUploadRequest = function(id, metadata, data, revisio
 		'headers': headers,
 		'params': delim + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(metadata) + delim +
 			'Content-Type: ' + ctype + '\r\n' + 'Content-Transfer-Encoding: base64\r\n' + '\r\n' +
-			((data != null) ? ((binary) ? data : ((window.btoa && !mxClient.IS_IE && !mxClient.IS_IE11) ?
+			((data != null) ? ((binary) ? data : ((window.btoa) ?
 				Graph.base64EncodeUnicode(data) : Base64.encode(data))) : '') + close
 	}
 

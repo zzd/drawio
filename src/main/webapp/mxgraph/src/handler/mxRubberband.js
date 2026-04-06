@@ -64,16 +64,6 @@ function mxRubberband(graph)
 		
 		this.graph.addListener(mxEvent.GESTURE, this.gestureHandler);
 		
-		// Automatic deallocation of memory
-		if (mxClient.IS_IE)
-		{
-			mxEvent.addListener(window, 'unload',
-				mxUtils.bind(this, function()
-				{
-					this.destroy();
-				})
-			);
-		}
 	}
 };
 
@@ -283,7 +273,7 @@ mxRubberband.prototype.createShape = function()
 	this.graph.container.appendChild(this.sharedDiv);
 	var result = this.sharedDiv;
 	
-	if (mxClient.IS_SVG && (!mxClient.IS_IE || document.documentMode >= 10) && this.fadeOut)
+	if (mxClient.IS_SVG && this.fadeOut)
 	{
 		this.sharedDiv = null;
 	}
@@ -340,7 +330,7 @@ mxRubberband.prototype.reset = function()
 {
 	if (this.div != null)
 	{
-		if (mxClient.IS_SVG && (!mxClient.IS_IE || document.documentMode >= 10) && this.fadeOut)
+		if (mxClient.IS_SVG && this.fadeOut)
 		{
 			var temp = this.div;
 			mxUtils.setPrefixedStyle(temp.style, 'transition', 'all 0.2s linear');

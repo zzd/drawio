@@ -291,6 +291,13 @@ Editor.popupsAllowed = window.urlParams != null? urlParams['noDevice'] != '1' : 
  * Specifies if the html and whiteSpace styles should be removed on inserted cells.
  */
 Editor.simpleLabels = false;
+
+/**
+ * Specifies if unnecessary spans should be removed from HTML labels when
+ * editing is stopped. Adjacent spans with compatible styles are merged
+ * and redundant wrapper spans are unwrapped. Default is false.
+ */
+Editor.optimizeHtmlLabels = false;
 	
 /**
  * Specifies if the native clipboard is enabled. Blocked in iframes for possible sandbox attribute.
@@ -1535,7 +1542,11 @@ function Dialog(editorUi, elt, w, h, modal, closable, onClose, noScroll, transpa
 	
 	var div = editorUi.createDiv(transparent? 'geTransDialog' : 'geDialog');
 	div.style.width = (w + 48) + 'px';
-	div.style.height = (h + 48) + 'px';
+
+	if (h != null)
+	{
+		div.style.height = (h + 48) + 'px';
+	}
 
 	if (urlParams['embedInline'] == '1' && !Editor.inlineFullscreen &&
 		editorUi.embedViewport != null)
@@ -1546,6 +1557,11 @@ function Dialog(editorUi, elt, w, h, modal, closable, onClose, noScroll, transpa
 
 	div.appendChild(elt);
 	document.body.appendChild(div);
+
+	if (h == null)
+	{
+		div.style.height = (elt.scrollHeight + 48) + 'px';
+	}
 	
 	if (closable)
 	{
@@ -1963,7 +1979,7 @@ PrintDialog.prototype.create = function(editorUi)
 	row = document.createElement('tr');
 	td = document.createElement('td');
 	td.colSpan = 2;
-	td.style.paddingTop = '20px';
+	td.style.paddingTop = '30px';
 	td.setAttribute('align', 'right');
 	
 	// Overall scale for print-out to account for print borders in dialogs etc
@@ -2068,7 +2084,11 @@ PrintDialog.prototype.create = function(editorUi)
 	tbody.appendChild(row);
 	
 	table.appendChild(tbody);
-	this.container = table;
+
+	var div = document.createElement('div');
+	div.style.paddingBottom = '20px';
+	div.appendChild(table);
+	this.container = div;
 };
 
 /**
@@ -2779,8 +2799,7 @@ var FilenameDialog = function(editorUi, filename, buttonText, fn, label,
 				
 				mxEvent.addListener(dlg, 'dragover', mxUtils.bind(this, function(evt)
 				{
-					// IE 10 does not implement pointer-events so it can't have a drop highlight
-					if (dropElt == null && (!mxClient.IS_IE || document.documentMode > 10))
+					if (dropElt == null)
 					{
 						dropElt = nameInput;
 						dropElt.style.backgroundColor = '#ebf2f9';
@@ -2986,7 +3005,39 @@ FilenameDialog.createFileTypes = function(editorUi, nameInput, types)
 	mxEvent.addListener(nameInput, 'change', nameInputChanged);
 	mxEvent.addListener(nameInput, 'keyup', nameInputChanged);
 	nameInputChanged();
-	
+
+	// Applies default file type from configuration
+	if (Editor.defaultFileType != null && typeSelect.value == '0')
+	{
+		for (var i = 0; i < types.length; i++)
+		{
+			if (types[i].extension == Editor.defaultFileType)
+			{
+				typeSelect.value = i;
+
+				var ext = types[i].extension;
+				var idx2 = nameInput.value.lastIndexOf('.drawio.');
+				var idx = (idx2 > 0) ? idx2 : nameInput.value.lastIndexOf('.');
+
+				if (ext != 'drawio')
+				{
+					ext = 'drawio.' + ext;
+				}
+
+				if (idx > 0)
+				{
+					nameInput.value = nameInput.value.substring(0, idx + 1) + ext;
+				}
+				else
+				{
+					nameInput.value = nameInput.value + '.' + ext;
+				}
+
+				break;
+			}
+		}
+	}
+
 	return typeSelect;
 };
 

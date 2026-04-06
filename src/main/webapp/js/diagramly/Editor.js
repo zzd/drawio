@@ -221,6 +221,16 @@
 	Editor.enableWebFonts = !window.mxIsElectron;
 
 	/**
+	 * Specifies if local font scanning is enabled.
+	 */
+	Editor.enableLocalFonts = false;
+
+	/**
+	 * Holds the list of detected local font names.
+	 */
+	Editor.localFonts = null;
+
+	/**
 	 * Disables the shadow option in the format panel.
 	 */
 	Editor.enableShadowOption = !mxClient.IS_SF;
@@ -310,6 +320,12 @@
 	 * Specifies if tooltip icons should be shown on shapes. Default is false.
 	 */
 	Editor.showTooltipIcons = false;
+
+	/**
+	 * Specifies if fill patterns should be expanded to inline geometry for
+	 * print and PDF export to avoid rasterization. Default is true.
+	 */
+	Editor.expandPatternsForPrint = true;
 
 	/**
 	 * Specifies the default text style.
@@ -856,6 +872,8 @@
     			mxUtils.getValue(state.style, 'childLayout', null) == null;
         }},
         {name: 'expand', dispName: 'Expand', type: 'bool', defVal: true},
+		{name: 'contract', dispName: 'Contract', type: 'bool', defVal: false},
+		{name: 'groupPadding', dispName: 'Group Padding', type: 'int', defVal: 0, min: 0},
         {name: 'part', dispName: 'Part', type: 'bool', defVal: false, isVisible: function(state, format)
         {
         	var model = format.editorUi.editor.graph.model;
@@ -2495,6 +2513,11 @@
 				document.head.appendChild(style);
 			}
 			
+			if (config.enableLocalFonts != null)
+			{
+				Editor.enableLocalFonts = config.enableLocalFonts;
+			}
+
 			if (config.defaultFonts != null)
 			{
 				Menus.prototype.defaultFonts = config.defaultFonts
@@ -2530,6 +2553,11 @@
 				Graph.selectParentLayer = config.selectParentLayer
 			}
 
+			if (config.intersectionSelect != null)
+			{
+				Graph.intersectionSelect = config.intersectionSelect
+			}
+
 			if (config.autosaveDelay != null)
 			{
 				DrawioFile.prototype.autosaveDelay = config.autosaveDelay
@@ -2557,6 +2585,11 @@
 				Editor.globalVars = config.globalVars;
 			}
 
+			if (config.defaultFileType != null)
+			{
+				Editor.defaultFileType = config.defaultFileType;
+			}
+
 			if (config.compressXml != null)
 			{
 				Editor.defaultCompressed = config.compressXml;
@@ -2571,6 +2604,11 @@
 			if (config.simpleLabels != null)
 			{
 				Editor.simpleLabels = config.simpleLabels;
+			}
+
+			if (config.optimizeHtmlLabels != null)
+			{
+				Editor.optimizeHtmlLabels = config.optimizeHtmlLabels;
 			}
 
 			if (config.pasteAtMousePointer != null)
@@ -2596,6 +2634,11 @@
 			if (config.showTooltipIcons != null)
 			{
 				Editor.showTooltipIcons = config.showTooltipIcons;
+			}
+
+			if (config.expandPatternsForPrint != null)
+			{
+				Editor.expandPatternsForPrint = config.expandPatternsForPrint;
 			}
 
 			if (config.showConnectHandle != null)
@@ -2747,6 +2790,12 @@
 			if (config.defaultEdgeStyle != null)
 			{
 				Graph.prototype.defaultEdgeStyle = config.defaultEdgeStyle;
+			}
+
+			// Overrides default shape picker entries
+			if (config.shapePicker != null)
+			{
+				EditorUi.prototype.defaultShapePickerEntries = config.shapePicker.shapes;
 			}
 
 			// Overrides default page visible
@@ -3110,7 +3159,362 @@
 	{
 		return typeof window.mxSettings !== 'undefined' && (isLocalStorage || mxClient.IS_CHROMEAPP);
 	};
-	
+
+	/**
+	 * Expands SVG fill patterns into inline vector geometry clipped to each
+	 * shape so that patterns are not rasterized by Chrome's PDF backend.
+	 */
+	Editor.expandSvgPatterns = function(svg)
+	{
+		var svgNS = 'http://www.w3.org/2000/svg';
+		var clipCounter = 0;
+
+		/**
+		 * Parses a patternTransform attribute string into its components.
+		 * Expected form: "translate(tx,ty) rotate(angle) scale(s)"
+		 */
+		function parsePatternTransform(str)
+		{
+			var tx = 0, ty = 0, angle = 0, sx = 1, sy = 1;
+
+			if (str != null)
+			{
+				var translateMatch = str.match(/translate\(\s*([^,\s]+)[,\s]+([^)]+)\)/);
+
+				if (translateMatch != null)
+				{
+					tx = parseFloat(translateMatch[1]);
+					ty = parseFloat(translateMatch[2]);
+				}
+
+				var rotateMatch = str.match(/rotate\(\s*([^)]+)\)/);
+
+				if (rotateMatch != null)
+				{
+					angle = parseFloat(rotateMatch[1]) * Math.PI / 180;
+				}
+
+				var scaleMatch = str.match(/scale\(\s*([^,\s)]+)(?:[,\s]+([^)]+))?\)/);
+
+				if (scaleMatch != null)
+				{
+					sx = parseFloat(scaleMatch[1]);
+					sy = (scaleMatch[2] != null) ? parseFloat(scaleMatch[2]) : sx;
+				}
+			}
+
+			return {tx: tx, ty: ty, angle: angle, sx: sx, sy: sy};
+		};
+
+		/**
+		 * Transforms a point from pattern space to user space.
+		 */
+		function transformPoint(x, y, t)
+		{
+			// Apply scale
+			var sx = x * t.sx;
+			var sy = y * t.sy;
+
+			// Apply rotation
+			var cos = Math.cos(t.angle);
+			var sin = Math.sin(t.angle);
+			var rx = sx * cos - sy * sin;
+			var ry = sx * sin + sy * cos;
+
+			// Apply translation
+			return {x: rx + t.tx, y: ry + t.ty};
+		};
+
+		/**
+		 * Transforms a point from user space to pattern space (inverse).
+		 */
+		function inverseTransformPoint(x, y, t)
+		{
+			// Remove translation
+			var dx = x - t.tx;
+			var dy = y - t.ty;
+
+			// Inverse rotation
+			var cos = Math.cos(-t.angle);
+			var sin = Math.sin(-t.angle);
+			var rx = dx * cos - dy * sin;
+			var ry = dx * sin + dy * cos;
+
+			// Inverse scale
+			return {x: rx / t.sx, y: ry / t.sy};
+		};
+
+		/**
+		 * Returns the accumulated transform from an element up to the SVG root
+		 * as a transform attribute string, or null if no transforms exist.
+		 */
+		function getAccumulatedTransform(el, svgRoot)
+		{
+			var transforms = [];
+			var current = el;
+
+			while (current != null && current !== svgRoot && current.nodeType === 1)
+			{
+				var t = current.getAttribute('transform');
+
+				if (t != null && t.length > 0)
+				{
+					transforms.unshift(t);
+				}
+
+				current = current.parentNode;
+			}
+
+			return (transforms.length > 0) ? transforms.join(' ') : null;
+		};
+
+		/**
+		 * Resolves a fill URL reference to a pattern element.
+		 */
+		function resolvePattern(el, svgRoot)
+		{
+			var fill = el.getAttribute('fill');
+
+			if (fill == null || fill.indexOf('url(') !== 0)
+			{
+				return null;
+			}
+
+			var match = fill.match(/url\([^#]*#([^)"]+)\)?/);
+
+			if (match == null)
+			{
+				return null;
+			}
+
+			var patternId = match[1];
+
+			// Uses querySelector on SVG root instead of getElementById
+			// because the print preview document may not have indexed IDs
+			try
+			{
+				var pattern = svgRoot.querySelector('#' + CSS.escape(patternId));
+
+				return (pattern != null && pattern.nodeName === 'pattern') ? pattern : null;
+			}
+			catch (e)
+			{
+				return null;
+			}
+		};
+
+		/**
+		 * Expands a single pattern-filled element.
+		 */
+		function expandElement(el, pattern, svgRoot)
+		{
+			var bbox;
+
+			try
+			{
+				bbox = el.getBBox();
+			}
+			catch (e)
+			{
+				return;
+			}
+
+			if (bbox.width === 0 || bbox.height === 0)
+			{
+				return;
+			}
+
+			var pw = parseFloat(pattern.getAttribute('width'));
+			var ph = parseFloat(pattern.getAttribute('height'));
+
+			if (isNaN(pw) || isNaN(ph) || pw <= 0 || ph <= 0)
+			{
+				return;
+			}
+
+			var t = parsePatternTransform(pattern.getAttribute('patternTransform'));
+
+			// Get the element's accumulated transform for the clip path
+			var elemTransform = getAccumulatedTransform(el, svgRoot);
+
+			// Compute bbox corners in user space (relative to element's local coords)
+			var corners = [
+				{x: bbox.x, y: bbox.y},
+				{x: bbox.x + bbox.width, y: bbox.y},
+				{x: bbox.x + bbox.width, y: bbox.y + bbox.height},
+				{x: bbox.x, y: bbox.y + bbox.height}
+			];
+
+			// If the element has a transform, apply it to get coordinates in
+			// the same space as the pattern (user/diagram space)
+			if (elemTransform != null)
+			{
+				try
+				{
+					var ctm = el.getCTM();
+					var svgCtm = svgRoot.getCTM() || svgRoot.createSVGMatrix();
+					// Transform from element space to SVG space
+					var m = svgCtm.inverse().multiply(ctm);
+
+					for (var i = 0; i < corners.length; i++)
+					{
+						var pt = svgRoot.createSVGPoint();
+						pt.x = corners[i].x;
+						pt.y = corners[i].y;
+						pt = pt.matrixTransform(m);
+						corners[i] = {x: pt.x, y: pt.y};
+					}
+				}
+				catch (e)
+				{
+					// Fall back to untransformed corners
+				}
+			}
+
+			// Transform corners to pattern space (inverse of patternTransform)
+			var minX = Infinity, minY = Infinity;
+			var maxX = -Infinity, maxY = -Infinity;
+
+			for (var i = 0; i < corners.length; i++)
+			{
+				var p = inverseTransformPoint(corners[i].x, corners[i].y, t);
+				minX = Math.min(minX, p.x);
+				minY = Math.min(minY, p.y);
+				maxX = Math.max(maxX, p.x);
+				maxY = Math.max(maxY, p.y);
+			}
+
+			// Compute tile index range with margin
+			var tileMinX = Math.floor(minX / pw) - 1;
+			var tileMinY = Math.floor(minY / ph) - 1;
+			var tileMaxX = Math.ceil(maxX / pw) + 1;
+			var tileMaxY = Math.ceil(maxY / ph) + 1;
+
+			// Safety limit to prevent excessive tiles
+			var maxTiles = 10000;
+			var tileCount = (tileMaxX - tileMinX) * (tileMaxY - tileMinY);
+
+			if (tileCount > maxTiles)
+			{
+				return;
+			}
+
+			// Create the clip path from the element
+			var clipId = 'expand-pattern-clip-' + (++clipCounter);
+			var clipPath = svgRoot.ownerDocument.createElementNS(svgNS, 'clipPath');
+			clipPath.setAttribute('id', clipId);
+
+			var clipShape = el.cloneNode(true);
+			clipShape.removeAttribute('fill');
+			clipShape.removeAttribute('fill-opacity');
+			clipShape.removeAttribute('stroke');
+			clipShape.removeAttribute('stroke-width');
+			clipShape.removeAttribute('stroke-opacity');
+			clipShape.removeAttribute('style');
+			clipShape.removeAttribute('pointer-events');
+			clipShape.setAttribute('fill', 'black');
+			clipPath.appendChild(clipShape);
+
+			// Create outer group with clip path
+			var outerGroup = svgRoot.ownerDocument.createElementNS(svgNS, 'g');
+			outerGroup.setAttribute('clip-path', 'url(#' + clipId + ')');
+
+			// Preserve fill-opacity from the original element
+			var fillOpacity = el.getAttribute('fill-opacity');
+
+			if (fillOpacity != null)
+			{
+				outerGroup.setAttribute('opacity', fillOpacity);
+			}
+
+			// The clip path is in the element's parent coordinate space,
+			// so the outer group should be at the same level
+			// Create inner group with patternTransform
+			var innerGroup = svgRoot.ownerDocument.createElementNS(svgNS, 'g');
+			innerGroup.setAttribute('transform',
+				'translate(' + t.tx + ',' + t.ty + ')' +
+				((t.angle !== 0) ? ' rotate(' + (t.angle * 180 / Math.PI) + ')' : '') +
+				' scale(' + t.sx + ((t.sy !== t.sx) ? ',' + t.sy : '') + ')');
+
+			// Generate tiles by cloning pattern children
+			var patternChildren = pattern.childNodes;
+
+			for (var tx = tileMinX; tx < tileMaxX; tx++)
+			{
+				for (var ty = tileMinY; ty < tileMaxY; ty++)
+				{
+					var tileGroup = svgRoot.ownerDocument.createElementNS(svgNS, 'g');
+					tileGroup.setAttribute('transform',
+						'translate(' + (tx * pw) + ',' + (ty * ph) + ')');
+
+					for (var c = 0; c < patternChildren.length; c++)
+					{
+						if (patternChildren[c].nodeType === 1)
+						{
+							tileGroup.appendChild(patternChildren[c].cloneNode(true));
+						}
+					}
+
+					innerGroup.appendChild(tileGroup);
+				}
+			}
+
+			outerGroup.appendChild(innerGroup);
+
+			// Insert defs and group into SVG
+			var defs = svgRoot.querySelector('defs');
+
+			if (defs == null)
+			{
+				defs = svgRoot.ownerDocument.createElementNS(svgNS, 'defs');
+				svgRoot.insertBefore(defs, svgRoot.firstChild);
+			}
+
+			defs.appendChild(clipPath);
+
+			// Insert the pattern group after the element's parent group
+			// to maintain correct stacking order
+			el.parentNode.insertBefore(outerGroup, el.nextSibling);
+
+			// Remove the pattern fill from the element. The pattern's
+			// transparent regions are truly transparent (the fill color is
+			// used as the pattern line color, not as a background).
+			el.setAttribute('fill', 'none');
+			el.style.fill = '';
+		};
+
+		// Main: find all pattern-filled elements and expand them
+		var elements = svg.querySelectorAll('[fill^="url("]');
+
+		for (var i = 0; i < elements.length; i++)
+		{
+			var pattern = resolvePattern(elements[i], svg);
+
+			if (pattern != null)
+			{
+				expandElement(elements[i], pattern, svg);
+			}
+		}
+
+		// Also check elements with fill set via style attribute
+		var styledElements = svg.querySelectorAll('[style]');
+
+		for (var i = 0; i < styledElements.length; i++)
+		{
+			var style = styledElements[i].getAttribute('style');
+
+			if (style != null && style.indexOf('url(') !== -1)
+			{
+				var pattern = resolvePattern(styledElements[i], svg);
+
+				if (pattern != null)
+				{
+					expandElement(styledElements[i], pattern, svg);
+				}
+			}
+		}
+	};
+
 	/**
 	 * Adds the global fontCss configuration.
 	 */
@@ -3240,9 +3644,9 @@
 	Editor.prototype.editButtonLink = (urlParams['edit'] != null) ? decodeURIComponent(urlParams['edit']) : null;
 
 	/**
-	 * Specifies if img.crossOrigin is supported. This is true for all browsers except IE10 and earlier.
+	 * Specifies if img.crossOrigin is supported.
 	 */
-	Editor.prototype.crossOriginImages = !mxClient.IS_IE;
+	Editor.prototype.crossOriginImages = true;
 	
 	/**
 	 * Adds support for old stylesheets and compressed files
@@ -3515,6 +3919,15 @@
 			
 			Editor.doMathJaxRender = function(container)
 			{
+				// Disables automatic line breaking for inline math to
+				// avoid unwanted breaks in narrow label containers
+				if (MathJax.startup != null && MathJax.startup.output != null &&
+					MathJax.startup.output.options != null &&
+					MathJax.startup.output.options.linebreaks != null)
+				{
+					MathJax.startup.output.options.linebreaks.inline = false;
+				}
+
 				try
 				{
 					if (rendering == null)
@@ -3579,9 +3992,9 @@
 				{
 					pageReady: function()
 					{
-						for (var i = 0; i < Editor.mathJaxQueue.length; i++)	
-						{	
-							Editor.doMathJaxRender(Editor.mathJaxQueue[i]);	
+						for (var i = 0; i < Editor.mathJaxQueue.length; i++)
+						{
+							Editor.doMathJaxRender(Editor.mathJaxQueue[i]);
 						}
 					}
 				}
@@ -3853,10 +4266,10 @@
 								forceConvert) ? convertScale : 1;
 
 					        var canvas = document.createElement('canvas');
-					        var ctx = canvas.getContext('2d');
-							ctx.scale(convertScale, convertScale);
 					        canvas.height = img.height * convertScale;
 					        canvas.width = img.width * convertScale;
+					        var ctx = canvas.getContext('2d');
+							ctx.scale(convertScale, convertScale);
 					        ctx.drawImage(img, 0, 0);
 							
 				        	callback(canvas.toDataURL());
@@ -5440,8 +5853,15 @@
 			{name: 'swimlaneBody', dispName: 'Body Border', type: 'bool', defVal: true},
 	        {name: 'horizontal', dispName: 'Horizontal', type: 'bool', defVal: true},
 	        {name: 'separatorColor', dispName: 'Separator Color', type: 'color', defVal: null},
+	        {name: 'fixedHeader', dispName: 'Fixed Header', type: 'bool', defVal: true,
+				getDefaultValue: function(state, format)
+				{
+					var shape = mxCellRenderer.defaultShapes[mxUtils.getValue(state.style, 'shape', '')];
+					return (shape != null && shape.prototype.fixedHeaderDefault != null) ?
+						(shape.prototype.fixedHeaderDefault ? '1' : '0') : '1';
+				}},
 	    ];
-		
+
 		mxCellRenderer.defaultShapes['table'].prototype.customProperties = [
 			{name: 'rowLines', dispName: 'Row Lines', type: 'bool', defVal: true},
 			{name: 'columnLines', dispName: 'Column Lines', type: 'bool', defVal: true},
@@ -8045,6 +8465,18 @@
 							this.getCellsForAction(action.wipeOut, true), false));
 					}
 
+					if (action.popIn != null)
+					{
+						animations = animations.concat(this.createPopAnimations(
+							this.getCellsForAction(action.popIn, true), true));
+					}
+
+					if (action.popOut != null)
+					{
+						animations = animations.concat(this.createPopAnimations(
+							this.getCellsForAction(action.popOut, true), false));
+					}
+
 					// Executes all actions that change cell states
 					if (action.toggle != null)
 					{
@@ -9067,11 +9499,12 @@
 	{
 		var graph = editorUi.editor.graph;
 		var div = document.createElement('div');
-		
+
 		var title = document.createElement('h3');
 		title.style.width = '100%';
 		title.style.textAlign = 'center';
 		title.style.marginTop = '0px';
+		title.style.marginBottom = '10px';
 		mxUtils.write(title, titleText || mxResources.get('print'));
 		div.appendChild(title);
 
@@ -9080,52 +9513,58 @@
 
 		// Pages
 		var pagesSection = document.createElement('div');
+		pagesSection.className = 'geDialogSection';
 		pagesSection.style.whiteSpace = 'nowrap';
-		
+
 		var allPagesRadio = document.createElement('input');
 		allPagesRadio.style.marginRight = '8px';
-		allPagesRadio.style.marginBottom = '8px';
 		allPagesRadio.setAttribute('type', 'radio');
 		allPagesRadio.setAttribute('name', 'pages-printdialog');
-		
-		pagesSection.appendChild(allPagesRadio);
 
+		var allPagesRow = document.createElement('div');
+		allPagesRow.className = 'geDialogCheckRow';
+		allPagesRow.appendChild(allPagesRadio);
 		var span = document.createElement('span');
 		mxUtils.write(span, mxResources.get('allPages'));
 		mxEvent.addListener(span, 'click', function()
 		{
 			allPagesRadio.checked = true;
 		});
-		pagesSection.appendChild(span);
-
-		mxUtils.br(pagesSection);
+		allPagesRow.appendChild(span);
+		pagesSection.appendChild(allPagesRow);
 
 		// Page range
-		var pagesRadio = allPagesRadio.cloneNode(true);
-		pagesSection.appendChild(pagesRadio);
-		
+		var pagesRadio = document.createElement('input');
+		pagesRadio.style.marginRight = '8px';
+		pagesRadio.setAttribute('type', 'radio');
+		pagesRadio.setAttribute('name', 'pages-printdialog');
+
+		var pagesRow = document.createElement('div');
+		pagesRow.className = 'geDialogCheckRow';
+		pagesRow.appendChild(pagesRadio);
+
 		var span = document.createElement('span');
 		mxUtils.write(span, mxResources.get('pages') + ':');
-		pagesSection.appendChild(span);
+		pagesRow.appendChild(span);
 		mxEvent.addListener(span, 'click', function()
 		{
 			pagesRadio.checked = true;
 		});
-		
+
 		var pagesFromInput = document.createElement('input');
 		pagesFromInput.style.margin = '0 4px';
 		pagesFromInput.setAttribute('value', '1');
 		pagesFromInput.setAttribute('type', 'number');
 		pagesFromInput.setAttribute('min', '1');
 		pagesFromInput.style.width = '40px';
-		pagesSection.appendChild(pagesFromInput);
-		
+		pagesRow.appendChild(pagesFromInput);
+
 		var span = document.createElement('span');
 		mxUtils.write(span, mxResources.get('to'));
-		pagesSection.appendChild(span);
-		
+		pagesRow.appendChild(span);
+
 		var pagesToInput = pagesFromInput.cloneNode(true);
-		pagesSection.appendChild(pagesToInput);
+		pagesRow.appendChild(pagesToInput);
 
 		mxEvent.addListener(pagesFromInput, 'focus', function()
 		{
@@ -9196,25 +9635,23 @@
 		currPage.style.textOverflow = 'ellipsis';
 		currPage.style.whiteSpace = 'nowrap';
 
-		pagesSection.appendChild(currPage);
+		pagesRow.appendChild(currPage);
+		pagesSection.appendChild(pagesRow);
 		
 		if (pageCount > 1)
 		{
 			div.appendChild(pagesSection);
 		}
-		
+
 		// Selection only
 		var selectionSection = document.createElement('div');
-		selectionSection.style.borderBottom = '1px solid lightGray';
-		selectionSection.style.paddingBottom = '12px';
-		selectionSection.style.marginBottom = '12px';
-		selectionSection.style.whiteSpace = 'nowrap';
+		selectionSection.className = 'geDialogCheckRow';
 
 		var selectionOnlyRadio = document.createElement('input');
 		selectionOnlyRadio.setAttribute('name', 'pages-printdialog');
 		selectionOnlyRadio.setAttribute('type', (pageCount == 1) ? 'checkbox' : 'radio');
 		selectionOnlyRadio.style.marginRight = '8px';
-		
+
 		if (graph.isSelectionEmpty())
 		{
 			selectionOnlyRadio.setAttribute('disabled', 'disabled');
@@ -9223,15 +9660,25 @@
 		if (graph.isEnabled())
 		{
 			selectionSection.appendChild(selectionOnlyRadio);
-		
+
 			var span = document.createElement('span');
 			mxUtils.write(span, mxResources.get('selectionOnly'));
 			selectionSection.appendChild(span);
 		}
 
-		if (graph.isEnabled() || pageCount > 1)
+		if (graph.isEnabled())
 		{
-			div.appendChild(selectionSection);
+			if (pageCount > 1)
+			{
+				pagesSection.appendChild(selectionSection);
+			}
+			else
+			{
+				var selectionWrapper = document.createElement('div');
+				selectionWrapper.className = 'geDialogSection';
+				selectionWrapper.appendChild(selectionSection);
+				div.appendChild(selectionWrapper);
+			}
 		}
 
 		if (!editorUi.isPagesEnabled() || editorUi.lastPrintPagesRadioChecked)
@@ -9255,12 +9702,15 @@
 			});
 		}
 		
+		// --- Size section ---
+		var sizeSection = document.createElement('div');
+		sizeSection.className = 'geDialogSection';
+
 		// Page view
 		var pageViewSection = document.createElement('div');
-		pageViewSection.style.whiteSpace = 'nowrap';
+		pageViewSection.className = 'geDialogCheckRow';
 
 		var pageViewRadio = document.createElement('input');
-		pageViewRadio.style.marginBottom = '8px';
 		pageViewRadio.style.marginRight = '8px';
 		pageViewRadio.setAttribute('type', 'radio');
 		pageViewRadio.setAttribute('name', 'printSize');
@@ -9274,14 +9724,13 @@
 			pageViewRadio.checked = true;
 		});
 
-		div.appendChild(pageViewSection);
-		
+		sizeSection.appendChild(pageViewSection);
+
 		// Crop
 		var cropSection = document.createElement('div');
-		cropSection.style.whiteSpace = 'nowrap';
+		cropSection.className = 'geDialogCheckRow';
 
 		var cropRadio = document.createElement('input');
-		cropRadio.style.marginBottom = '8px';
 		cropRadio.style.marginRight = '8px';
 		cropRadio.setAttribute('type', 'radio');
 		cropRadio.setAttribute('name', 'printSize');
@@ -9295,24 +9744,18 @@
 			cropRadio.checked = true;
 		});
 
-		div.appendChild(cropSection);
+		sizeSection.appendChild(cropSection);
 
 		// Fit to ...
 		var fitSection = document.createElement('div');
-		fitSection.style.whiteSpace = 'nowrap';
+		fitSection.className = 'geDialogCheckRow';
+		fitSection.style.alignItems = 'flex-start';
 
 		var fitRadio = document.createElement('input');
-		fitRadio.style.marginBottom = '8px';
-		fitRadio.style.marginRight = '8px';
+		fitRadio.style.marginTop = '4px';
 		fitRadio.setAttribute('type', 'radio');
 		fitRadio.setAttribute('name', 'printSize');
-		
-		var spanFitRadio = document.createElement('div');
-		spanFitRadio.style.display = 'inline-block';
-		spanFitRadio.style.verticalAlign = 'top';
-		spanFitRadio.style.paddingTop = '2px';
-		spanFitRadio.appendChild(fitRadio);
-		fitSection.appendChild(spanFitRadio);
+		fitSection.appendChild(fitRadio);
 		
 		var table = document.createElement('table');
 		table.style.display = 'inline-block';
@@ -9403,73 +9846,80 @@
 		table.appendChild(tbody);
 		fitSection.appendChild(table);
 		
-		div.appendChild(fitSection);
+		sizeSection.appendChild(fitSection);
+		div.appendChild(sizeSection);
 
 		// Border and zoom
 		var optionsSection = document.createElement('div');
-		optionsSection.style.borderTop = '1px solid lightGray';
-		optionsSection.style.whiteSpace = 'nowrap';
-		optionsSection.style.paddingTop = '12px';
-		optionsSection.style.marginTop = '12px';
-		optionsSection.style.paddingLeft = '8px';
-		
-		mxUtils.write(optionsSection, mxResources.get('borderWidth') + ':');
+		optionsSection.className = 'geDialogSection';
+
+		var borderZoomRow = document.createElement('div');
+		borderZoomRow.className = 'geDialogFormRow';
+
+		var borderLabel = document.createElement('label');
+		borderLabel.className = 'geDialogFormLabel';
+		mxUtils.write(borderLabel, mxResources.get('borderWidth'));
+		borderZoomRow.appendChild(borderLabel);
+
 		var borderInput = document.createElement('input');
 		borderInput.setAttribute('type', 'number');
 		borderInput.setAttribute('min', '0');
 		borderInput.style.width = '40px';
-		borderInput.style.marginLeft = '4px';
 		borderInput.value = (editorUi.lastPrintBorder != null) ?
 			editorUi.lastPrintBorder : mxPrintPreview.prototype.pageMargin;
-		optionsSection.appendChild(borderInput);
+		borderZoomRow.appendChild(borderInput);
 
-		var span = document.createElement('span');
-		span.style.marginLeft = '8px';
-		mxUtils.write(span, mxResources.get('zoom') + ':');
-		optionsSection.appendChild(span);
-		
+		var zoomLabel = document.createElement('label');
+		zoomLabel.style.marginLeft = '12px';
+		zoomLabel.style.marginRight = '4px';
+		mxUtils.write(zoomLabel, mxResources.get('zoom'));
+		borderZoomRow.appendChild(zoomLabel);
+
 		var zoomInput = document.createElement('input');
 		zoomInput.style.width = '60px';
-		zoomInput.style.marginLeft = '4px';
 		zoomInput.value = (editorUi.lastPrintZoom != null) ?
 			editorUi.lastPrintZoom : '100%';
-		optionsSection.appendChild(zoomInput);
+		borderZoomRow.appendChild(zoomInput);
 
-		mxUtils.br(optionsSection);
+		optionsSection.appendChild(borderZoomRow);
 
 		// Grid
+		var gridRow = document.createElement('div');
+		gridRow.className = 'geDialogCheckRow';
+
 		var gridInput = document.createElement('input');
 		gridInput.setAttribute('type', 'checkbox');
-		gridInput.style.marginTop = '12px';
+		gridInput.style.marginRight = '8px';
 		gridInput.checked = (editorUi.lastPrintGrid != null) ?
 			editorUi.lastPrintGrid : false;
-		optionsSection.appendChild(gridInput);
+		gridRow.appendChild(gridInput);
 
 		var span = document.createElement('span');
-		span.style.marginLeft = '4px';
-		span.style.marginRight = '8px';
 		mxUtils.write(span, mxResources.get('grid'));
-		optionsSection.appendChild(span);
+		gridRow.appendChild(span);
 
 		mxEvent.addListener(span, 'click', function(e)
 		{
 			gridInput.checked = true;
 			mxEvent.consume(e);
 		});
-		
+
+		optionsSection.appendChild(gridRow);
+
 		// Shadows enabled
+		var shadowsRow = document.createElement('div');
+		shadowsRow.className = 'geDialogCheckRow';
+
 		var shadowsInput = document.createElement('input');
 		shadowsInput.setAttribute('type', 'checkbox');
-		shadowsInput.style.marginTop = '12px';
+		shadowsInput.style.marginRight = '8px';
 		shadowsInput.checked = (editorUi.lastPrintShadow != null) ?
 			editorUi.lastPrintShadow : false;
-		optionsSection.appendChild(shadowsInput);
+		shadowsRow.appendChild(shadowsInput);
 
 		var span = document.createElement('span');
-		span.style.marginLeft = '4px';
-		span.style.marginRight = '8px';
 		mxUtils.write(span, mxResources.get('shadows'));
-		optionsSection.appendChild(span);
+		shadowsRow.appendChild(span);
 
 		if (!editorUi.isOffline() || mxClient.IS_CHROMEAPP)
 		{
@@ -9489,61 +9939,63 @@
 		// Hides shadows option if not supported
 		if (!Editor.enableShadowOption)
 		{
-			shadowsInput.style.display = 'none';
-			span.style.display = 'none';
+			shadowsRow.style.display = 'none';
 		}
-		else if (fn != null)
-		{
-			mxUtils.br(optionsSection);
-		}
+
+		optionsSection.appendChild(shadowsRow);
 
 		// Transparent background
 		var transparentInput = document.createElement('input');
 		transparentInput.setAttribute('type', 'checkbox');
-		transparentInput.style.marginTop = '10px';
+		transparentInput.style.marginRight = '8px';
 		transparentInput.checked = (editorUi.lastPrintTransparent != null) ?
 			editorUi.lastPrintTransparent : false;
 
 		// Export
 		if (fn != null)
 		{
-			optionsSection.appendChild(transparentInput);
+			var transparentRow = document.createElement('div');
+			transparentRow.className = 'geDialogCheckRow';
+			transparentRow.appendChild(transparentInput);
 
 			var span = document.createElement('span');
-			span.style.marginLeft = '4px';
 			mxUtils.write(span, mxResources.get('transparentBackground'));
-			optionsSection.appendChild(span);
+			transparentRow.appendChild(span);
 
 			mxEvent.addListener(span, 'click', function(e)
 			{
 				transparentInput.checked = true;
 				mxEvent.consume(e);
 			});
+
+			optionsSection.appendChild(transparentRow);
 		}
 
 		// Include diagram
 		var includeInput = document.createElement('input');
 		includeInput.setAttribute('type', 'checkbox');
-		includeInput.style.marginTop = '10px';
+		includeInput.style.marginRight = '8px';
 		includeInput.checked = (editorUi.lastPrintInclude != null) ?
 			editorUi.lastPrintInclude : Editor.defaultIncludeDiagram;
 
 		if (fn != null && !mxClient.IS_CHROMEAPP &&
 			editorUi.getServiceName() == 'draw.io')
 		{
-			mxUtils.br(optionsSection);
-			optionsSection.appendChild(includeInput);
+			var includeRow = document.createElement('div');
+			includeRow.className = 'geDialogCheckRow';
+			includeRow.appendChild(includeInput);
 
 			var span = document.createElement('span');
-			span.style.marginLeft = '4px';
 			mxUtils.write(span, mxResources.get('includeCopyOfMyDiagram'));
-			optionsSection.appendChild(span);
+			includeRow.appendChild(span);
 
 			mxEvent.addListener(span, 'click', function(e)
 			{
 				includeInput.checked = true;
 				mxEvent.consume(e);
 			});
+
+			optionsSection.appendChild(includeRow);
 		}
 
 
@@ -9551,7 +10003,7 @@
 
 		// Buttons
 		var buttons = document.createElement('div');
-		buttons.style.marginTop = '30px';
+		buttons.style.marginTop = '16px';
 		buttons.style.textAlign = 'right';
 		buttons.style.whiteSpace = 'nowrap';
 		

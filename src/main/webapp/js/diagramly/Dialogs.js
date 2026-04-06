@@ -8593,48 +8593,50 @@ var ChatWindow = function(editorUi, x, y, w, h)
 	typeSelect.style.textOverflow = 'ellipsis';
 	typeSelect.style.padding = '5px';
 	typeSelect.style.minWidth = '0';
+	typeSelect.style.flexGrow = '1';
 
 	var createPublicOption = document.createElement('option');
-	
-	if (typeof mxMermaidToDrawio !== 'undefined' && window.isMermaidEnabled &&
-		mxUtils.indexOf(Editor.aiActions, 'createPublic') >= 0)
-	{
-		createPublicOption.setAttribute('value', 'createPublic');
-		mxUtils.write(createPublicOption, mxResources.get('create') +
-			' (' + mxResources.get('draw.io') + ')');
-		typeSelect.appendChild(createPublicOption);
-	}
-
 	var includeOption = document.createElement('option');
 	var selectionOption = document.createElement('option');
 	var createOption = document.createElement('option');
 	var helpOption = document.createElement('option');
 
-	if (typeof mxMermaidToDrawio !== 'undefined' && window.isMermaidEnabled &&
-		mxUtils.indexOf(Editor.aiActions, 'create') >= 0)
+	if (editorUi.isExternalDataComms() &&
+		typeof mxMermaidToDrawio !== 'undefined' && window.isMermaidEnabled &&
+		mxUtils.indexOf(Editor.aiActions, 'createPublic') >= 0)
 	{
-		createOption.setAttribute('value', 'create');
-		mxUtils.write(createOption, mxResources.get('create'));
-		typeSelect.appendChild(createOption);
+		createPublicOption.setAttribute('value', 'createPublic');
+		mxUtils.write(createPublicOption, mxResources.get('createDiagram') +
+			' (' + mxResources.get('draw.io') + ')');
+		typeSelect.appendChild(createPublicOption);
+
+		var divider1 = document.createElement('option');
+		divider1.setAttribute('disabled', 'disabled');
+		mxUtils.write(divider1, '\u2500\u2500\u2500\u2500\u2500\u2500');
+		typeSelect.appendChild(divider1);
 	}
 
-	if (mxUtils.indexOf(Editor.aiActions, 'update') >= 0)
-	{
-		includeOption.setAttribute('value', 'includeCopyOfMyDiagram');
-		mxUtils.write(includeOption, mxResources.get('includeCopyOfMyDiagram'));
-		typeSelect.appendChild(includeOption);
+	var copyDrawingOption = document.createElement('option');
+	copyDrawingOption.setAttribute('value', 'copyOfDrawing');
+	mxUtils.write(copyDrawingOption, mxResources.get('copyDiagramToClipboard'));
+	typeSelect.appendChild(copyDrawingOption);
 
-		selectionOption.setAttribute('value', 'selectionOnly');
-		mxUtils.write(selectionOption, mxResources.get('selectionOnly'));
-		typeSelect.appendChild(selectionOption);
-	}
-	
-	if (mxUtils.indexOf(Editor.aiActions, 'assist') >= 0)
-	{
-		helpOption.setAttribute('value', 'assist');
-		mxUtils.write(helpOption, mxResources.get('help'));
-		typeSelect.appendChild(helpOption);
-	}
+	var copySelectionOption = document.createElement('option');
+	copySelectionOption.setAttribute('value', 'copyOfSelection');
+	mxUtils.write(copySelectionOption, mxResources.get('copySelectionToClipboard'));
+	typeSelect.appendChild(copySelectionOption);
+
+	var pasteApplyOption = document.createElement('option');
+	pasteApplyOption.setAttribute('value', 'pasteDiagram');
+	pasteApplyOption.setAttribute('disabled', 'disabled');
+	mxUtils.write(pasteApplyOption, mxResources.get('updateDiagramFromClipboard'));
+	typeSelect.appendChild(pasteApplyOption);
+
+	var pasteInsertOption = document.createElement('option');
+	pasteInsertOption.setAttribute('value', 'insertDiagram');
+	pasteInsertOption.setAttribute('disabled', 'disabled');
+	mxUtils.write(pasteInsertOption, mxResources.get('insertDiagramFromClipboard'));
+	typeSelect.appendChild(pasteInsertOption);
 
 	// Adds a drop down for selecting the model from Editor.aiModels
 	var modelSelect = typeSelect.cloneNode(false);
@@ -8655,6 +8657,51 @@ var ChatWindow = function(editorUi, x, y, w, h)
 	}
 	
 	var publicChat = modelSelect.children.length == 0;
+
+	if (!publicChat)
+	{
+		var divider2 = document.createElement('option');
+		divider2.setAttribute('disabled', 'disabled');
+		mxUtils.write(divider2, '\u2500\u2500\u2500\u2500\u2500\u2500');
+		typeSelect.appendChild(divider2);
+
+		if (typeof mxMermaidToDrawio !== 'undefined' && window.isMermaidEnabled &&
+			mxUtils.indexOf(Editor.aiActions, 'create') >= 0)
+		{
+			createOption.setAttribute('value', 'create');
+			mxUtils.write(createOption, mxResources.get('createDiagram'));
+			typeSelect.appendChild(createOption);
+		}
+
+		if (mxUtils.indexOf(Editor.aiActions, 'update') >= 0)
+		{
+			includeOption.setAttribute('value', 'includeCopyOfMyDiagram');
+			mxUtils.write(includeOption, mxResources.get('promptWithDiagram'));
+			typeSelect.appendChild(includeOption);
+
+			selectionOption.setAttribute('value', 'selectionOnly');
+			mxUtils.write(selectionOption, mxResources.get('promptWithSelection'));
+			typeSelect.appendChild(selectionOption);
+		}
+
+		if (mxUtils.indexOf(Editor.aiActions, 'assist') >= 0)
+		{
+			helpOption.setAttribute('value', 'assist');
+			mxUtils.write(helpOption, mxResources.get('promptOnly'));
+			typeSelect.appendChild(helpOption);
+		}
+	}
+
+	var divider3 = document.createElement('option');
+	divider3.setAttribute('disabled', 'disabled');
+	mxUtils.write(divider3, '\u2500\u2500\u2500\u2500\u2500\u2500');
+	typeSelect.appendChild(divider3);
+
+	var resetOption = document.createElement('option');
+	resetOption.setAttribute('value', 'resetHistory');
+	mxUtils.write(resetOption, mxResources.get('reset'));
+	typeSelect.appendChild(resetOption);
+
 	var inner = document.createElement('div');
 	inner.style.whiteSpace = 'nowrap';
 	inner.style.textOverflow = 'clip';
@@ -8683,21 +8730,32 @@ var ChatWindow = function(editorUi, x, y, w, h)
 	inner.appendChild(sendImg);
 	user.appendChild(inner);
 
-	if (!publicChat)
+	if (!publicChat && urlParams['test'] != 1 &&
+		createPublicOption.parentNode != null)
 	{
-		if (urlParams['test'] != 1)
-		{
-			createPublicOption.parentNode.removeChild(createPublicOption);
-		}
+		createPublicOption.parentNode.removeChild(createPublicOption);
+	}
 
-		options.appendChild(typeSelect);
+	options.appendChild(typeSelect);
 
-		if (modelSelect.children.length > 1)
-		{
-			options.appendChild(modelSelect);
-		}
-		
-		user.appendChild(options);
+	if (!publicChat && modelSelect.children.length > 1)
+	{
+		options.appendChild(modelSelect);
+	}
+
+	user.appendChild(options);
+
+	// Clipboard-only mode: no AI options available
+	var clipboardOnly = publicChat && createPublicOption.parentNode == null;
+
+	if (clipboardOnly)
+	{
+		inner.style.display = 'none';
+
+		var selectOption = document.createElement('option');
+		selectOption.setAttribute('value', 'select');
+		mxUtils.write(selectOption, mxResources.get('select') + '...');
+		typeSelect.insertBefore(selectOption, typeSelect.firstChild);
 	}
 
 	if (typeSelect.children.length > 0)
@@ -8708,23 +8766,445 @@ var ChatWindow = function(editorUi, x, y, w, h)
 	var ignoreChange = false;
 	var lastType = typeSelect.value;
 
+	var isClipboardType = function(value)
+	{
+		return value == 'copyOfDrawing' ||
+			value == 'copyOfSelection' ||
+			value == 'pasteDiagram' ||
+			value == 'insertDiagram';
+	};
+
 	var updateDropdowns = function()
 	{
 		inp.setAttribute('placeholder', mxResources.get(
 			(typeSelect.value == 'create' ||
 			typeSelect.value == 'createPublic') ?
-			'describeYourDiagram' :
-			'askMeAnything'));
+			'describeYourDiagram' : 'askMeAnything'));
 	};
 
 	updateDropdowns();
+
+	function addClipboardEntry(label, xmlData, elts)
+	{
+		// Input bubble with label
+		var bubble = addBubble(label);
+		elts.push(bubble);
+
+		bubble.style.marginBottom = '2px';
+		bubble.style.marginLeft = '40%';
+		bubble.style.borderRadius = '10px';
+		bubble.style.backgroundColor = 'light-dark(#e0e0e0, #3a3a3a)';
+
+		// Inline delete button after input bubble
+		var inlineButtons = document.createElement('div');
+		inlineButtons.className = 'geInlineButtons';
+		inlineButtons.style.display = 'flex';
+		inlineButtons.style.justifyContent = 'end';
+		elts.push(inlineButtons);
+
+		addDeleteButton(inlineButtons, elts);
+		hist.appendChild(inlineButtons);
+
+		// Response bubble with SVG preview
+		var response = createBubble();
+		response.className = 'geSidebar';
+		response.style.marginTop = '2px';
+		elts.push(response);
+
+		var cells = null;
+
+		try
+		{
+			cells = editorUi.stringToCells(xmlData);
+
+			if (cells != null && cells.length > 0)
+			{
+				var bbox = graph.getBoundingBoxFromGeometry(cells);
+				editorUi.sidebar.graph.moveCells(cells, -bbox.x, -bbox.y);
+
+				var svg = editorUi.getSvgForXml(xmlData);
+				svg.style.overflow = 'visible';
+				svg.style.padding = '1px';
+				svg.style.cursor = 'move';
+				svg.style.width = '160px';
+				svg.style.height = 'auto';
+				svg.style.maxHeight = '460px';
+
+				var item = document.createElement('a');
+				item.className = 'geItem';
+				item.style.padding = '4px';
+				item.style.borderRadius = '10px';
+				item.appendChild(svg);
+				response.appendChild(item);
+
+				editorUi.sidebar.createItem(cells, label, true, true,
+					bbox.width, bbox.height, true, true, null, null,
+					null, null, null, null, item);
+			}
+		}
+		catch (e)
+		{
+			// ignore preview errors
+		}
+
+		hist.appendChild(response);
+
+		return {element: response, cells: cells};
+	};
+
+	function addDeleteButton(buttons, elts)
+	{
+		var btn = document.createElement('img');
+		btn.className = 'geAdaptiveAsset geLibraryButton';
+		btn.setAttribute('src', Editor.trashImage);
+		btn.setAttribute('title', mxResources.get('remove'));
+		buttons.appendChild(btn);
+
+		mxEvent.addListener(btn, 'click', function(evt)
+		{
+			if (mxEvent.isShiftDown(evt))
+			{
+				hist.innerHTML = '';
+			}
+			else
+			{
+				for (var i = 0; i < elts.length; i++)
+				{
+					if (elts[i].parentNode != null)
+					{
+						elts[i].parentNode.removeChild(elts[i]);
+					}
+				}
+
+				elts.length = 0;
+			}
+		});
+
+		return btn;
+	};
+
+	function addDiagramButtons(buttons, xmlData, cells, bubble, label)
+	{
+		var btn = document.createElement('img');
+		btn.className = 'geAdaptiveAsset geLibraryButton';
+		btn.setAttribute('src', Editor.copyImage);
+		btn.setAttribute('title', mxResources.get('copy'));
+		buttons.appendChild(btn);
+
+		mxEvent.addListener(btn, 'click', function()
+		{
+			editorUi.writeTextToClipboard(xmlData, function(e)
+			{
+				editorUi.handleError(e);
+			});
+		});
+
+		if (editorUi.getServiceName() == 'draw.io')
+		{
+			btn = btn.cloneNode();
+			btn.setAttribute('src', Editor.shareImage);
+			btn.setAttribute('title', mxResources.get(!editorUi.isStandaloneApp() ?
+				'openInNewWindow' : 'export'));
+			buttons.appendChild(btn);
+
+			mxEvent.addListener(btn, 'click', function()
+			{
+				if (!editorUi.isStandaloneApp())
+				{
+					editorUi.editor.editAsNew(xmlData);
+				}
+				else
+				{
+					editorUi.saveData('export.xml', 'xml', xmlData, 'text/xml');
+				}
+			});
+		}
+
+		btn = btn.cloneNode();
+		btn.setAttribute('src', Editor.magnifyImage);
+		btn.setAttribute('title', mxResources.get('preview'));
+		buttons.appendChild(btn);
+
+		mxEvent.addListener(btn, 'click', function(evt)
+		{
+			var ww = window.innerWidth || document.documentElement.clientWidth ||
+				document.body.clientWidth;
+			var wh = window.innerHeight || document.documentElement.clientHeight ||
+				document.body.clientHeight;
+
+			editorUi.sidebar.createTooltip(bubble, cells,
+				Math.min(ww - 120, 1600), Math.min(wh - 120, 1200),
+				label, true, new mxPoint(mxEvent.getClientX(evt),
+				mxEvent.getClientY(evt)), true, null, true, false);
+		});
+
+		btn = btn.cloneNode();
+		btn.setAttribute('src', Editor.plusImage);
+		btn.setAttribute('title', mxResources.get('insert'));
+		buttons.appendChild(btn);
+
+		mxEvent.addListener(btn, 'click', function(e)
+		{
+			graph.model.beginUpdate();
+			try
+			{
+				var pt = graph.getFreeInsertPoint();
+				graph.setSelectionCells(graph.importCells(
+					cells, pt.x, pt.y));
+			}
+			finally
+			{
+				graph.model.endUpdate();
+			}
+
+			graph.scrollCellToVisible(graph.getSelectionCell());
+			mxEvent.consume(e);
+		});
+
+		return btn;
+	};
+
+	function executeClipboardAction(type)
+	{
+		if (type == 'copyOfDrawing' || type == 'copyOfSelection')
+		{
+			try
+			{
+				var enc = new mxCodec(mxUtils.createXmlDocument());
+
+				if (type == 'copyOfSelection')
+				{
+					enc.isObjectIgnored = function(obj)
+					{
+						return obj.constructor == mxCell &&
+							(!graph.model.isRoot(obj) &&
+							!graph.model.isLayer(obj) &&
+							!graph.isCellSelected(obj) &&
+							!graph.isAncestorSelected(obj));
+					};
+				}
+
+				var xml = enc.encode(graph.getModel());
+				xml.ownerDocument.appendChild(xml);
+				var data = mxUtils.getXml(xml);
+
+				editorUi.writeTextToClipboard(data, function(e)
+				{
+					editorUi.handleError(e);
+				}, function()
+				{
+					var elts = [];
+					var label = mxResources.get('copiedToClipboard');
+					var result = addClipboardEntry(label, data, elts);
+
+					var buttons = document.createElement('div');
+					buttons.style.display = 'flex';
+					elts.push(buttons);
+
+					if (result.cells != null && result.cells.length > 0)
+					{
+						addDiagramButtons(buttons, data, result.cells,
+							result.element, label);
+					}
+
+					hist.appendChild(buttons);
+					buttons.scrollIntoView({behavior: 'smooth',
+						block: 'end', inline: 'nearest'});
+				});
+			}
+			catch (e)
+			{
+				editorUi.handleError(e);
+			}
+		}
+		else if (type == 'pasteDiagram')
+		{
+			try
+			{
+				navigator.clipboard.readText().then(mxUtils.bind(this, function(text)
+				{
+					try
+					{
+						var parsed = Editor.extractGraphModelFromText(text);
+						var xmlText = (parsed[1].length > 0) ? parsed[1] : text;
+						var doc = mxUtils.parseXml(xmlText);
+
+						if (doc.documentElement.nodeName != 'mxGraphModel')
+						{
+							throw new Error(mxResources.get('invalidInput'));
+						}
+
+						var codec = new mxCodec(doc);
+						var receivedModel = new mxGraphModel();
+						codec.decode(doc.documentElement, receivedModel);
+
+						var applyFn = mxUtils.bind(this, function()
+						{
+							var enc = new mxCodec(mxUtils.createXmlDocument());
+							var currentXml = enc.encode(graph.getModel());
+							currentXml.ownerDocument.appendChild(currentXml);
+							var currentCodec = new mxCodec(currentXml.ownerDocument);
+							var sentModel = new mxGraphModel();
+							currentCodec.decode(currentXml, sentModel);
+
+							var page = editorUi.currentPage;
+
+							graph.model.beginUpdate();
+							try
+							{
+								var patch = editorUi.diffCells(
+									sentModel.root, receivedModel.root);
+								editorUi.patchPage(page, patch, null, true);
+							}
+							finally
+							{
+								graph.model.endUpdate();
+							}
+						});
+
+						// Apply immediately
+						applyFn();
+
+						// Add to chat history
+						var elts = [];
+						var label = mxResources.get('updateDiagramFromClipboard');
+						var result = addClipboardEntry(label, xmlText, elts);
+
+						var buttons = document.createElement('div');
+						buttons.style.display = 'flex';
+						elts.push(buttons);
+
+						if (result.cells != null && result.cells.length > 0)
+						{
+							addDiagramButtons(buttons, xmlText, result.cells,
+								result.element, label);
+						}
+
+						// Apply button (re-apply the diff)
+						var btn = document.createElement('img');
+						btn.className = 'geAdaptiveAsset geLibraryButton';
+						btn.setAttribute('src', Editor.checkImage);
+						btn.setAttribute('title', mxResources.get('apply'));
+						buttons.appendChild(btn);
+
+						mxEvent.addListener(btn, 'click', function(e)
+						{
+							applyFn();
+							mxEvent.consume(e);
+						});
+
+						hist.appendChild(buttons);
+						buttons.scrollIntoView({behavior: 'smooth',
+							block: 'end', inline: 'nearest'});
+					}
+					catch (e)
+					{
+						editorUi.handleError(e);
+					}
+				}))['catch'](function(e)
+				{
+					editorUi.handleError(e);
+				});
+			}
+			catch (e)
+			{
+				editorUi.handleError(e);
+			}
+		}
+		else if (type == 'insertDiagram')
+		{
+			try
+			{
+				navigator.clipboard.readText().then(mxUtils.bind(this, function(text)
+				{
+					try
+					{
+						var parsed = Editor.extractGraphModelFromText(text);
+						var xmlText = (parsed[1].length > 0) ? parsed[1] : text;
+						var doc = mxUtils.parseXml(xmlText);
+
+						if (doc.documentElement.nodeName != 'mxGraphModel')
+						{
+							throw new Error(mxResources.get('invalidInput'));
+						}
+
+						var elts = [];
+						var label = mxResources.get('insertDiagramFromClipboard');
+						var result = addClipboardEntry(label, xmlText, elts);
+
+						var buttons = document.createElement('div');
+						buttons.style.display = 'flex';
+						elts.push(buttons);
+
+						if (result.cells != null && result.cells.length > 0)
+						{
+							addDiagramButtons(buttons, xmlText, result.cells,
+								result.element, label);
+						}
+
+						hist.appendChild(buttons);
+						buttons.scrollIntoView({behavior: 'smooth',
+							block: 'end', inline: 'nearest'});
+
+						// Insert cells into graph
+						if (result.cells != null && result.cells.length > 0)
+						{
+							graph.model.beginUpdate();
+							try
+							{
+								var pt = graph.getFreeInsertPoint();
+								graph.setSelectionCells(graph.importCells(
+									result.cells, pt.x, pt.y));
+							}
+							finally
+							{
+								graph.model.endUpdate();
+							}
+
+							graph.scrollCellToVisible(graph.getSelectionCell());
+						}
+					}
+					catch (e)
+					{
+						editorUi.handleError(e);
+					}
+				}))['catch'](function(e)
+				{
+					editorUi.handleError(e);
+				});
+			}
+			catch (e)
+			{
+				editorUi.handleError(e);
+			}
+		}
+	};
 
 	function typeChanged()
 	{
 		if (!ignoreChange)
 		{
+			if (isClipboardType(typeSelect.value))
+			{
+				executeClipboardAction(typeSelect.value);
+				typeSelect.value = lastType;
+				return;
+			}
+
+			if (typeSelect.value == 'resetHistory')
+			{
+				typeSelect.value = lastType;
+
+				editorUi.confirm(mxResources.get('areYouSure'), function()
+				{
+					hist.innerHTML = '';
+				});
+
+				return;
+			}
+
 			lastType = typeSelect.value;
-				updateDropdowns();
+			updateDropdowns();
 		}
 
 		modelSelect.style.display =
@@ -8743,6 +9223,7 @@ var ChatWindow = function(editorUi, x, y, w, h)
 		if (graph.isSelectionEmpty())
 		{
 			selectionOption.setAttribute('disabled', 'disabled');
+			copySelectionOption.setAttribute('disabled', 'disabled');
 
 			if (typeSelect.value == 'selectionOnly')
 			{
@@ -8752,11 +9233,13 @@ var ChatWindow = function(editorUi, x, y, w, h)
 		else
 		{
 			selectionOption.removeAttribute('disabled');
+			copySelectionOption.removeAttribute('disabled');
 		}
 
 		if (editorUi.isDiagramEmpty())
 		{
 			includeOption.setAttribute('disabled', 'disabled');
+			copyDrawingOption.setAttribute('disabled', 'disabled');
 
 			if (typeSelect.value == 'includeCopyOfMyDiagram')
 			{
@@ -8766,6 +9249,7 @@ var ChatWindow = function(editorUi, x, y, w, h)
 		else
 		{
 			includeOption.removeAttribute('disabled');
+			copyDrawingOption.removeAttribute('disabled');
 		}
 
 		ignoreChange = false;
@@ -8774,6 +9258,50 @@ var ChatWindow = function(editorUi, x, y, w, h)
 	graph.selectionModel.addListener(mxEvent.CHANGE, updateType);
 	graph.getModel().addListener(mxEvent.CHANGE, updateType);
 	updateType();
+
+	function checkClipboard()
+	{
+		try
+		{
+			navigator.clipboard.readText().then(function(text)
+			{
+				try
+				{
+					var parsed = Editor.extractGraphModelFromText(text);
+					var xmlText = (parsed[1].length > 0) ? parsed[1] : text;
+					var doc = mxUtils.parseXml(xmlText);
+
+					if (doc.documentElement.nodeName == 'mxGraphModel')
+					{
+						pasteApplyOption.removeAttribute('disabled');
+						pasteInsertOption.removeAttribute('disabled');
+					}
+					else
+					{
+						pasteApplyOption.setAttribute('disabled', 'disabled');
+						pasteInsertOption.setAttribute('disabled', 'disabled');
+					}
+				}
+				catch (e)
+				{
+					pasteApplyOption.setAttribute('disabled', 'disabled');
+					pasteInsertOption.setAttribute('disabled', 'disabled');
+				}
+			})['catch'](function()
+			{
+				pasteApplyOption.setAttribute('disabled', 'disabled');
+				pasteInsertOption.setAttribute('disabled', 'disabled');
+			});
+		}
+		catch (e)
+		{
+			pasteApplyOption.setAttribute('disabled', 'disabled');
+			pasteInsertOption.setAttribute('disabled', 'disabled');
+		}
+	};
+
+	checkClipboard();
+	mxEvent.addListener(window, 'focus', checkClipboard);
 
 	function createBubble()
 	{
@@ -9221,6 +9749,19 @@ var ChatWindow = function(editorUi, x, y, w, h)
 						buttons.appendChild(btn);
 						mxEvent.addListener(btn, 'click', processMessage);
 
+						btn = btn.cloneNode();
+						btn.setAttribute('src', Editor.copyImage);
+						btn.setAttribute('title', mxResources.get('copy'));
+						buttons.appendChild(btn);
+
+						mxEvent.addListener(btn, 'click', function()
+						{
+							editorUi.writeTextToClipboard(data[1], function(e)
+							{
+								editorUi.handleError(e);
+							});
+						});
+
 						if (editorUi.getServiceName() == 'draw.io')
 						{
 							btn = btn.cloneNode();
@@ -9251,7 +9792,7 @@ var ChatWindow = function(editorUi, x, y, w, h)
 						{
 							var ww = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
 							var wh = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
-							
+
 							editorUi.sidebar.createTooltip(bubble, cells, Math.min(ww - 120, 1600), Math.min(wh - 120, 1200),
 								prompt, true, new mxPoint(mxEvent.getClientX(evt), mxEvent.getClientY(evt)), true, function()
 								{
@@ -9427,7 +9968,7 @@ var ChatWindow = function(editorUi, x, y, w, h)
 		if (mxUtils.trim(inp.value) != '')
 		{
 			try
-			{	
+			{
 				addMessage(inp.value);
 				inp.value = '';
 			}
@@ -9474,6 +10015,7 @@ var ChatWindow = function(editorUi, x, y, w, h)
 	this.window.addListener(mxEvent.DESTROY, mxUtils.bind(this, function()
 	{
 		graph.getModel().removeListener(updateType);
+		mxEvent.removeListener(window, 'focus', checkClipboard);
 	}));
 
 	this.window.addListener('show', mxUtils.bind(this, function()
@@ -9733,10 +10275,8 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 			{
 				(function(section)
 				{
-					var title = listEntry.cloneNode(false);
-					title.style.fontWeight = 'bold';
-					title.style.backgroundColor = 'light-dark(#e5e5e5, #505759)';
-					title.style.padding = '6px 0px 6px 20px';
+					var title = document.createElement('div');
+					title.className = 'geMoreShapesSectionHeader';
 					mxUtils.write(title, section.title);
 					list.appendChild(title);
 		
@@ -9744,20 +10284,18 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 					{
 						(function(entry)
 						{
-							var option = listEntry.cloneNode(false);
-							option.style.cursor = 'pointer';
-							option.style.padding = '4px 0px 4px 20px';
-							option.style.whiteSpace = 'nowrap';
-							option.style.overflow = 'hidden';
-							option.style.textOverflow = 'ellipsis';
+							var option = document.createElement('div');
+							option.className = 'geMoreShapesItem';
 							option.setAttribute('title', entry.title + ' (' + entry.id + ')');
-							
+
 							var checkbox = document.createElement('input');
 							checkbox.setAttribute('type', 'checkbox');
 							checkbox.checked = editorUi.sidebar.isEntryVisible(entry.id);
 							checkbox.defaultChecked = checkbox.checked;
 							option.appendChild(checkbox);
-							mxUtils.write(option, ' ' + entry.title);
+							var label = document.createElement('span');
+							mxUtils.write(label, entry.title);
+							option.appendChild(label);
 		
 							list.appendChild(option);
 							
@@ -9803,11 +10341,11 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 									
 									if (currentListItem != null)
 									{
-										currentListItem.style.backgroundColor = '';
+										currentListItem.classList.remove('geMoreShapesItemSelected');
 									}
-									
+
 									currentListItem = option;
-									currentListItem.style.backgroundColor = 'light-dark(#ebf2f9, #000000)';
+									currentListItem.classList.add('geMoreShapesItemSelected');
 									
 									if (evt != null)
 									{
@@ -9855,30 +10393,23 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 		list.style.position = 'absolute';
 		list.style.top = '40px';
 		list.style.left = '0px';
-		list.style.width = '202px';
-		list.style.bottom = '60px';
+		list.style.width = '220px';
+		list.style.bottom = '70px';
 		list.style.overflow = 'auto';
-		
+
+		preview.className = 'geMoreShapesPreview';
 		preview.style.position = 'absolute';
-		preview.style.left = '202px';
+		preview.style.left = '220px';
 		preview.style.right = '0px';
 		preview.style.top = '40px';
-		preview.style.bottom = '60px';
+		preview.style.bottom = '70px';
 		preview.style.overflow = 'auto';
-		preview.style.borderLeftStyle = 'solid';
-		preview.style.borderLeftWidth = '1px';
 		preview.style.textAlign = 'center';
-		
+
 		var currentListItem = null;
 		var applyFunctions = [];
-		
-		var listEntry = document.createElement('div');
-		listEntry.style.position = 'relative';
-		listEntry.style.left = '0px';
-		listEntry.style.right = '0px';
-		
+
 		addEntries(entries);
-		div.style.padding = '30px';
 		
 		div.appendChild(hd);
 		div.appendChild(list);
@@ -9887,56 +10418,47 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 		var buttons = document.createElement('div');
 		buttons.className = 'geDialogFooter';
 		buttons.style.position = 'absolute';
+		buttons.style.display = 'flex';
+		buttons.style.alignItems = 'center';
 		buttons.style.paddingRight = '16px';
+		buttons.style.paddingLeft = '16px';
 		buttons.style.left = '0px';
 		buttons.style.right = '0px';
 		buttons.style.bottom = '0px';
-		buttons.style.height = '60px';
-		buttons.style.lineHeight = '52px';
-		
+		buttons.style.height = '70px';
+
+		var checksDiv = document.createElement('div');
+		checksDiv.className = 'geMoreShapesFooterChecks';
+
+		var labelsLabel = document.createElement('label');
+		labelsLabel.className = 'geMoreShapesFooterCheck';
 		var labels = document.createElement('input');
 		labels.setAttribute('type', 'checkbox');
-		labels.style.position = 'relative';
-		labels.style.top = '1px';
 		labels.checked = editorUi.sidebar.sidebarTitles;
 		labels.defaultChecked = labels.checked;
-		buttons.appendChild(labels);
-		var span = document.createElement('span');
-		mxUtils.write(span, ' ' + mxResources.get('labels'));
-		span.style.paddingRight = '20px';
-		buttons.appendChild(span);
-		
-		mxEvent.addListener(span, 'click', function(evt)
-		{
-			labels.checked = !labels.checked;
-			mxEvent.consume(evt);
-		});
+		labelsLabel.appendChild(labels);
+		var labelsText = document.createElement('span');
+		mxUtils.write(labelsText, mxResources.get('labels'));
+		labelsLabel.appendChild(labelsText);
+		checksDiv.appendChild(labelsLabel);
 
 		var cb = document.createElement('input');
 		cb.setAttribute('type', 'checkbox');
-		
+
 		if (isLocalStorage || mxClient.IS_CHROMEAPP)
 		{
-			var span = document.createElement('span');
-			span.style.paddingRight = '20px';
-			span.appendChild(cb);
-			mxUtils.write(span, ' ' + mxResources.get('rememberThisSetting'));
-			cb.style.position = 'relative';
-			cb.style.top = '1px';
+			var rememberLabel = document.createElement('label');
+			rememberLabel.className = 'geMoreShapesFooterCheck';
 			cb.checked = true;
 			cb.defaultChecked = true;
-			
-			mxEvent.addListener(span, 'click', function(evt)
-			{
-				if (mxEvent.getSource(evt) != cb)
-				{
-					cb.checked = !cb.checked;
-					mxEvent.consume(evt);
-				}
-			});
-			
-			buttons.appendChild(span);
+			rememberLabel.appendChild(cb);
+			var rememberText = document.createElement('span');
+			mxUtils.write(rememberText, mxResources.get('rememberThisSetting'));
+			rememberLabel.appendChild(rememberText);
+			checksDiv.appendChild(rememberLabel);
 		}
+
+		buttons.appendChild(checksDiv);
 		
 		var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 		{
@@ -9987,18 +10509,24 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 			editorUi.setSidebarTitles(labels.checked, cb.checked);
 		});
 		applyBtn.className = 'geBtn gePrimaryBtn';
-		
+
+		var btnsRight = document.createElement('div');
+		btnsRight.style.flex = '1';
+		btnsRight.style.textAlign = 'right';
+
 		if (editorUi.editor.cancelFirst)
 		{
-			buttons.appendChild(cancelBtn);
-			buttons.appendChild(applyBtn);
+			btnsRight.appendChild(cancelBtn);
+			btnsRight.appendChild(applyBtn);
 		}
 		else
 		{
-			buttons.appendChild(applyBtn);
-			buttons.appendChild(cancelBtn);
+			btnsRight.appendChild(applyBtn);
+			btnsRight.appendChild(cancelBtn);
 		}
-		
+
+		buttons.appendChild(btnsRight);
+
 		div.appendChild(buttons);
 	}
 	else
@@ -12201,10 +12729,11 @@ var CustomDialog = function(editorUi, content, okFn, cancelFn, okButtonText, hel
 		marginTop)
 {
 	var div = document.createElement('div');
+	div.style.paddingBottom = '10px';
 	div.appendChild(content);
-	
+
 	var btns = document.createElement('div');
-	btns.style.marginTop = (marginTop != null) ? marginTop : '30px';
+	btns.style.marginTop = (marginTop != null) ? marginTop : '34px';
 	btns.style.textAlign = 'right';
 	
 	if (buttonsContent != null)
@@ -12420,20 +12949,41 @@ var FontDialog = function(editorUi, curFontname, curUrl, curType, fn)
 	row.appendChild(td);
 	
 	var sysFontInput = document.createElement('input');
-	
+
 	if (curType == 's')
 	{
 		sysFontInput.setAttribute('value', curFontname);
 	}
-	
+
 	sysFontInput.style.marginLeft = '4px';
 	sysFontInput.style.width = '250px';
 	sysFontInput.className = 'dlg_fontName_s';
-	
+
+	if (Editor.localFonts != null)
+	{
+		var datalist = document.createElement('datalist');
+		datalist.id = 'fontdialog-localfonts';
+
+		for (var i = 0; i < Editor.localFonts.length; i++)
+		{
+			var option = document.createElement('option');
+			option.value = Editor.localFonts[i];
+			datalist.appendChild(option);
+		}
+
+		sysFontInput.setAttribute('list', 'fontdialog-localfonts');
+	}
+
 	td = document.createElement('td');
 	td.appendChild(sysFontInput);
+
+	if (datalist != null)
+	{
+		td.appendChild(datalist);
+	}
+
 	row.appendChild(td);
-	
+
 	tbody.appendChild(row);
 
 	//Google fonts section

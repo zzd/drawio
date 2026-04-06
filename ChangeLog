@@ -1,3 +1,120 @@
+02-APR-2026: 29.6.10
+
+- Fixes build dashboard URL
+- Fixes selection only option in print dialog for single page files [jgraph/drawio#5530]
+- Remove unused GraphViewer.mergeXmlDelta and helper functions
+- Adds pop effect easter egg to create hash property
+- Add collapsible sections to format panel
+- Increase sidebar padding and spacing for lighter feel
+- Increase sidebar padding and spacing for lighter feel
+- Enhance More Shapes dialog with new styles and layout adjustments
+- Improve More Shapes dialog footer spacing and alignment
+
+01-APR-2026: 29.6.9
+
+- Adds elastic pop animation and popIn/popOut custom link actions
+- fix: skip spacebar panning when focus is in a form element [jgraph/drawio#5529]
+
+31-MAR-2026: 29.6.8
+
+- Adds GraphViewer.mergeXmlDelta
+- Fixes dy is not defined in EditorUi.showPublishLinkDialog
+- Fixes TypeError in translateCell for invalid geometry objects
+- Fixes TypeError in GraphViewer hiddenTags when diagrams is undefined
+
+31-MAR-2026: 29.6.7
+
+- Adds compressed XML support for SVG CLI export [jgraph/drawio-desktop#2143]
+- Fixes rasterized fill patterns in PDF export [jgraph/drawio#3620]
+- Enhance SVG text rendering by adding support for block elements and improving HTML to SVG conversion
+- Add .claude/launch.json to .gitignore
+- Enhance HTML to SVG conversion by adding word wrap and HTML tags
+- Updates DOMPurify from 3.3.2 to 3.3.3
+- Add BR support to HTML-to-SVG conversion and fix wrapped line heights
+- Fixes inconsistent table row and column resizing
+- feat: add configuration editor dialog with tabbed interface for visual editor and JSON
+- docs: add guidance for updating configuration switches in Editor.configure
+- feat: Enhance SVG conversion for HTML blocks and inline elements
+- fix: Improve dy calculations for superscripts and subscripts in SVG rendering
+- fix: Hide inline toolbar during all handle and cell drag operations
+- Fixes inconsistent file open handling
+- fix: Use whiteSpace instead of svgWhiteSpace when foreignObject is used
+- fix: Correct typo in ChangeLog for animated gif export
+- Add "Use Current" buttons for default styles in config editor
+- fix: Update redrawInnerBends to handle empty geometry points for bends opacity
+- fix: Auto-detect Android tablets in Chrome's desktop UA mode [jgraph/drawio#2090]
+- Enables Generate dialog with clipboard actions in desktop app
+- feat: add setInnerBendsOpacity function to manage inner bends opacity
+- feat: add optional optimizeHtmlLabels config to clean up HTML labels [jgraph/drawio#5516]
+- feat: Add "Search Shapes in Open Libraries" to omni search [jgraph/drawio-desktop#2320]
+- Update resources submodule with translations for searchShapesInOpenLibraries
+- fix: round text y-coordinates to 2 decimals in HTML-to-SVG label conversion
+- Update resources submodule with translation fixes across 15 languages
+- perf: reuse persistent div in getSizeForString to avoid repeated DOM reflows
+- refactor: remove unused enableWrap parameter from mxText.updateSize
+- refactor: remove IE8 dead code from mxText
+- refactor: remove IE and IE11 dead code across entire codebase
+- Update resources submodule with removed unused improveContrast key
+- feat: make default file type configurable via Editor.configure [jgraph/drawio-desktop#1430]
+- Update resources submodule with 9 unused resource keys removed
+- fix: respect hidden tags in PDF export and printing [jgraph/drawio#3183]
+- feat: populate tags URL/config param with current hidden tags state
+- feat: streamline hidden tags handling across export and UI components
+- feat: add root/layer metadata and type attribute to svgdata plugin SVG export [jgraph/drawio#5527]
+- fix: always prevent default scroll on spacebar when activating panning [jgraph/drawio/issues/5524]
+- fix: use this.format instead of undefined self.format in wrapSvgBlockElements
+- fix: replace transform with zoom for improved print preview scaling
+- feat: add enableLocalFonts config flag for desktop font scanning [jgraph/drawio-desktop#2371]
+- fix: resolve %pagenumber% for each page during all-pages PDF export [jgraph/drawio-desktop#2376]
+- Refactor export dialog layout and styles
+- feat: extract embedded XML from PDF files in CLI export [jgraph/drawio-desktop#2160]
+- fix: apply --width/--height to PDF export in CLI [jgraph/drawio-desktop#2162]
+- feat: add contractParent and groupPadding styles for auto-shrinking groups [jgraph/drawio#618]
+- Restyle embed dialogs and add auto-height for CustomDialog
+- Move dialog style guide to separate file and add auto-height to print dialog
+- Restyle config-editor dialog to match main app theme
+- fix: avoid inline toolbar overlap with edge labels and child elements
+- Remove agent and version attributes from mxfile
+- fix: disable MathJax inline line breaking for edge labels [jgraph/drawio#5514]
+- Add fixedHeader style for swimlane shapes
+
+24-MAR-2026: 29.6.6
+
+- Enhances tab activation and scrolling behavior in the page tab container
+- Threads done callback through openFiles/openFileHandle/openLocalFile
+- Remove launch configuration file for development servers
+- Sanitizes invalid VSDX property names for best-effort import
+- Add clipboard actions to generate dialog [jgraph/drawio#5507]
+- Update subproject commit reference in resources
+- Add smooth scrolling to tab on click in createTab function
+- Update chat window dimensions in openGenerateDialog function
+- Allow docked windows to be resized
+- Update clipboard copy label in ChatWindow dialog
+- Adds animated gif export to atlas.min.js
+- Add insert diagram from clipboard option in generate dialog
+- Improve generate dialog dropdown labels for AI options
+- Fixes encoding for connect attachments comments
+
+23-MAR-2026: 29.6.5
+
+- Corrects dashboard path
+- Avoid InlineToolbar overlapping edge segments
+- Remove embedded XML from images copied to clipboard
+- Add showLinkIcons and showTooltipIcons support to GraphViewer
+- Fix word wrapping mismatch in autosizeText in-place editor
+- Fix MathJax path in embed dev mode
+- Fix fill patterns to scale correctly with diagram zoom level
+- Fix touch input on Android tablets using Chrome desktop site mode
+- Fixes wrong SVG scaling in desktop PNG export [drawio-desktop#1954]
+- Adds intersectionSelect configuration switch [drawio#5508]
+- Fixes undo for initial fill style change (eg. from auto to hatch)
+- Fixes Cmd+, for Chrome settings on macOS
+- Fixes fill pattern offset shifting on zoom and window resize
+- Add exportProtocol and diffSync options to JSON embed protocol
+- Adds configurable shape picker via Editor.configure() [jgraph/drawio#1812,jgraph/drawio#1197,jgraph/drawio#4130,jgraph/drawio#3783]
+- Marks imported files with updates page links as dirty [DID-17660]
+- Opens draw.io/VSDX files in same window when dropped on blank file
+
 18-MAR-2026: 29.6.4
 
 - Tidies changelog

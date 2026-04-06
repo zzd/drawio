@@ -1068,7 +1068,7 @@ Sidebar.prototype.cloneCell = function(cell, value)
  * Adds shape search UI.
  */
 Sidebar.prototype.showPopupMenuForEntry = function(elt, libs, evt)
-{												
+{
 	// Hook for subclassers
 };
 
@@ -1231,6 +1231,19 @@ Sidebar.prototype.addSearchPalette = function(expand)
 		td.appendChild(span);
 	};
 
+	// Consumes Shift keyup after Shift+Enter to prevent
+	// addMenuHandler's keyup handler from reopening the dropdown
+	var consumeNextShiftUp = false;
+
+	mxEvent.addListener(input, 'keyup', function(evt)
+	{
+		if (consumeNextShiftUp && evt.keyCode == 16 /* Shift */)
+		{
+			consumeNextShiftUp = false;
+			mxEvent.consume(evt);
+		}
+	});
+
 	editorUi.addMenuHandler(input, mxUtils.bind(this, function(menu, parent)
 	{
 		var lc = input.value.toLowerCase();
@@ -1245,7 +1258,18 @@ Sidebar.prototype.addSearchPalette = function(expand)
 		{
 			find();
 		});
-		
+
+		var openLibItem = menu.addItem(mxResources.get('searchShapesInOpenLibraries'), null, mxUtils.bind(this, function()
+		{
+			find(false);
+		}), parent);
+
+		var td = openLibItem.firstChild.nextSibling.nextSibling;
+		var span = document.createElement('span');
+		span.style.color = 'gray';
+		span.innerHTML = 'Shift+Enter';
+		td.appendChild(span);
+
 		menu.addItem(mxResources.get('findInDiagram'), null, mxUtils.bind(this, function()
 		{
 			editorUi.hideCurrentMenu();
@@ -1484,27 +1508,35 @@ Sidebar.prototype.addSearchPalette = function(expand)
 		input.focus();
 	});
 
-	find = mxUtils.bind(this, function()
+	var lastSearchClosedLibs = null;
+
+	find = mxUtils.bind(this, function(searchClosedLibs)
 	{
+		if (searchClosedLibs == null)
+		{
+			searchClosedLibs = this.searchClosedLibraries;
+		}
+
 		editorUi.hideCurrentMenu();
 
 		// Shows 4 rows (minimum 4 results)
 		count = 4 * Math.max(1, Math.floor(this.container.clientWidth / (this.thumbWidth + 10)));
 		this.hideTooltip();
-		
+
 		if (input.value != '')
 		{
 			if (center.parentNode != null)
 			{
-				if (searchTerm != input.value)
+				if (searchTerm != input.value || lastSearchClosedLibs != searchClosedLibs)
 				{
 					clearDiv();
 					searchTerm = input.value;
+					lastSearchClosedLibs = searchClosedLibs;
 					hash = new Object();
 					complete = false;
 					page = 0;
 				}
-				
+
 				if (!active && !complete)
 				{
 					button.setAttribute('disabled', 'true');
@@ -1513,11 +1545,11 @@ Sidebar.prototype.addSearchPalette = function(expand)
 					button.innerHTML = '';
 					mxUtils.write(button, mxResources.get('loading') + '...');
 					active = true;
-					
+
 					// Ignores old results
 					var current = new Object();
 					this.currentSearch = current;
-					
+
 					try
 					{
 						this.searchEntries(searchTerm, count, page, mxUtils.bind(this, function(results, len, more, terms)
@@ -1528,7 +1560,7 @@ Sidebar.prototype.addSearchPalette = function(expand)
 								active = false;
 								page++;
 								this.insertSearchHint(div, searchTerm, count, page, results, len, more, terms);
-								
+
 								// Allows to repeat the search
 								if (results.length == 0 && page == 1)
 								{
@@ -1539,7 +1571,7 @@ Sidebar.prototype.addSearchPalette = function(expand)
 								{
 									center.parentNode.removeChild(center);
 								}
-								
+
 								for (var i = 0; i < results.length; i++)
 								{
 									(mxUtils.bind(this, function(result)
@@ -1547,16 +1579,16 @@ Sidebar.prototype.addSearchPalette = function(expand)
 										try
 										{
 											var elt = result();
-											
+
 											if (this.closedLibraryOpacity != null &&
-												this.searchClosedLibraries)
+												searchClosedLibs)
 											{
 												if (this.isEntryIgnored(result, false))
 												{
 													elt.style.opacity = this.closedLibraryOpacity;
 												}
 											}
-											
+
 											// Avoids duplicates in results
 											if (hash[elt.innerHTML] == null)
 											{
@@ -1572,13 +1604,13 @@ Sidebar.prototype.addSearchPalette = function(expand)
 											mxEvent.addGestureListeners(elt, null, null, mxUtils.bind(this, function(evt)
 											{
 												var libs = hash[elt.innerHTML];
-		
+
 												if (mxEvent.isPopupTrigger(evt))
 												{
 													this.showPopupMenuForEntry(elt, libs, evt);
 												}
 											}));
-											
+
 											// Disables the built-in context menu
 											mxEvent.disableContextMenu(elt);
 										}
@@ -1599,7 +1631,7 @@ Sidebar.prototype.addSearchPalette = function(expand)
 										}
 									}))(results[i]);
 								}
-								
+
 								if (more)
 								{
 									button.removeAttribute('disabled');
@@ -1612,14 +1644,14 @@ Sidebar.prototype.addSearchPalette = function(expand)
 									center.style.display = 'none';
 									complete = true;
 								}
-								
+
 								button.style.cursor = '';
 								div.appendChild(center);
 							}
 						}), mxUtils.bind(this, function()
 						{
 							button.style.cursor = '';
-						}), this.searchClosedLibraries);
+						}), searchClosedLibs);
 					}
 					catch (e)
 					{
@@ -1648,7 +1680,13 @@ Sidebar.prototype.addSearchPalette = function(expand)
 	
 	mxEvent.addListener(input, 'keydown', mxUtils.bind(this, function(evt)
 	{
-		if (evt.keyCode == 13 /* Enter */ && enterAction != null)
+		if (evt.keyCode == 13 /* Enter */ && evt.shiftKey)
+		{
+			consumeNextShiftUp = true;
+			find(false);
+			mxEvent.consume(evt);
+		}
+		else if (evt.keyCode == 13 /* Enter */ && enterAction != null)
 		{
 			enterAction(evt, evt);
 			mxEvent.consume(evt);
@@ -2705,11 +2743,6 @@ Sidebar.prototype.createThumb = function(cells, width, height, parent, title, sh
 		div.style.overflow = 'hidden';
 		div.style.textOverflow = 'ellipsis';
 		
-		if (mxClient.IS_IE)
-		{
-			div.style.height = (this.sidebarTitleSize + 12) + 'px';
-		}
-
 		div.style.paddingTop = '4px';
 		mxUtils.write(div, title);
 		parent.appendChild(div);

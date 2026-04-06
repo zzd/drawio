@@ -1441,11 +1441,6 @@
 					fileNode.setAttribute('host', window.location.hostname);
 				}
 				
-				// Adds new metadata
-				fileNode.setAttribute('agent', (navigator.userAgent != null) ?
-					navigator.userAgent : navigator.appVersion);
-				fileNode.setAttribute('version', EditorUi.VERSION);
-				
 				if (fileNode.getElementsByTagName('diagram').length > 1 && this.pages != null)
 				{
 					fileNode.setAttribute('pages', this.pages.length);
@@ -2481,21 +2476,58 @@
 					filename = basename + '.jpg';
 				}
 				
-				this.saveRequest(filename, format, mxUtils.bind(this, function(newTitle, base64)
+				if (urlParams['embed'] == '1' && urlParams['proto'] == 'json' && this.embedExportProtocol)
 				{
-					try
+					var parent = this.embedMessageSource || window.opener || window.parent;
+
+					if (this.spinner.spin(document.body, mxResources.get('exporting')))
 					{
-						var req = this.createDownloadRequest(newTitle, format, ignoreSelection, base64,
+						var req = this.createDownloadRequest(filename, format, ignoreSelection, '1',
 							transparent, currentPage, scale, border, grid, includeXml, pageRange, w, h,
 							!pageVisible, margin, fit, sheetsAcross, sheetsDown, shadows);
-						
-						return req;
+
+						req.send(mxUtils.bind(this, function(req)
+						{
+							this.spinner.stop();
+
+							if (req.getStatus() >= 200 && req.getStatus() <= 299)
+							{
+								var msg = this.createLoadMessage('export');
+								msg.format = format;
+								msg.filename = filename;
+								msg.data = 'data:application/pdf;base64,' + req.getText();
+								msg.xml = this.getFileData(true);
+								parent.postMessage(JSON.stringify(msg), '*');
+							}
+							else
+							{
+								this.handleError({message: mxResources.get('errorSavingFile')});
+							}
+						}), mxUtils.bind(this, function()
+						{
+							this.spinner.stop();
+							this.handleError({message: mxResources.get('errorSavingFile')});
+						}));
 					}
-					catch (e)
+				}
+				else
+				{
+					this.saveRequest(filename, format, mxUtils.bind(this, function(newTitle, base64)
 					{
-						this.handleError(e);
-					}
-				}));
+						try
+						{
+							var req = this.createDownloadRequest(newTitle, format, ignoreSelection, base64,
+								transparent, currentPage, scale, border, grid, includeXml, pageRange, w, h,
+								!pageVisible, margin, fit, sheetsAcross, sheetsDown, shadows);
+
+							return req;
+						}
+						catch (e)
+						{
+							this.handleError(e);
+						}
+					}));
+				}
 			}
 		}
 		catch (e)
@@ -2622,7 +2654,15 @@
 		{
 			extras.diagramLanguage = Graph.diagramLanguage;
 		}
-		
+
+		// Passes hidden tags per page to export backend
+		var hiddenTagsMap = this.getHiddenTagsMap();
+
+		if (hiddenTagsMap != null)
+		{
+			extras.hiddenTags = hiddenTagsMap;
+		}
+
 		return {
 			format: format,
 			from: from,
@@ -2648,8 +2688,42 @@
 	};
 	
 	/**
+	 * Returns a map of page ID to hidden tags array for all pages
+	 * that have hidden tags, or null if no tags are hidden.
+	 */
+	EditorUi.prototype.getHiddenTagsMap = function()
+	{
+		var graph = this.editor.graph;
+		var result = {};
+		var hasHiddenTags = false;
+
+		if (this.pages != null)
+		{
+			for (var i = 0; i < this.pages.length; i++)
+			{
+				var page = this.pages[i];
+				var tags = (page == this.currentPage) ? graph.hiddenTags :
+					(page.viewState != null ? page.viewState.hiddenTags : null);
+
+				if (tags != null && tags.length > 0)
+				{
+					result[page.getId()] = tags;
+					hasHiddenTags = true;
+				}
+			}
+		}
+		else if (graph.hiddenTags != null && graph.hiddenTags.length > 0)
+		{
+			result[0] = graph.hiddenTags;
+			hasHiddenTags = true;
+		}
+
+		return hasHiddenTags ? result : null;
+	};
+
+	/**
 	 * Translates this point by the given vector.
-	 * 
+	 *
 	 * @param {number} dx X-coordinate of the translation.
 	 * @param {number} dy Y-coordinate of the translation.
 	 */
@@ -3990,7 +4064,9 @@
 		// KNOWN: Existing entries are not replaced after edit of custom library
 		if (this.sidebar != null && images != null)
 		{
+			this.sidebar.setCurrentSearchEntryLibrary(file.getHash(), file.getHash());
 			this.sidebar.addEntries(images, defaultTags);
+			this.sidebar.setCurrentSearchEntryLibrary();
 		}
 		
 		// Adds new sidebar entry for this library
@@ -4630,6 +4706,384 @@
 	};
 
 	/**
+	 * Shows a tabbed configuration dialog with visual editor and JSON tabs.
+	 */
+	EditorUi.prototype.showConfigurationEditorDialog = function(title, key, customButtons, elt, helpLink, applyFn)
+	{
+		var editorUi = this;
+		var value = localStorage.getItem(key);
+		var configObj = {};
+
+		try
+		{
+			if (value != null)
+			{
+				configObj = JSON.parse(value);
+			}
+		}
+		catch (e) {}
+
+		var latestIframeConfig = configObj;
+		var activeTab = 'editor';
+
+		// Main container
+		var div = document.createElement('div');
+		div.style.position = 'absolute';
+		div.style.top = '20px';
+		div.style.bottom = '20px';
+		div.style.left = '20px';
+		div.style.right = '20px';
+
+		// Tab bar
+		var tabBar = document.createElement('div');
+		tabBar.style.position = 'absolute';
+		tabBar.style.left = '0';
+		tabBar.style.right = '0';
+		tabBar.style.top = '0';
+		tabBar.style.height = '28px';
+		tabBar.style.display = 'flex';
+		tabBar.style.alignItems = 'end';
+		tabBar.style.borderBottom = '1px solid #d0d0d0';
+
+		function createTab(label, isActive)
+		{
+			var tab = document.createElement('div');
+			tab.style.padding = '4px 16px';
+			tab.style.cursor = 'pointer';
+			tab.style.fontSize = '13px';
+			tab.style.borderBottom = isActive ? '2px solid #29b6f2' : '2px solid transparent';
+			tab.style.fontWeight = isActive ? 'bold' : 'normal';
+			tab.style.color = isActive ? '' : '#888';
+			tab.style.userSelect = 'none';
+			mxUtils.write(tab, label);
+
+			return tab;
+		}
+
+		var editorTabBtn = createTab(mxResources.get('editor', null, 'Editor'), true);
+		var jsonTabBtn = createTab('JSON', false);
+
+		tabBar.appendChild(editorTabBtn);
+		tabBar.appendChild(jsonTabBtn);
+
+		if (elt != null)
+		{
+			var headerWrapper = document.createElement('div');
+			headerWrapper.style.marginLeft = 'auto';
+			headerWrapper.style.display = 'flex';
+			headerWrapper.style.alignItems = 'center';
+			headerWrapper.style.paddingRight = '4px';
+			headerWrapper.style.paddingBottom = '2px';
+			headerWrapper.appendChild(elt);
+			tabBar.appendChild(headerWrapper);
+		}
+
+		div.appendChild(tabBar);
+
+		// Editor content (iframe)
+		var editorContent = document.createElement('div');
+		editorContent.style.position = 'absolute';
+		editorContent.style.left = '0';
+		editorContent.style.right = '0';
+		editorContent.style.top = '30px';
+		editorContent.style.bottom = '50px';
+
+		var iframe = document.createElement('iframe');
+		iframe.style.width = '100%';
+		iframe.style.height = '100%';
+		iframe.style.border = 'none';
+		iframe.style.borderRadius = '4px';
+
+		var baseUrl = window.DRAWIO_BASE_URL || '';
+
+		if (baseUrl.length > 0 && baseUrl.charAt(baseUrl.length - 1) === '/')
+		{
+			baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+		}
+
+		var hashData = {};
+
+		try
+		{
+			var graph = editorUi.editor.graph;
+
+			if (graph.currentVertexStyle != null)
+			{
+				hashData.currentVertexStyle = graph.currentVertexStyle;
+			}
+
+			if (graph.currentEdgeStyle != null)
+			{
+				hashData.currentEdgeStyle = graph.currentEdgeStyle;
+			}
+		}
+		catch (e)
+		{
+			// ignore
+		}
+
+		iframe.src = baseUrl + '/config-editor.html#' +
+			encodeURIComponent(JSON.stringify(hashData));
+		editorContent.appendChild(iframe);
+
+		// JSON content (textarea)
+		var jsonContent = document.createElement('div');
+		jsonContent.style.position = 'absolute';
+		jsonContent.style.left = '0';
+		jsonContent.style.right = '0';
+		jsonContent.style.top = '30px';
+		jsonContent.style.bottom = '50px';
+		jsonContent.style.display = 'none';
+
+		var textarea = document.createElement('textarea');
+		textarea.setAttribute('wrap', 'off');
+		textarea.setAttribute('spellcheck', 'false');
+		textarea.setAttribute('autocorrect', 'off');
+		textarea.setAttribute('autocomplete', 'off');
+		textarea.setAttribute('autocapitalize', 'off');
+		textarea.style.resize = 'none';
+		textarea.style.outline = 'none';
+		textarea.style.boxSizing = 'border-box';
+		textarea.style.width = '100%';
+		textarea.style.height = '100%';
+
+		try
+		{
+			textarea.value = (value != null) ? JSON.stringify(JSON.parse(value), null, 2) : '';
+		}
+		catch (e)
+		{
+			textarea.value = value || '';
+		}
+
+		jsonContent.appendChild(textarea);
+
+		div.appendChild(editorContent);
+		div.appendChild(jsonContent);
+
+		// Tab switching
+		function setActiveTab(tab)
+		{
+			if (tab === activeTab) return;
+
+			if (tab === 'json')
+			{
+				if (latestIframeConfig != null)
+				{
+					textarea.value = JSON.stringify(latestIframeConfig, null, 2);
+				}
+
+				editorContent.style.display = 'none';
+				jsonContent.style.display = '';
+				jsonTabBtn.style.borderBottomColor = '#29b6f2';
+				jsonTabBtn.style.fontWeight = 'bold';
+				jsonTabBtn.style.color = '';
+				editorTabBtn.style.borderBottomColor = 'transparent';
+				editorTabBtn.style.fontWeight = 'normal';
+				editorTabBtn.style.color = '#888';
+				textarea.focus();
+			}
+			else
+			{
+				try
+				{
+					var obj = JSON.parse(textarea.value);
+					latestIframeConfig = obj;
+
+					if (iframe.contentWindow != null)
+					{
+						iframe.contentWindow.postMessage({type: 'setConfig', config: obj}, '*');
+					}
+				}
+				catch (e) {}
+
+				editorContent.style.display = '';
+				jsonContent.style.display = 'none';
+				editorTabBtn.style.borderBottomColor = '#29b6f2';
+				editorTabBtn.style.fontWeight = 'bold';
+				editorTabBtn.style.color = '';
+				jsonTabBtn.style.borderBottomColor = 'transparent';
+				jsonTabBtn.style.fontWeight = 'normal';
+				jsonTabBtn.style.color = '#888';
+			}
+
+			activeTab = tab;
+		}
+
+		mxEvent.addListener(editorTabBtn, 'click', function() { setActiveTab('editor'); });
+		mxEvent.addListener(jsonTabBtn, 'click', function() { setActiveTab('json'); });
+
+		// Handle messages from iframe
+		var messageHandler = function(event)
+		{
+			if (iframe.contentWindow != null && event.source === iframe.contentWindow)
+			{
+				if (event.data != null)
+				{
+					if (event.data.type === 'configChanged')
+					{
+						latestIframeConfig = event.data.config;
+					}
+					else if (event.data.type === 'ready')
+					{
+						iframe.contentWindow.postMessage({type: 'setConfig', config: configObj}, '*');
+
+						// Send dark mode state
+						if (Editor.isDarkMode != null && Editor.isDarkMode())
+						{
+							iframe.contentWindow.postMessage({type: 'setDarkMode', dark: true}, '*');
+						}
+
+						// Send high contrast state
+						if (editorUi.isHighContrast())
+						{
+							iframe.contentWindow.postMessage({type: 'setHighContrast', highContrast: true}, '*');
+						}
+					}
+				}
+			}
+		};
+
+		window.addEventListener('message', messageHandler);
+
+		// Buttons
+		var buttons = document.createElement('div');
+		buttons.style.position = 'absolute';
+		buttons.style.left = '0';
+		buttons.style.right = '0';
+		buttons.style.bottom = '0';
+		buttons.style.height = '46px';
+		buttons.style.display = 'flex';
+		buttons.style.whiteSpace = 'nowrap';
+		buttons.style.alignItems = 'center';
+		buttons.style.justifyContent = 'end';
+		buttons.style.paddingTop = '10px';
+		buttons.style.paddingBottom = '10px';
+		buttons.style.boxSizing = 'border-box';
+
+		if (helpLink != null && !editorUi.isOffline())
+		{
+			buttons.appendChild(editorUi.createHelpIcon(helpLink));
+		}
+
+		if (customButtons != null)
+		{
+			for (var i = 0; i < customButtons.length; i++)
+			{
+				(function(label, origFn, btnTitle)
+				{
+					var btn = mxUtils.button(label, function(e)
+					{
+						// Sync textarea from editor before calling button handler
+						if (activeTab === 'editor' && latestIframeConfig != null)
+						{
+							textarea.value = JSON.stringify(latestIframeConfig, null, 2);
+						}
+
+						origFn(e, textarea);
+					});
+
+					if (btnTitle != null)
+					{
+						btn.setAttribute('title', btnTitle);
+					}
+
+					btn.className = 'geBtn';
+					buttons.appendChild(btn);
+				})(customButtons[i][0], customButtons[i][1], customButtons[i][2]);
+			}
+		}
+
+		var closeBtn = mxUtils.button(mxResources.get('close'), function()
+		{
+			editorUi.hideDialog();
+		});
+
+		closeBtn.setAttribute('title', 'Escape');
+		closeBtn.className = 'geBtn';
+
+		var applyBtn = mxUtils.button(mxResources.get('apply'), function()
+		{
+			var newValue;
+
+			if (activeTab === 'editor')
+			{
+				newValue = (latestIframeConfig != null && Object.keys(latestIframeConfig).length > 0) ?
+					JSON.stringify(latestIframeConfig, null, 2) : '';
+			}
+			else
+			{
+				newValue = textarea.value;
+			}
+
+			try
+			{
+				if (applyFn != null)
+				{
+					applyFn(newValue);
+				}
+
+				if (newValue == value)
+				{
+					editorUi.hideDialog();
+				}
+				else
+				{
+					if (newValue.length > 0)
+					{
+						var obj = JSON.parse(newValue);
+						localStorage.setItem(key, JSON.stringify(obj));
+					}
+					else
+					{
+						localStorage.removeItem(key);
+					}
+
+					editorUi.hideDialog();
+					editorUi.alert(mxResources.get('restartForChangeRequired'));
+				}
+			}
+			catch (e)
+			{
+				editorUi.handleError(e);
+			}
+		});
+
+		applyBtn.className = 'geBtn gePrimaryBtn';
+
+		if (editorUi.editor.cancelFirst)
+		{
+			buttons.appendChild(closeBtn);
+			buttons.appendChild(applyBtn);
+		}
+		else
+		{
+			buttons.appendChild(applyBtn);
+			buttons.appendChild(closeBtn);
+		}
+
+		div.appendChild(buttons);
+
+		// Ctrl+Enter to apply
+		mxEvent.addListener(div, 'keydown', function(e)
+		{
+			if (e.keyCode === 13 && mxEvent.isControlDown(e))
+			{
+				applyBtn.click();
+			}
+		});
+
+		var w = (customButtons != null && customButtons.length > 2) ? 500 : 440;
+		editorUi.showDialog(div, 800, 600, true, false,
+			function()
+			{
+				window.removeEventListener('message', messageHandler);
+			}, null, null, new mxRectangle(0, 0, w, 400));
+
+		textarea.scrollTop = 0;
+	};
+
+	/**
 	 * Hides the current menu.
 	 */
 	EditorUi.prototype.showBackgroundImageDialog = function(apply, img, color, showColor)
@@ -5222,11 +5676,18 @@
 		hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px';
 		div.appendChild(hd);
 
+		// --- Settings section ---
+		var section = document.createElement('div');
+		section.className = 'geDialogSection';
+
 		// Speed (FPS)
-		mxUtils.write(div, mxResources.get('speed', null, 'Speed') + ':');
+		var formRow = document.createElement('div');
+		formRow.className = 'geDialogFormRow';
+		var lbl = document.createElement('span');
+		lbl.className = 'geDialogFormLabel';
+		mxUtils.write(lbl, mxResources.get('speed', null, 'Speed') + ':');
+		formRow.appendChild(lbl);
 		var fpsSelect = document.createElement('select');
-		fpsSelect.style.marginLeft = '4px';
-		fpsSelect.style.width = '80px';
 
 		var fpsOptions = [
 			{label: mxResources.get('slow', null, 'Slow'), value: 8},
@@ -5248,40 +5709,43 @@
 			fpsSelect.appendChild(opt);
 		}
 
-		div.appendChild(fpsSelect);
-		mxUtils.br(div);
+		formRow.appendChild(fpsSelect);
+		section.appendChild(formRow);
 
 		// Zoom
-		var zoomContainer = document.createElement('div');
-		zoomContainer.style.marginTop = '10px';
-		mxUtils.write(zoomContainer, mxResources.get('zoom') + ':');
+		formRow = document.createElement('div');
+		formRow.className = 'geDialogFormRow';
+		lbl = document.createElement('span');
+		lbl.className = 'geDialogFormLabel';
+		mxUtils.write(lbl, mxResources.get('zoom') + ':');
+		formRow.appendChild(lbl);
 		var zoomInput = document.createElement('input');
 		zoomInput.setAttribute('type', 'text');
-		zoomInput.style.width = '60px';
-		zoomInput.style.marginLeft = '4px';
 		zoomInput.value = '100%';
-		zoomContainer.appendChild(zoomInput);
-		div.appendChild(zoomContainer);
+		formRow.appendChild(zoomInput);
+		section.appendChild(formRow);
 
 		// Border
-		var borderContainer = document.createElement('div');
-		borderContainer.style.marginTop = '10px';
-		mxUtils.write(borderContainer, mxResources.get('borderWidth', null, 'Border Width') + ':');
+		formRow = document.createElement('div');
+		formRow.className = 'geDialogFormRow';
+		lbl = document.createElement('span');
+		lbl.className = 'geDialogFormLabel';
+		mxUtils.write(lbl, mxResources.get('borderWidth', null, 'Border Width') + ':');
+		formRow.appendChild(lbl);
 		var borderInput = document.createElement('input');
 		borderInput.setAttribute('type', 'text');
-		borderInput.style.width = '60px';
-		borderInput.style.marginLeft = '4px';
 		borderInput.value = '0';
-		borderContainer.appendChild(borderInput);
-		div.appendChild(borderContainer);
+		formRow.appendChild(borderInput);
+		section.appendChild(formRow);
 
 		// Loop
-		var loopContainer = document.createElement('div');
-		loopContainer.style.marginTop = '10px';
-		mxUtils.write(loopContainer, mxResources.get('loops', null, 'Loops') + ':');
+		formRow = document.createElement('div');
+		formRow.className = 'geDialogFormRow';
+		lbl = document.createElement('span');
+		lbl.className = 'geDialogFormLabel';
+		mxUtils.write(lbl, mxResources.get('loops', null, 'Loops') + ':');
+		formRow.appendChild(lbl);
 		var loopSelect = document.createElement('select');
-		loopSelect.style.marginLeft = '4px';
-		loopSelect.style.width = '80px';
 
 		var loopOptions = [
 			{label: mxResources.get('forever', null, 'Forever'), value: 0},
@@ -5304,12 +5768,19 @@
 			loopSelect.appendChild(opt);
 		}
 
-		loopContainer.appendChild(loopSelect);
-		div.appendChild(loopContainer);
+		formRow.appendChild(loopSelect);
+		section.appendChild(formRow);
 
-		// Transparent background
-		var transparent = this.addCheckbox(div, mxResources.get('transparentBackground',
+		div.appendChild(section);
+
+		// --- Options section ---
+		var optSection = document.createElement('div');
+		optSection.className = 'geDialogSection';
+
+		var transparent = this.addCheckbox(optSection, mxResources.get('transparentBackground',
 			null, 'Transparent Background'), false);
+
+		div.appendChild(optSection);
 
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
 		{
@@ -5334,7 +5805,7 @@
 		}), null, mxResources.get('export'),
 			'https://www.drawio.com/doc/faq/export-diagram');
 
-		this.showDialog(dlg.container, 300, 260, true, true, null, null, null, null, true);
+		this.showDialog(dlg.container, 360, null, true, true, null, null, null, null, true);
 	};
 
 	/**
@@ -5394,10 +5865,8 @@
 	 */
 	EditorUi.prototype.isLocalFileSave = function()
 	{
-		return ((urlParams['save'] != 'remote' && (mxClient.IS_IE ||
-			(typeof window.Blob !== 'undefined' && typeof window.URL !== 'undefined')) &&
-			document.documentMode != 9 && document.documentMode != 8 &&
-			document.documentMode != 7) ||
+		return ((urlParams['save'] != 'remote' &&
+			typeof window.Blob !== 'undefined' && typeof window.URL !== 'undefined') ||
 			this.isOfflineApp() || mxClient.IS_IOS);
 	};
 	
@@ -5435,32 +5904,7 @@
 			filename = filename + '.' + defaultExtension;
 		}
 		
-		// Newer versions of IE
-		if (window.Blob && navigator.msSaveOrOpenBlob)
-		{
-			var blob = (base64Encoded) ?
-				this.base64ToBlob(data, mimeType) :
-				new Blob([data], {type: mimeType})
-			navigator.msSaveOrOpenBlob(blob, filename);
-		}
-		// Older versions of IE (binary not supported)
-		else if (mxClient.IS_IE)
-		{
-			var win = window.open('about:blank', '_blank');
-			
-			if (win == null)
-			{
-				mxUtils.popup(data, true);
-			}
-			else
-			{
-				win.document.write(data);
-				win.document.close();
-				win.document.execCommand('SaveAs', true, filename);
-				win.close();
-			}
-		}
-		else if (mxClient.IS_IOS && this.isOffline())
+		if (mxClient.IS_IOS && this.isOffline())
 		{
 			// Workaround for "WebKitBlobResource error 1" in mobile Safari
 			if (!navigator.standalone && mimeType != null && mimeType.substring(0, 6) == 'image/')
@@ -5730,6 +6174,63 @@
 	{
 		if (urlParams['tags'] != null)
 		{
+			// Applies initial hidden tags from URL parameter
+			var tagsParam = null;
+
+			try
+			{
+				var tagsValue = urlParams['tags'];
+
+				try
+				{
+					tagsValue = decodeURIComponent(tagsValue);
+				}
+				catch (e)
+				{
+					// Already decoded
+				}
+
+				tagsParam = JSON.parse(tagsValue);
+			}
+			catch (e)
+			{
+				// Ignore parse errors
+			}
+
+			if (tagsParam != null)
+			{
+				var graph = this.editor.graph;
+
+				var applyHiddenTags = mxUtils.bind(this, function()
+				{
+					var id = (this.currentPage != null) ?
+						this.currentPage.getId() : 0;
+					var tags = tagsParam[id];
+					graph.hiddenTags = (tags != null && tags.length > 0) ? tags : [];
+					graph.refresh();
+				});
+
+				// Applies after file is loaded and refits since
+				// lightboxFit ran before tags were applied
+				this.editor.addListener('fileLoaded', mxUtils.bind(this, function()
+				{
+					applyHiddenTags();
+
+					if (graph.isLightboxView())
+					{
+						this.lightboxFit();
+					}
+
+					if (this.chromelessResize)
+					{
+						this.chromelessResize();
+					}
+				}));
+
+				// Updates hidden tags on page switch
+				this.editor.addListener('pageSelected', applyHiddenTags);
+			}
+
 			this.tagsComponent = null;
 			this.tagsDialog = null;
 					
@@ -5968,6 +6469,19 @@
 	 */
 	EditorUi.prototype.saveData = function(filename, format, data, mime, base64Encoded, defaultMode)
 	{
+		if (urlParams['embed'] == '1' && urlParams['proto'] == 'json' && this.embedExportProtocol)
+		{
+			var parent = this.embedMessageSource || window.opener || window.parent;
+			var msg = this.createLoadMessage('export');
+			msg.format = format;
+			msg.filename = filename;
+			msg.data = base64Encoded ? 'data:' + mime + ';base64,' + data : data;
+			msg.xml = this.getFileData(true);
+			parent.postMessage(JSON.stringify(msg), '*');
+
+			return;
+		}
+
 		if (this.isLocalFileSave())
 		{
 			this.saveLocalFile(data, filename, mime, base64Encoded, format, defaultMode);
@@ -6577,48 +7091,65 @@
 	/**
 	 * 
 	 */
-	EditorUi.prototype.addCheckbox = function(div, label, checked, disabled, disableNewline, visible, asRadio, radioGroupName)
+	EditorUi.prototype.addCheckbox = function(div, label, checked, disabled, disableNewline, visible, asRadio, radioGroupName, useCheckRow)
 	{
 		visible = (visible != null) ? visible : true;
-		
+
 		var cb = document.createElement('input');
 		cb.style.marginRight = '8px';
-		cb.style.marginTop = '16px';
 		cb.setAttribute('type', asRadio? 'radio' : 'checkbox');
 		var id = 'geCheckbox-' + Editor.guid();
 		cb.id = id;
-		
+
 		if (radioGroupName != null)
 		{
 			cb.setAttribute('name', radioGroupName);
 		}
-		
+
 		if (checked)
 		{
 			cb.setAttribute('checked', 'checked');
 			cb.defaultChecked = true;
 		}
-		
+
 		if (disabled)
 		{
 			cb.setAttribute('disabled', 'disabled');
 		}
-		
+
 		if (visible)
 		{
-			div.appendChild(cb);
-			
-			var lbl = document.createElement('label');
-			mxUtils.write(lbl, label);
-			lbl.setAttribute('for', id);
-			div.appendChild(lbl);
-
-			if (!disableNewline)
+			if (useCheckRow)
 			{
-				mxUtils.br(div);
+				var row = document.createElement('div');
+				row.className = 'geDialogCheckRow';
+				row.appendChild(cb);
+
+				var lbl = document.createElement('label');
+				mxUtils.write(lbl, label);
+				lbl.setAttribute('for', id);
+				row.appendChild(lbl);
+
+				div.appendChild(row);
+				cb.checkRow = row;
+			}
+			else
+			{
+				cb.style.marginTop = '16px';
+				div.appendChild(cb);
+
+				var lbl = document.createElement('label');
+				mxUtils.write(lbl, label);
+				lbl.setAttribute('for', id);
+				div.appendChild(lbl);
+
+				if (!disableNewline)
+				{
+					mxUtils.br(div);
+				}
 			}
 		}
-		
+
 		return cb;
 	};
 	
@@ -6627,17 +7158,22 @@
 	 */
 	EditorUi.prototype.addEditButton = function(div, lightbox)
 	{
-		var edit = this.addCheckbox(div, mxResources.get('edit') + ':', true, null, true);
-		edit.style.marginLeft = '24px';
-		
+		var editRow = document.createElement('div');
+		editRow.className = 'geDialogCheckRow';
+		editRow.style.paddingLeft = '24px';
+
+		var edit = this.addCheckbox(editRow, mxResources.get('edit') + ':', true, null, true);
+		edit.style.marginTop = '0px';
+		edit.indent = '24px';
+
 		var file = this.getCurrentFile();
 		var editUrl = '';
-		
+
 		if (file != null && file.getMode() != App.MODE_DEVICE && file.getMode() != App.MODE_BROWSER)
 		{
 			editUrl = window.location.href;
 		}
-		
+
 		var editSelect = document.createElement('select');
 		editSelect.style.maxWidth = '200px';
 		editSelect.style.width = 'auto';
@@ -6654,8 +7190,9 @@
 		customOption.setAttribute('value', 'custom');
 		mxUtils.write(customOption, mxResources.get('custom') + '...');
 		editSelect.appendChild(customOption);
-		
-		div.appendChild(editSelect);
+
+		editRow.appendChild(editSelect);
+		div.appendChild(editRow);
 		
 		mxEvent.addListener(editSelect, 'change', mxUtils.bind(this, function()
 		{
@@ -6694,8 +7231,6 @@
 			}
 		}));
 
-		mxUtils.br(div);
-		
 		return {
 			getLink: function()
 			{
@@ -6708,6 +7243,10 @@
 			getEditSelect: function()
 			{
 				return editSelect;
+			},
+			getEditRow: function()
+			{
+				return editRow;
 			}
 		};
 	}
@@ -6717,12 +7256,17 @@
 	 */
 	EditorUi.prototype.addLinkSection = function(div, showFrameOption)
 	{
-		mxUtils.write(div, mxResources.get('links') + ':');
+		var linkRow = document.createElement('div');
+		linkRow.className = 'geDialogFormRow';
+
+		var linkLabel = document.createElement('span');
+		linkLabel.className = 'geDialogFormLabel';
+		mxUtils.write(linkLabel, mxResources.get('links') + ':');
+		linkRow.appendChild(linkLabel);
 
 		var linkSelect = document.createElement('select');
 		linkSelect.style.width = '100px';
 		linkSelect.style.padding = '0px';
-		linkSelect.style.marginLeft = '8px';
 		linkSelect.style.marginRight = '10px';
 		linkSelect.className = 'geBtn';
 
@@ -6749,10 +7293,12 @@
 				' (' + mxResources.get('iframe') + ')');
 			linkSelect.appendChild(frameOption);
 		}
-		
-		div.appendChild(linkSelect);
-		
-		mxUtils.write(div, mxResources.get('borderColor') + ':');
+
+		linkRow.appendChild(linkSelect);
+
+		var colorLabel = document.createElement('span');
+		mxUtils.write(colorLabel, mxResources.get('borderColor') + ':');
+		linkRow.appendChild(colorLabel);
 		var linkColor = '#0000ff';
 		var linkButton = null;
 		
@@ -6796,10 +7342,10 @@
 		linkButton.style.height = '22px';
 		linkButton.style.width = '22px';
 		linkButton.style.position = 'relative';
-		linkButton.style.top = (mxClient.IS_IE || mxClient.IS_IE11 || mxClient.IS_EDGE) ? '6px' : '1px';
+		linkButton.style.top = '1px';
 		linkButton.className = 'geColorBtn';
-		div.appendChild(linkButton);
-		mxUtils.br(div);
+		linkRow.appendChild(linkButton);
+		div.appendChild(linkRow);
 		
 		return {
 			getColor: function()
@@ -6929,7 +7475,7 @@
 	 * 
 	 */
 	EditorUi.prototype.createHtml = function(publicUrl, zoomEnabled, initialZoom, linkTarget,
-		linkColor, fit, allPages, layers, tags, lightbox, editLink, fn, theme)
+		linkColor, fit, allPages, layers, tags, lightbox, editLink, fn, theme, useTagSettings)
 	{
 		var s = this.getBasenames();
 		var data = {};
@@ -6984,6 +7530,16 @@
 		if (tags)
 		{
 			tb.push('tags');
+
+			if (useTagSettings)
+			{
+				var hiddenTagsMap = this.getHiddenTagsMap();
+
+				if (hiddenTagsMap != null)
+				{
+					data.hiddenTags = hiddenTagsMap;
+				}
+			}
 		}
 
 		if (theme != null)
@@ -7093,14 +7649,15 @@
 		}
 
 		div.appendChild(radioSection);
-		var h = 380;
 
-		var linkSection = this.addLinkSection(div);
+		// --- Options section ---
+		var optSection = document.createElement('div');
+		optSection.className = 'geDialogSection';
+
+		var linkSection = this.addLinkSection(optSection);
 
 		var themeSelect = document.createElement('select');
 		themeSelect.style.maxWidth = '260px';
-		themeSelect.style.marginLeft = '8px';
-		themeSelect.style.marginTop = '16px';
 
 		var lightOption = document.createElement('option');
 		lightOption.setAttribute('value', 'light');
@@ -7111,46 +7668,74 @@
 		darkOption.setAttribute('value', 'dark');
 		mxUtils.write(darkOption, mxResources.get('dark'));
 		themeSelect.appendChild(darkOption);
-		
+
 		var autoOption = document.createElement('option');
 		autoOption.setAttribute('value', 'auto');
 		mxUtils.write(autoOption, mxResources.get('automatic'));
 		autoOption.setAttribute('selected', 'selected');
 		themeSelect.appendChild(autoOption);
-		autoOption.setAttribute('selected', 'selected');
 
-		mxUtils.write(div, mxResources.get('appearance') + ':');
-		div.appendChild(themeSelect);
-		mxUtils.br(div);
-		h += 26;
+		var themeRow = document.createElement('div');
+		themeRow.className = 'geDialogFormRow';
+		var themeLbl = document.createElement('span');
+		themeLbl.className = 'geDialogFormLabel';
+		mxUtils.write(themeLbl, mxResources.get('appearance') + ':');
+		themeRow.appendChild(themeLbl);
+		themeRow.appendChild(themeSelect);
+		optSection.appendChild(themeRow);
 
-		var zoom = this.addCheckbox(div, mxResources.get('zoom'), true, null, true);
-		mxUtils.write(div, ':');
-		
+		var zoomRow = document.createElement('div');
+		zoomRow.className = 'geDialogCheckRow';
+		var zoom = document.createElement('input');
+		zoom.setAttribute('type', 'checkbox');
+		zoom.setAttribute('checked', 'checked');
+		zoom.defaultChecked = true;
+		zoom.style.marginRight = '8px';
+		zoomRow.appendChild(zoom);
+		var zoomLabel = document.createElement('label');
+		mxUtils.write(zoomLabel, mxResources.get('zoom') + ':');
+		zoomRow.appendChild(zoomLabel);
 		var zoomInput = document.createElement('input');
 		zoomInput.setAttribute('type', 'text');
-		zoomInput.style.marginRight = '16px';
 		zoomInput.style.width = '60px';
 		zoomInput.style.marginLeft = '4px';
-		zoomInput.style.marginRight = '12px';
 		zoomInput.value = '100%';
-		div.appendChild(zoomInput);
+		zoomRow.appendChild(zoomInput);
+		optSection.appendChild(zoomRow);
 
-		var fit = this.addCheckbox(div, mxResources.get('fit'), true);
+		var fit = this.addCheckbox(optSection, mxResources.get('fit'),
+			true, null, null, null, null, null, true);
 		var hasPages = this.pages != null && this.pages.length > 1;
-		var allPages = allPages = this.addCheckbox(div, mxResources.get('allPages'), hasPages, !hasPages);
-		var layers = this.addCheckbox(div, mxResources.get('layers'), true);
-		var tags = this.addCheckbox(div, mxResources.get('tags'), true);
-		var lightbox = this.addCheckbox(div, mxResources.get('lightbox'), true);
+		var allPages = this.addCheckbox(optSection, mxResources.get('allPages'),
+			hasPages, !hasPages, null, null, null, null, true);
+		var layers = this.addCheckbox(optSection, mxResources.get('layers'),
+			true, null, null, null, null, null, true);
+		var tags = this.addCheckbox(optSection, mxResources.get('tags'),
+			true, null, null, null, null, null, true);
+		var useTagSettings = this.addCheckbox(optSection, mxResources.get('useCurrentSettings'),
+			true, null, null, null, null, null, true);
+		useTagSettings.checkRow.style.paddingLeft = '24px';
+		var lightbox = this.addCheckbox(optSection, mxResources.get('lightbox'),
+			true, null, null, null, null, null, true);
+
+		mxEvent.addListener(tags, 'change', function()
+		{
+			if (tags.checked)
+			{
+				useTagSettings.removeAttribute('disabled');
+			}
+			else
+			{
+				useTagSettings.setAttribute('disabled', 'disabled');
+			}
+		});
 
 		var editSection = null;
 
 		if (EditorUi.enableHtmlEditOption)
 		{
-			editSection = this.addEditButton(div, lightbox);
+			editSection = this.addEditButton(optSection, lightbox);
 			var edit = editSection.getEditInput();
-			edit.style.marginBottom = '16px';
-			h += 50;
 
 			mxEvent.addListener(lightbox, 'change', function()
 			{
@@ -7162,7 +7747,7 @@
 				{
 					edit.setAttribute('disabled', 'disabled');
 				}
-				
+
 				if (edit.checked && lightbox.checked)
 				{
 					editSection.getEditSelect().removeAttribute('disabled');
@@ -7174,14 +7759,17 @@
 			});
 		}
 
+		div.appendChild(optSection);
+
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
 		{
 			fn((publicUrlRadio.checked) ? publicUrl : null, zoom.checked, zoomInput.value, linkSection.getTarget(),
 				linkSection.getColor(), fit.checked, allPages.checked, layers.checked, tags.checked,
 				lightbox.checked, (editSection != null) ? editSection.getLink() : null,
-				(themeSelect != null) ? themeSelect.value : null);
+				(themeSelect != null) ? themeSelect.value : null,
+				tags.checked && useTagSettings.checked);
 		}), null, btnLabel, helpLink);
-		this.showDialog(dlg.container, 340, h, true, true);
+		this.showDialog(dlg.container, 360, null, true, true);
 		copyRadio.focus();
 	};
 	
@@ -7199,12 +7787,11 @@
 		mxUtils.write(hd, title || mxResources.get('publish'));
 		hd.style.width = '100%';
 		hd.style.textAlign = 'center';
-		hd.style.marginTop = '2px';
-		hd.style.marginBottom = '20px';
+		hd.style.marginTop = '0px';
+		hd.style.marginBottom = '10px';
 		div.appendChild(hd);
 		
 		var linkSelect = document.createElement('select');
-		var dy = 30;
 
 		linkSelect.className = 'geBtn';
 		linkSelect.style.marginBottom = '8px';
@@ -7251,52 +7838,54 @@
 		div.appendChild(linkSelect);
 		mxUtils.br(div);
 		linkSelect.focus();
-		
+
+		// --- Options section ---
+		var optSection = document.createElement('div');
+		optSection.className = 'geDialogSection';
+
 		var widthInput = null;
 		var heightInput = null;
-		
+
 		if (width != null || height != null)
 		{
-			dy += 30;
-			mxUtils.write(div, mxResources.get('width') + ':');
+			var dimRow = document.createElement('div');
+			dimRow.className = 'geDialogInlineFields';
 
+			var dimField = document.createElement('div');
+			dimField.className = 'geDialogInlineField';
+			var wLbl = document.createElement('label');
+			mxUtils.write(wLbl, mxResources.get('width') + ':');
+			dimField.appendChild(wLbl);
 			widthInput = document.createElement('input');
 			widthInput.setAttribute('type', 'text');
-			widthInput.style.marginRight = '16px';
-			widthInput.style.width = '50px';
-			widthInput.style.marginLeft = '6px';
-			widthInput.style.marginRight = '16px';
-			widthInput.style.marginBottom = '10px';
 			widthInput.value = '100%';
-			
-			div.appendChild(widthInput);
+			dimField.appendChild(widthInput);
+			dimRow.appendChild(dimField);
 
-			mxUtils.write(div, mxResources.get('height') + ':');
-			
+			dimField = document.createElement('div');
+			dimField.className = 'geDialogInlineField';
+			var hLbl = document.createElement('label');
+			mxUtils.write(hLbl, mxResources.get('height') + ':');
+			dimField.appendChild(hLbl);
 			heightInput = document.createElement('input');
 			heightInput.setAttribute('type', 'text');
-			heightInput.style.width = '50px';
-			heightInput.style.marginLeft = '6px';
-			heightInput.style.marginBottom = '10px';
 			heightInput.value = height + 'px';
-			
-			div.appendChild(heightInput);
-			mxUtils.br(div);
+			dimField.appendChild(heightInput);
+			dimRow.appendChild(dimField);
+
+			optSection.appendChild(dimRow);
 		}
-		
-		var linkSection = this.addLinkSection(div, showFrameOption);
+
+		var linkSection = this.addLinkSection(optSection, showFrameOption);
 
 		var transparent = (!showBackgroundOption) ? null :
-			this.addCheckbox(div, mxResources.get('transparentBackground'), false);
+			this.addCheckbox(optSection, mxResources.get('transparentBackground'),
+				false, null, null, null, null, null, true);
 
-		if (transparent != null)
-		{
-			dy += 20;
-		}
+
 
 		var allPagesSelect = document.createElement('select');
 		allPagesSelect.className = 'geBtn';
-		allPagesSelect.style.marginTop = '8px';
 
 		var allPagesOption = document.createElement('option');
 		mxUtils.write(allPagesOption, mxResources.get('allPages'));
@@ -7313,7 +7902,6 @@
 		if (this.pages != null && this.currentPage != null &&
 			this.getPageIndex(this.currentPage) > 0)
 		{
-			dy += 30;
 			var name = (this.currentPage != null) ? this.currentPage.getName() : '';
 
 			if (name.length > 16)
@@ -7323,20 +7911,23 @@
 
 			if (showAllPagesOption)
 			{
-				mxUtils.write(div, mxResources.get('pages') + ':');
-				div.appendChild(allPagesSelect);
-				mxUtils.br(div);
-				dy += 30;
+				var pagesRow = document.createElement('div');
+				pagesRow.className = 'geDialogFormRow';
+				var pagesLbl = document.createElement('span');
+				pagesLbl.className = 'geDialogFormLabel';
+				mxUtils.write(pagesLbl, mxResources.get('pages') + ':');
+				pagesRow.appendChild(pagesLbl);
+				pagesRow.appendChild(allPagesSelect);
+				optSection.appendChild(pagesRow);
 			}
 
-			currentPage = this.addCheckbox(div, mxResources.get('selectedPage') + ': ' + name);
+			currentPage = this.addCheckbox(optSection, mxResources.get('selectedPage') + ': ' + name,
+				null, null, null, null, null, null, true);
 		}
 
 		var themeSelect = document.createElement('select');
 		themeSelect.style.maxWidth = '260px';
-		themeSelect.style.marginLeft = '8px';
-		themeSelect.style.marginTop = '16px';
-		
+
 		var lightOption = document.createElement('option');
 		lightOption.setAttribute('value', '0');
 		mxUtils.write(lightOption, mxResources.get('light'));
@@ -7346,7 +7937,7 @@
 		darkOption.setAttribute('value', '1');
 		mxUtils.write(darkOption, mxResources.get('dark'));
 		themeSelect.appendChild(darkOption);
-		
+
 		var autoOption = document.createElement('option');
 		autoOption.setAttribute('value', 'auto');
 		mxUtils.write(autoOption, mxResources.get('automatic'));
@@ -7355,33 +7946,52 @@
 
 		if (showDarkModeOption)
 		{
-			mxUtils.write(div, mxResources.get('appearance') + ':');
-			div.appendChild(themeSelect);
-			mxUtils.br(div);
-			dy += 30;
+			var themeRow = document.createElement('div');
+			themeRow.className = 'geDialogFormRow';
+			var themeLbl = document.createElement('span');
+			themeLbl.className = 'geDialogFormLabel';
+			mxUtils.write(themeLbl, mxResources.get('appearance') + ':');
+			themeRow.appendChild(themeLbl);
+			themeRow.appendChild(themeSelect);
+			optSection.appendChild(themeRow);
 		}
 
-		var lightbox = this.addCheckbox(div, mxResources.get('lightbox'),
-			true, null, null, !showFrameOption);
-		var editSection = this.addEditButton(div, lightbox);
+		var lightbox = this.addCheckbox(optSection, mxResources.get('lightbox'),
+			true, null, null, !showFrameOption, null, null, true);
+		var editSection = this.addEditButton(optSection, lightbox);
 		var edit = editSection.getEditInput();
 
 		// Cannot disable lightbox in iframes
-		if (showFrameOption)
+		if (showFrameOption && lightbox.checkRow != null)
 		{
-			edit.style.marginLeft = lightbox.style.marginLeft;
-			lightbox.style.display = 'none';
-			dy -= 20;
+			lightbox.checkRow.style.display = 'none';
 		}
-		
-		var layers = this.addCheckbox(div, mxResources.get('layers'), true);
-		layers.style.marginLeft = edit.style.marginLeft;
-		layers.style.marginTop = '8px';
-		
-		var tags = this.addCheckbox(div, mxResources.get('tags'), true);
-		tags.style.marginLeft = edit.style.marginLeft;
-		tags.style.marginBottom = '16px';
-		tags.style.marginTop = '16px';
+
+		var layers = this.addCheckbox(optSection, mxResources.get('layers'),
+			true, null, null, null, null, null, true);
+		layers.checkRow.style.paddingLeft = '24px';
+
+		var tags = this.addCheckbox(optSection, mxResources.get('tags'),
+			true, null, null, null, null, null, true);
+		tags.checkRow.style.paddingLeft = '24px';
+
+		var useTagSettings = this.addCheckbox(optSection, mxResources.get('useCurrentSettings'),
+			true, null, null, null, null, null, true);
+		useTagSettings.checkRow.style.paddingLeft = '48px';
+
+		div.appendChild(optSection);
+
+		mxEvent.addListener(tags, 'change', function()
+		{
+			if (tags.checked)
+			{
+				useTagSettings.removeAttribute('disabled');
+			}
+			else
+			{
+				useTagSettings.setAttribute('disabled', 'disabled');
+			}
+		});
 
 		mxEvent.addListener(lightbox, 'change', function()
 		{
@@ -7390,14 +8000,20 @@
 				layers.removeAttribute('disabled');
 				edit.removeAttribute('disabled');
 				tags.removeAttribute('disabled');
+
+				if (tags.checked)
+				{
+					useTagSettings.removeAttribute('disabled');
+				}
 			}
 			else
 			{
 				layers.setAttribute('disabled', 'disabled');
 				edit.setAttribute('disabled', 'disabled');
 				tags.setAttribute('disabled', 'disabled');
+				useTagSettings.setAttribute('disabled', 'disabled');
 			}
-			
+
 			if (edit.checked && lightbox.checked)
 			{
 				editSection.getEditSelect().removeAttribute('disabled');
@@ -7407,7 +8023,7 @@
 				editSection.getEditSelect().setAttribute('disabled', 'disabled');
 			}
 		});
-		
+
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
 		{
 			fn(linkSection.getTarget(), linkSection.getColor(),
@@ -7417,9 +8033,10 @@
 				(heightInput != null) ? heightInput.value : null,
 				tags.checked, linkSelect.value, (transparent != null) ?
 				transparent.checked : false, themeSelect.value,
-				allPagesSelect.value == 'allPages');
+				allPagesSelect.value == 'allPages',
+				tags.checked && useTagSettings.checked);
 		}), null, mxResources.get('create'), helpLink, footer);
-		this.showDialog(dlg.container, 340, 296 + dy, true, true);
+		this.showDialog(dlg.container, 360, null, true, true);
 		
 		if (widthInput != null)
 		{
@@ -7450,57 +8067,66 @@
 		
 		var hd = document.createElement('h3');
 		mxUtils.write(hd, mxResources.get('image'));
-		hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:' + (showZoomBorder? '10' : '4') +'px';
+		hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px';
 		div.appendChild(hd);
 
 		if (showZoomBorder)
 		{
-			mxUtils.write(div, mxResources.get('zoom') + ':');
+			var dimSection = document.createElement('div');
+			dimSection.className = 'geDialogSection';
+
+			var formRow = document.createElement('div');
+			formRow.className = 'geDialogFormRow';
+			var zoomLbl = document.createElement('span');
+			zoomLbl.className = 'geDialogFormLabel';
+			mxUtils.write(zoomLbl, mxResources.get('zoom') + ':');
+			formRow.appendChild(zoomLbl);
 			var zoomInput = document.createElement('input');
 			zoomInput.setAttribute('type', 'text');
-			zoomInput.style.marginRight = '16px';
-			zoomInput.style.width = '60px';
-			zoomInput.style.marginLeft = '4px';
-			zoomInput.style.marginRight = '12px';
 			zoomInput.value = this.lastExportZoom || '100%';
-			div.appendChild(zoomInput);
-			
-			mxUtils.write(div, mxResources.get('borderWidth') + ':');
+			formRow.appendChild(zoomInput);
+			dimSection.appendChild(formRow);
+
+			formRow = document.createElement('div');
+			formRow.className = 'geDialogFormRow';
+			var borderLbl = document.createElement('span');
+			borderLbl.className = 'geDialogFormLabel';
+			mxUtils.write(borderLbl, mxResources.get('borderWidth') + ':');
+			formRow.appendChild(borderLbl);
 			var borderInput = document.createElement('input');
 			borderInput.setAttribute('type', 'text');
-			borderInput.style.marginRight = '16px';
-			borderInput.style.width = '60px';
-			borderInput.style.marginLeft = '4px';
 			borderInput.value = this.lastExportBorder || '0';
-			div.appendChild(borderInput);
-			mxUtils.br(div);
+			formRow.appendChild(borderInput);
+			dimSection.appendChild(formRow);
+
+			div.appendChild(dimSection);
 		}
 		
-		var selection = this.addCheckbox(div, mxResources.get('selectionOnly'), false,
+		var optSection = document.createElement('div');
+		optSection.className = 'geDialogSection';
+
+		var selection = this.addCheckbox(optSection, mxResources.get('selectionOnly'), false,
 			this.editor.graph.isSelectionEmpty());
 		var include = (hideInclude) ? null :
-			this.addCheckbox(div, mxResources.get('includeCopyOfMyDiagram'),
+			this.addCheckbox(optSection, mxResources.get('includeCopyOfMyDiagram'),
 				Editor.defaultIncludeDiagram);
-		
+
 		var graph = this.editor.graph;
 		var transparent = (hideInclude) ? null :
-			this.addCheckbox(div, mxResources.get('transparentBackground'),
+			this.addCheckbox(optSection, mxResources.get('transparentBackground'),
 				graph.background == mxConstants.NONE || graph.background == null);
 
-		if (transparent != null)
-		{
-			transparent.style.marginBottom = '16px';
-		}
-		
+		div.appendChild(optSection);
+
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
 		{
 			var scale = parseInt(zoomInput.value) / 100 || 1;
 			var border = parseInt(borderInput.value) || 0;
-			
+
 			callback(!selection.checked, (include != null) ? include.checked : false,
 				(transparent != null) ? transparent.checked : false, scale, border);
 		}), null, btnLabel, helpLink);
-		this.showDialog(dlg.container, 300, (showZoomBorder? 25 : 0) + (hideInclude ? 125 : 210), true, true);
+		this.showDialog(dlg.container, 340, null, true, true);
 	};
 	
 	/**
@@ -7514,45 +8140,54 @@
 		var div = document.createElement('div');
 		div.style.whiteSpace = 'nowrap';
 		var graph = this.editor.graph;
-		var height = (format == 'jpeg' || format == 'webp') ? 220 : 320;
-		
+
 		var hd = document.createElement('h3');
 		mxUtils.write(hd, title);
 		hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px';
 		div.appendChild(hd);
 
-		mxUtils.write(div, mxResources.get('zoom') + ':');
+		// --- Dimensions section ---
+		var dimSection = document.createElement('div');
+		dimSection.className = 'geDialogSection';
+
+		var formRow = document.createElement('div');
+		formRow.className = 'geDialogFormRow';
+		var zoomLbl = document.createElement('span');
+		zoomLbl.className = 'geDialogFormLabel';
+		mxUtils.write(zoomLbl, mxResources.get('zoom') + ':');
+		formRow.appendChild(zoomLbl);
 		var zoomInput = document.createElement('input');
 		zoomInput.setAttribute('type', 'text');
-		zoomInput.style.marginRight = '16px';
-		zoomInput.style.width = '60px';
-		zoomInput.style.marginLeft = '4px';
-		zoomInput.style.marginRight = '12px';
 		zoomInput.value = this.lastExportZoom || '100%';
-		div.appendChild(zoomInput);
-		
-		mxUtils.write(div, mxResources.get('borderWidth') + ':');
+		formRow.appendChild(zoomInput);
+		dimSection.appendChild(formRow);
+
+		formRow = document.createElement('div');
+		formRow.className = 'geDialogFormRow';
+		var borderLbl = document.createElement('span');
+		borderLbl.className = 'geDialogFormLabel';
+		mxUtils.write(borderLbl, mxResources.get('borderWidth') + ':');
+		formRow.appendChild(borderLbl);
 		var borderInput = document.createElement('input');
 		borderInput.setAttribute('type', 'text');
-		borderInput.style.marginRight = '16px';
-		borderInput.style.width = '60px';
-		borderInput.style.marginLeft = '4px';
 		borderInput.value = this.lastExportBorder || '0';
-		div.appendChild(borderInput);
-		mxUtils.br(div);
+		formRow.appendChild(borderInput);
+		dimSection.appendChild(formRow);
 
-		var selection = this.addCheckbox(div, mxResources.get('selectionOnly'),
+		div.appendChild(dimSection);
+
+		// --- Options section ---
+		var optSection = document.createElement('div');
+		optSection.className = 'geDialogSection';
+
+		var selection = this.addCheckbox(optSection, mxResources.get('selectionOnly'),
 			false, graph.isSelectionEmpty());
 
 		var cb6 = document.createElement('input');
-		cb6.style.marginTop = '16px';
-		cb6.style.marginRight = '8px';
-		cb6.style.marginLeft = '24px';
 		cb6.setAttribute('disabled', 'disabled');
 		cb6.setAttribute('type', 'checkbox');
 
 		var exportSelect = document.createElement('select');
-		exportSelect.style.marginTop = '16px';
 		exportSelect.style.marginLeft = '8px';
 
 		var sizes = ['selectionOnly', 'diagram', 'page'];
@@ -7572,10 +8207,15 @@
 
 		if (exportOption)
 		{
-			mxUtils.write(div, mxResources.get('size') + ':');
-			div.appendChild(exportSelect);
-			mxUtils.br(div);
-			height += 26;
+			var sizeRow = document.createElement('div');
+			sizeRow.className = 'geDialogFormRow';
+			var sizeLbl = document.createElement('span');
+			sizeLbl.className = 'geDialogFormLabel';
+			mxUtils.write(sizeLbl, mxResources.get('size') + ':');
+			sizeRow.appendChild(sizeLbl);
+			exportSelect.style.marginLeft = '0';
+			sizeRow.appendChild(exportSelect);
+			optSection.appendChild(sizeRow);
 
 			mxEvent.addListener(exportSelect, 'change', function()
 			{
@@ -7587,12 +8227,15 @@
 		}
 		else if (cropOption)
 		{
-			div.appendChild(cb6);
-			mxUtils.write(div, mxResources.get('crop'));
-			mxUtils.br(div);
-			
-			height += 30;
-			
+			var cropRow = document.createElement('div');
+			cropRow.className = 'geDialogCheckRow';
+			cropRow.style.marginTop = '8px';
+			cropRow.appendChild(cb6);
+			var cropLbl = document.createElement('label');
+			mxUtils.write(cropLbl, mxResources.get('crop'));
+			cropRow.appendChild(cropLbl);
+			optSection.appendChild(cropRow);
+
 			mxEvent.addListener(selection, 'change', function()
 			{
 				if (selection.checked)
@@ -7613,7 +8256,6 @@
 				selection.style.display = 'none';
 				selection.nextSibling.style.display = 'none';
 				selection.nextSibling.nextSibling.style.display = 'none';
-				height -= 30;
 			}
 		}
 		else
@@ -7636,13 +8278,11 @@
 		}
 				
 		var defaultTransparent = false; /*graph.background == mxConstants.NONE || graph.background == null*/;
-		var transparent = this.addCheckbox(div, mxResources.get('transparentBackground'),
+		var transparent = this.addCheckbox(optSection, mxResources.get('transparentBackground'),
 			defaultTransparent, null, null, format != 'jpeg' && format != 'webp');
 
 		var themeSelect = document.createElement('select');
 		themeSelect.style.maxWidth = '260px';
-		themeSelect.style.marginLeft = '8px';
-		themeSelect.style.marginTop = '16px';
 
 		var lightOption = document.createElement('option');
 		lightOption.setAttribute('value', 'light');
@@ -7653,7 +8293,7 @@
 		darkOption.setAttribute('value', 'dark');
 		mxUtils.write(darkOption, mxResources.get('dark'));
 		themeSelect.appendChild(darkOption);
-		
+
 		if (format == 'svg' && mxUtils.lightDarkColorSupported)
 		{
 			var autoOption = document.createElement('option');
@@ -7671,30 +8311,41 @@
 			lightOption.setAttribute('selected', 'selected');
 		}
 
-		mxUtils.write(div, mxResources.get('appearance') + ':');
-		div.appendChild(themeSelect);
-		mxUtils.br(div);
-		height += 26;
-		
-		var shadow = this.addCheckbox(div, mxResources.get('shadow'), graph.shadowVisible);
-				
+		var themeRow = document.createElement('div');
+		themeRow.className = 'geDialogFormRow';
+		var themeLbl = document.createElement('span');
+		themeLbl.className = 'geDialogFormLabel';
+		mxUtils.write(themeLbl, mxResources.get('appearance') + ':');
+		themeRow.appendChild(themeLbl);
+		themeRow.appendChild(themeSelect);
+		optSection.appendChild(themeRow);
+
+		var shadow = this.addCheckbox(optSection, mxResources.get('shadow'), graph.shadowVisible);
+
 		var grid = null;
-		
+
 		if (format == 'png' || format == 'jpeg' || format == 'webp')
 		{
-			grid = this.addCheckbox(div, mxResources.get('grid'), false,
-				this.isOffline() || !Editor.canvasSupported, false, true); 
-			height += 30;
+			grid = this.addCheckbox(optSection, mxResources.get('grid'), false,
+				this.isOffline() || !Editor.canvasSupported, false, true);
 		}
+
+		div.appendChild(optSection);
+
+		// --- Embed section ---
+		var embedSection = document.createElement('div');
+		embedSection.className = 'geDialogSection';
+		var hasEmbedContent = false;
 		
 		var pageCount = (this.pages != null) ? this.pages.length : 1;
-		var include = this.addCheckbox(div, mxResources.get('includeCopyOfMyDiagram') +
+		var include = this.addCheckbox(embedSection, mxResources.get('includeCopyOfMyDiagram') +
 			((pageCount > 1) ? ':' : ''), defaultInclude, null, null,
-			format != 'jpeg' && format != 'webp');
-		
+			format != 'jpeg' && format != 'webp', null, null, true);
+
+		if (format != 'jpeg' && format != 'webp') hasEmbedContent = true;
+
 		var includeSelect = document.createElement('select');
 		includeSelect.style.maxWidth = '260px';
-		includeSelect.style.marginLeft = '28px';
 
 		if (format == 'png' || format == 'svg')
 		{
@@ -7707,18 +8358,13 @@
 			includeCurrentPageOption.setAttribute('value', 'currentPage');
 			mxUtils.write(includeCurrentPageOption, mxResources.get('currentPage'));
 			includeSelect.appendChild(includeCurrentPageOption);
-			
+
 			if (pageCount > 1)
 			{
-				include.style.marginBottom = '12px';
-				includeSelect.style.marginBottom = '16px';
-				div.appendChild(includeSelect);
-				mxUtils.br(div);
-				height += 20;
-			}
-			else
-			{
-				include.style.marginBottom = '16px';
+				var includeSelectRow = document.createElement('div');
+				includeSelectRow.style.paddingLeft = '24px';
+				includeSelectRow.appendChild(includeSelect);
+				embedSection.appendChild(includeSelectRow);
 			}
 
 			if (this.lastEmbedInclude != null)
@@ -7741,51 +8387,46 @@
 			mxEvent.addListener(include, 'change', updateIncludeSelect);
 			updateIncludeSelect();
 		}
-		else
-		{
-			include.style.marginBottom = '16px';
-		}
 		
 		var cb5 = document.createElement('input');
-		cb5.style.marginBottom = '16px';
-		cb5.style.marginRight = '8px';
 		cb5.setAttribute('type', 'checkbox');
 		cb5.id = 'geCheckbox-' + Editor.guid();
 
 		var cb7 = document.createElement('input');
-		cb7.style.marginBottom = '16px';
-		cb7.style.marginRight = '8px';
 		cb7.setAttribute('type', 'checkbox');
 		cb7.id = 'geCheckbox-' + Editor.guid();
-		
+
 		if (embedOption)
 		{
 			cb5.checked = (this.lastEmbedImages != null) ?
 				this.lastEmbedImages : true;
-			div.appendChild(cb5);
 
+			var embedImgRow = document.createElement('div');
+			embedImgRow.className = 'geDialogCheckRow';
+			embedImgRow.appendChild(cb5);
 			var lbl = document.createElement('label');
 			mxUtils.write(lbl, mxResources.get('embedImages'));
 			lbl.setAttribute('for', cb5.id);
-			div.appendChild(lbl);
-			mxUtils.br(div);
+			embedImgRow.appendChild(lbl);
+			embedSection.appendChild(embedImgRow);
 
 			cb7.checked = (this.lastEmbedFonts != null) ?
 				this.lastEmbedImages : true;
-			div.appendChild(cb7);
 
+			var embedFontRow = document.createElement('div');
+			embedFontRow.className = 'geDialogCheckRow';
+			embedFontRow.appendChild(cb7);
 			var lbl = document.createElement('label');
 			mxUtils.write(lbl, mxResources.get('embedFonts'));
 			lbl.setAttribute('for', cb7.id);
-			div.appendChild(lbl);
-			mxUtils.br(div);
-			
-			height += 50;
+			embedFontRow.appendChild(lbl);
+			embedSection.appendChild(embedFontRow);
+
+			hasEmbedContent = true;
 		}
 
 		var linkSelect = document.createElement('select');
 		linkSelect.style.maxWidth = '260px';
-		linkSelect.style.marginLeft = '8px';
 
 		var autoOption = document.createElement('option');
 		autoOption.setAttribute('value', 'auto');
@@ -7807,15 +8448,24 @@
 		mxUtils.write(linkLost, mxResources.get('LinksLost'));
 		linkLost.style.margin = '7px';
 		linkLost.style.display = 'none';
-		
+
 		if (format == 'svg')
 		{
-			mxUtils.write(div, mxResources.get('links') + ':');
-			div.appendChild(linkSelect);
-			div.appendChild(linkLost);
-			mxUtils.br(div);
-			mxUtils.br(div);
-			height += 50;
+			var linksRow = document.createElement('div');
+			linksRow.className = 'geDialogFormRow';
+			var linksLbl = document.createElement('span');
+			linksLbl.className = 'geDialogFormLabel';
+			mxUtils.write(linksLbl, mxResources.get('links') + ':');
+			linksRow.appendChild(linksLbl);
+			linksRow.appendChild(linkSelect);
+			embedSection.appendChild(linksRow);
+			embedSection.appendChild(linkLost);
+			hasEmbedContent = true;
+		}
+
+		if (hasEmbedContent)
+		{
+			div.appendChild(embedSection);
 		}
 
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
@@ -7833,7 +8483,7 @@
 				(themeSelect != null) ? themeSelect.value : null,
 				exportSelect.value, cb7.checked);
 		}), null, btnLabel, helpLink);
-		this.showDialog(dlg.container, 340, height, true, true, null, null, null, null, true);
+		this.showDialog(dlg.container, 360, null, true, true, null, null, null, null, true);
 		zoomInput.focus();
 		
 		if (mxClient.IS_GC || mxClient.IS_FF || document.documentMode >= 5)
@@ -7852,31 +8502,38 @@
 	EditorUi.prototype.showEmbedImageDialog = function(fn, title, imageLabel, shadowEnabled, helpLink)
 	{
 		var div = document.createElement('div');
-		div.style.whiteSpace = 'nowrap';
 		var graph = this.editor.graph;
-		
+
 		if (title != null)
 		{
 			var hd = document.createElement('h3');
 			mxUtils.write(hd, title);
-			hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:4px';
+			hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px';
 			div.appendChild(hd);
 		}
-		
-		var fit = this.addCheckbox(div, mxResources.get('fit'), true);
-		var shadow = this.addCheckbox(div, mxResources.get('shadow'),
-			graph.shadowVisible && shadowEnabled, !shadowEnabled);
-		var image = this.addCheckbox(div, imageLabel);
-		var lightbox = this.addCheckbox(div, mxResources.get('lightbox'), true);
-		var editSection = this.addEditButton(div, lightbox);
+
+		var optSection = document.createElement('div');
+		optSection.className = 'geDialogSection';
+
+		var fit = this.addCheckbox(optSection, mxResources.get('fit'), true,
+			null, null, null, null, null, true);
+		var shadow = this.addCheckbox(optSection, mxResources.get('shadow'),
+			graph.shadowVisible && shadowEnabled, !shadowEnabled,
+			null, null, null, null, true);
+		var image = this.addCheckbox(optSection, imageLabel,
+			false, null, null, null, null, null, true);
+		var lightbox = this.addCheckbox(optSection, mxResources.get('lightbox'), true,
+			null, null, null, null, null, true);
+		var editSection = this.addEditButton(optSection, lightbox);
 		var edit = editSection.getEditInput();
-		
+
 		var hasLayers = graph.model.getChildCount(graph.model.getRoot()) > 1;
-		var layers = this.addCheckbox(div, mxResources.get('layers'), hasLayers, !hasLayers);
-		layers.style.marginLeft = edit.style.marginLeft;
-		layers.style.marginBottom = '12px';
-		layers.style.marginTop = '8px';
-		
+		var layers = this.addCheckbox(optSection, mxResources.get('layers'), hasLayers, !hasLayers,
+			null, null, null, null, true);
+		layers.checkRow.style.paddingLeft = '24px';
+
+		div.appendChild(optSection);
+
 		mxEvent.addListener(lightbox, 'change', function()
 		{
 			if (lightbox.checked)
@@ -7885,7 +8542,7 @@
 				{
 					layers.removeAttribute('disabled');
 				}
-				
+
 				edit.removeAttribute('disabled');
 			}
 			else
@@ -7893,7 +8550,7 @@
 				layers.setAttribute('disabled', 'disabled');
 				edit.setAttribute('disabled', 'disabled');
 			}
-			
+
 			if (edit.checked && lightbox.checked)
 			{
 				editSection.getEditSelect().removeAttribute('disabled');
@@ -7903,13 +8560,13 @@
 				editSection.getEditSelect().setAttribute('disabled', 'disabled');
 			}
 		});
-		
+
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
 		{
 			fn(fit.checked, shadow.checked, image.checked, lightbox.checked,
 				editSection.getLink(), layers.checked);
 		}), null, mxResources.get('embed'), helpLink);
-		this.showDialog(dlg.container, 280, 300, true, true);
+		this.showDialog(dlg.container, 280, null, true, true);
 	};
 
 	/**
@@ -8762,6 +9419,11 @@
 		for (var i = 0; i < pages.length; i++)
 		{
 			this.updatePageLinksForCell(mapping, pages[i].root);
+
+			if (pages[i] != this.currentPage)
+			{
+				pages[i].needsUpdate = true;
+			}
 
 			if (pages[i].viewState != null && this.updateBackgroundPageLink(
 				mapping, pages[i].viewState.backgroundImage))
@@ -12596,16 +13258,33 @@
 					
 				    if (files.length > 0)
 				    {
-						if (urlParams['embed'] != '1' && mxEvent.isShiftDown(evt))
+						var isBlankNoUndo = this.isBlankFile() && !this.canUndo();
+						var isDiagramFile = files.length == 1 && (EditorUi.isVisioFilename(files[0].name) ||
+							/(\.drawio)$/i.test(files[0].name) || /(\.xml)$/i.test(files[0].name));
+
+						if (urlParams['embed'] != '1' && isBlankNoUndo &&
+							(isDiagramFile || mxEvent.isShiftDown(evt)))
 						{
-							// Closes current file if blank and no undoable changes
-							if (this.isBlankFile() && !this.canUndo() &&
-								this.getCurrentFile() != null)
+							// Opens file in same window when dropped on unmodified file
+							// Uses noDialogs to prevent fileLoaded(null) from
+							// creating a new blank file asynchronously
+							var file = this.getCurrentFile();
+
+							if (file == null || !file.isModified())
 							{
-								this.fileLoaded(null);
+								this.fileLoaded(null, true);
 							}
 
-							this.openFiles(files, true);
+							// Marks file as changed after loading to trigger draft save
+							this.openFiles(files, true, mxUtils.bind(this, function()
+							{
+								var file = this.getCurrentFile();
+
+								if (file != null)
+								{
+									file.fileChanged();
+								}
+							}));
 						}
 						else
 				    	{
@@ -12614,7 +13293,7 @@
 								x = null;
 								y = null;
 							}
-							
+
 							this.importFiles(files, x, y, this.maxImageSize, null, null, null,
 								null, mxEvent.isControlDown(evt), null, null,
 								mxEvent.isShiftDown(evt), evt);
@@ -12933,6 +13612,11 @@
 			mxSettings.settings.highContrast != null)
 		{
 			this.setHighContrast(mxSettings.settings.highContrast);
+		}
+		else if (window.matchMedia != null &&
+			window.matchMedia('(prefers-contrast: more)').matches)
+		{
+			this.setHighContrast(true);
 		}
 
 		if (Editor.isSettingsEnabled())
@@ -14120,17 +14804,38 @@
 			prevSetLocation.call(this, x, y);
 		};
 
-		// Wrap setSize to prevent resize while docked
+		// Wrap setSize to update dock offsets and re-pin after resize.
+		// When docked, bypass prevSetSize (viewport clamping assumes
+		// rightward/downward growth) and call mxWindow.prototype.setSize
+		// directly; pinToEdge handles positioning.
 		var prevSetSize = wnd.setSize;
 
 		wnd.setSize = function(w, h)
 		{
 			if (this.dockState != null)
 			{
-				return;
-			}
+				mxWindow.prototype.setSize.call(this, w, h);
 
-			prevSetSize.call(this, w, h);
+				// Update dock offsets to reflect new size so that
+				// pinToEdge keeps the correct edges fixed
+				var iw = window.innerWidth || document.documentElement.clientWidth ||
+					document.body.clientWidth;
+				var ih = window.innerHeight || document.documentElement.clientHeight ||
+					document.body.clientHeight;
+				var newW = parseInt(this.div.style.width);
+				var newH = parseInt(this.div.style.height);
+				var x = this.getX();
+				var y = this.getY();
+
+				this._dockOffsetX = this._dockAnchorRight ? (iw - x - newW) : x;
+				this._dockOffsetY = this._dockAnchorBottom ? (ih - y - newH) : y;
+
+				dockManager.pinToEdge(this);
+			}
+			else
+			{
+				prevSetSize.call(this, w, h);
+			}
 		};
 
 		// Dock detection via move events
@@ -14182,6 +14887,121 @@
 			}
 
 			candidateDockZone = null;
+		});
+
+		// Move resize handle to the opposite corner when docked
+		wnd.addListener(mxEvent.DOCK, function(sender, evt)
+		{
+			if (wnd.resize == null)
+			{
+				return;
+			}
+
+			var zone = evt.getProperty('side');
+			var flipX = zone.indexOf('right') >= 0;
+			var flipY = zone.indexOf('bottom') >= 0;
+
+			if (!flipX && !flipY)
+			{
+				return;
+			}
+
+			// Remove existing resize element and its handlers
+			var oldResize = wnd.resize;
+			oldResize.parentNode.removeChild(oldResize);
+			wnd.resize = null;
+
+			// Create new resize element at the opposite corner
+			var resize = document.createElement('img');
+			resize.style.position = 'absolute';
+			resize.style.zIndex = '2';
+			resize.setAttribute('src', mxWindow.prototype.resizeImage);
+
+			if (flipX)
+			{
+				resize.style.left = '0px';
+			}
+			else
+			{
+				resize.style.right = '0px';
+			}
+
+			if (flipY)
+			{
+				resize.style.top = '0px';
+			}
+			else
+			{
+				resize.style.bottom = '0px';
+			}
+
+			resize.style.cursor = (flipX != flipY) ? 'nesw-resize' : 'nwse-resize';
+
+			var startX = null;
+			var startY = null;
+			var width = null;
+			var height = null;
+
+			var start = function(evt)
+			{
+				wnd.activate();
+				startX = mxEvent.getClientX(evt);
+				startY = mxEvent.getClientY(evt);
+				width = wnd.div.offsetWidth;
+				height = wnd.div.offsetHeight;
+
+				mxEvent.addGestureListeners(document, null, dragHandler, dropHandler);
+				wnd.fireEvent(new mxEventObject(mxEvent.RESIZE_START, 'event', evt));
+				mxEvent.consume(evt);
+			};
+
+			var dragHandler = function(evt)
+			{
+				if (startX != null && startY != null)
+				{
+					var dx = mxEvent.getClientX(evt) - startX;
+					var dy = mxEvent.getClientY(evt) - startY;
+
+					wnd.setSize(flipX ? (width - dx) : (width + dx),
+						flipY ? (height - dy) : (height + dy));
+
+					wnd.fireEvent(new mxEventObject(mxEvent.RESIZE, 'event', evt));
+					mxEvent.consume(evt);
+				}
+			};
+
+			var dropHandler = function(evt)
+			{
+				if (startX != null && startY != null)
+				{
+					startX = null;
+					startY = null;
+					mxEvent.removeGestureListeners(document, null, dragHandler, dropHandler);
+					wnd.fireEvent(new mxEventObject(mxEvent.RESIZE_END, 'event', evt));
+					mxEvent.consume(evt);
+				}
+			};
+
+			mxEvent.addGestureListeners(resize, start, dragHandler, dropHandler);
+			wnd.div.appendChild(resize);
+			wnd.resize = resize;
+			wnd._dockResize = true;
+		});
+
+		// Restore default resize handle on undock
+		wnd.addListener(mxEvent.UNDOCK, function(sender, evt)
+		{
+			if (wnd._dockResize)
+			{
+				if (wnd.resize != null)
+				{
+					wnd.resize.parentNode.removeChild(wnd.resize);
+					wnd.resize = null;
+				}
+
+				wnd.setResizable(true);
+				wnd._dockResize = false;
+			}
 		});
 
 		// Re-pin after minimize/normalize changes height
@@ -15606,7 +16426,7 @@
 	};
 
 	/**
-	 * Copies the given cells and XML to the clipboard as an embedded image.
+	 * Copies the given cells to the clipboard as an SVG image.
 	 */
 	EditorUi.prototype.copySvg = function(cells, xml, scale)
 	{
@@ -15618,7 +16438,12 @@
 				var svgRoot = graph.getSvg(null, scale, null, null, null, null,
 					null, null, null, null, null, null, null,
 					(cells.length > 0) ? cells : null);
-				svgRoot.setAttribute('content', xml);
+
+				if (xml != null)
+				{
+					svgRoot.setAttribute('content', xml);
+				}
+
 				var dataUrl = Editor.createSvgDataUri(mxUtils.getXml(svgRoot));
 				var w = parseInt(svgRoot.getAttribute('width'));
 				var h = parseInt(svgRoot.getAttribute('height'));
@@ -15637,7 +16462,7 @@
 	};
 
 	/**
-	 * Copies the given cells and XML to the clipboard as an embedded image.
+	 * Copies the given cells to the clipboard as a PNG image.
 	 */
 	EditorUi.prototype.copyImage = function(cells, xml, scale)
 	{
@@ -15656,11 +16481,11 @@
 						var dataUrl = this.createImageDataUri(canvas, xml, 'png');
 						var w = Math.round(parseInt(svgRoot.getAttribute('width')) / scale);
 						var h = Math.round(parseInt(svgRoot.getAttribute('height')) / scale);
-						
+
 						EditorUi.debug('EditorUi.copyImage', [this],
 							'cells', [cells], 'xml', [xml],
 							'scale', [scale]);
-						
+
 						this.writeImageToClipboard(dataUrl, w, h, 'image/png', null,
 							mxUtils.bind(this, function()
 							{
@@ -16683,33 +17508,8 @@
 	 */
 	EditorUi.prototype.showPrintDialog = function(title, fn, btnTitle)
 	{
-		var h = 330;
-
-		if (this.editor.graph.isEnabled())
-		{
-			h += 40;
-		}
-
-		if (this.pages != null && this.pages.length > 1)
-		{
-			h += 40;
-
-			// Additional height in lightbox for pages
-			if (!this.editor.graph.isEnabled())
-			{
-				h += 10;
-			}
-		}
-
-		// Additional height for include diagram
-		if (fn != null && !mxClient.IS_CHROMEAPP &&
-			this.getServiceName() == 'draw.io')
-		{
-			h += 20;
-		}
-
 		this.showDialog(new PrintDialog(this, title, fn,
-			btnTitle).container, 320, h, true, true);
+			btnTitle).container, 360, null, true, true);
 	};
 
 	/**
@@ -16817,14 +17617,6 @@
 					pv.pageMargin = pageMargin;
 				}
 
-				if (args.selection)
-				{
-					pv.isCellVisible = function(cell)
-					{
-						return thisGraph.isCellSelected(cell);
-					};
-				}
-
 				var writeHead = pv.writeHead;
 
 				// Overridden to add custom fonts
@@ -16905,7 +17697,7 @@
 				pv.addGraphFragment = function(dx, dy, scale, pageNumber, div, clip)
 				{
 					printPreviewAddGraphFragment.apply(this, arguments);
-					
+
 					if (this.graph.mathEnabled)
 					{
 						this.mathEnabled = this.mathEnabled || true;
@@ -16937,11 +17729,28 @@
 						thisGraph.view.gridColor;
 				}
 
+				// Filters cells with hidden tags
+				if (args.selection)
+				{
+					pv.isCellVisible = function(cell)
+					{
+						return thisGraph.isCellSelected(cell) &&
+							thisGraph.isCellVisible(cell);
+					};
+				}
+				else
+				{
+					pv.isCellVisible = function(cell)
+					{
+						return thisGraph.isCellVisible(cell);
+					};
+				}
+
 				pv.open(null, null, forcePageBreaks, true, anchorId, pf,
 					(args.selection) ? thisGraph.getSelectionCells() : null);
 			}
 			else
-			{				
+			{
 				var bg = thisGraph.background;
 				
 				if (bg == null || bg == '' || bg == mxConstants.NONE)
@@ -16959,6 +17768,23 @@
 					pv.gridColor = Editor.isDarkMode() ?
 						mxGraphView.prototype.defaultGridColor :
 						thisGraph.view.gridColor;
+				}
+
+				// Filters cells with hidden tags
+				if (args.selection)
+				{
+					pv.isCellVisible = function(cell)
+					{
+						return thisGraph.isCellSelected(cell) &&
+							thisGraph.isCellVisible(cell);
+					};
+				}
+				else
+				{
+					pv.isCellVisible = function(cell)
+					{
+						return thisGraph.isCellVisible(cell);
+					};
 				}
 
 				pv.appendGraph(thisGraph, scale, x0, y0, forcePageBreaks, true, anchorId, pf,
@@ -17072,6 +17898,7 @@
 						bgImage = page.viewState.backgroundImage;
 						tempGraph.pageFormat = page.viewState.pageFormat;
 						tempGraph.gridSize = page.viewState.gridSize;
+						tempGraph.hiddenTags = page.viewState.hiddenTags || [];
 					}
 
 					// Forces update of background page image in offscreen page
@@ -17172,7 +17999,18 @@
 			}
 			
 			pv.closeDocument();
-			
+
+			// Expands fill patterns to inline geometry for vector PDF output
+			if (Editor.expandPatternsForPrint && pv.wnd != null)
+			{
+				var svgs = pv.wnd.document.getElementsByTagName('svg');
+
+				for (var i = 0; i < svgs.length; i++)
+				{
+					Editor.expandSvgPatterns(svgs[i]);
+				}
+			}
+
 			// Rewrites page links to point to internal anchors
 			Graph.rewritePageLinks(pv.wnd.document, true);
 			
@@ -17439,7 +18277,7 @@
 	/**
 	 * Opens the given files in the editor.
 	 */
-	EditorUi.prototype.openFileHandle = function(data, name, file, temp, fileHandle, editable)
+	EditorUi.prototype.openFileHandle = function(data, name, file, temp, fileHandle, editable, done)
 	{
 		if (name != null && name.length > 0)
 		{
@@ -17474,7 +18312,7 @@
 					{
 						this.openLocalFile(this.emptyDiagramXml, this.defaultFilename, temp);
 					}
-				
+
     				try
 	    			{
     					this.loadLibrary(new LocalLibrary(this, xml, name));
@@ -17487,7 +18325,7 @@
 				}
 				else
 				{
-					this.openLocalFile(xml, name, temp);
+					this.openLocalFile(xml, name, temp, null, null, null, done);
 				}
 			});
 			
@@ -17548,7 +18386,7 @@
 				this.convertLucidChart(data, mxUtils.bind(this, function(xml)
 				{
 					this.spinner.stop();
-					this.openLocalFile(xml, name, temp);
+					this.openLocalFile(xml, name, temp, null, null, null, done);
 				}), mxUtils.bind(this, function(e)
 				{
 					this.spinner.stop();
@@ -17584,7 +18422,7 @@
 				}), mxUtils.bind(this, function()
 				{
 					this.spinner.stop();
-					this.openLocalFile(data, name, temp);
+					this.openLocalFile(data, name, temp, null, null, null, done);
 				}));
 			}
 			else
@@ -17607,7 +18445,7 @@
 				
 				this.spinner.stop();
 				this.openLocalFile(data, name, temp, fileHandle,
-					(fileHandle != null) ? file : null, editable);
+					(fileHandle != null) ? file : null, editable, done);
 			}
 		}
 	};
@@ -17615,7 +18453,7 @@
 	/**
 	 * Opens the given files in the editor.
 	 */
-	EditorUi.prototype.openFiles = function(files, temp)
+	EditorUi.prototype.openFiles = function(files, temp, done)
 	{
 		if (this.spinner.spin(document.body, mxResources.get('loading')))
 		{
@@ -17624,26 +18462,27 @@
 				(mxUtils.bind(this, function(file)
 				{
 					var reader = new FileReader();
-				
+
 					reader.onload = mxUtils.bind(this, function(e)
 					{
 						try
 						{
-							this.openFileHandle(e.target.result, file.name, file, temp);
+							this.openFileHandle(e.target.result, file.name, file,
+								temp, null, null, done);
 						}
 						catch (e)
 						{
 							this.handleError(e);
 						}
 					});
-					
+
 					reader.onerror = mxUtils.bind(this, function(e)
 					{
 						this.spinner.stop();
 						this.handleError(e);
 						window.openFile = null;
 					});
-					
+
 					if ((file.type.substring(0, 5) === 'image' ||
 						file.type === 'application/pdf') &&
 						file.type.substring(0, 9) !== 'image/svg')
@@ -17662,18 +18501,18 @@
 	/**
 	 * Shows the layers dialog if the graph has more than one layer.
 	 */
-	EditorUi.prototype.openLocalFile = function(data, name, temp, fileHandle, desc, editable)
+	EditorUi.prototype.openLocalFile = function(data, name, temp, fileHandle, desc, editable, done)
 	{
 		var currentFile = this.getCurrentFile();
-		
+
 		var fn = mxUtils.bind(this, function()
 		{
 			window.openFile = null;
-			
+
 			if (name == null && this.getCurrentFile() != null && this.isDiagramEmpty())
 			{
 				var doc = mxUtils.parseXml(data);
-				
+
 				if (doc != null)
 				{
 					this.editor.setGraphXml(doc.documentElement);
@@ -17686,16 +18525,22 @@
 					name || this.defaultFilename, temp,
 					fileHandle, desc, editable));
 			}
+
+			if (done != null)
+			{
+				done();
+			}
 		});
 
 		if (data != null && data.length > 0)
 		{
 			if (currentFile == null || (!currentFile.isModified() &&
-				(mxClient.IS_CHROMEAPP || EditorUi.isElectronApp || fileHandle != null)))
+				(mxClient.IS_CHROMEAPP || EditorUi.isElectronApp ||
+				fileHandle != null || this.isDiagramEmpty())))
 			{
 				fn();
 			}
-			else if ((mxClient.IS_CHROMEAPP || EditorUi.isElectronApp || fileHandle != null) &&
+			else if ((mxClient.IS_CHROMEAPP || EditorUi.isElectronApp) &&
 				currentFile != null && currentFile.isModified())
 			{
 				this.confirm(mxResources.get('allChangesLost'), null, fn,
@@ -17707,9 +18552,10 @@
 				{
 					window.openFile = null;
 				});
-				
-				window.openFile.setData(data, name);
-				window.geOpenWindow(this.getUrl(), null, mxUtils.bind(this, function()
+
+				window.openFile.setData(data, name, temp);
+
+				var fallback = mxUtils.bind(this, function()
 				{
 					if (currentFile != null && currentFile.isModified())
 					{
@@ -17720,7 +18566,17 @@
 					{
 						fn();
 					}
-				}));
+				});
+
+				if (urlParams['openInSameWin'] == '1' || navigator.standalone)
+				{
+					fallback();
+				}
+				else
+				{
+					this.showDialog(new PopupDialog(this, this.getUrl(),
+						null, fallback).container, 340, 140, true, true);
+				}
 			}
 		}
 		else
@@ -18074,6 +18930,7 @@
 		var ignoreChange = false;
 		var autosave = false;
 		var lastData = null;
+		var embedShadowPages = null;
 		
 		var updateStatus = mxUtils.bind(this, function(sender, eventObject)
 		{
@@ -18830,6 +19687,10 @@
 					{
 						convertToSketch = data.toSketch;
 						autosave = data.autosave == 1;
+						this.embedDiffSync = data.diffSync != null && data.diffSync !== false;
+						this.embedDiffSyncPatchOnly = (typeof data.diffSync === 'object' &&
+							data.diffSync != null && data.diffSync.patchOnly == true);
+						this.embedExportProtocol = data.exportProtocol == true;
 						var sourceMetadata = data.sourceMetadata || null;
 						this.hideDialog();
 						
@@ -19103,23 +19964,129 @@
 					else if (data.action == 'merge')
 					{
 						var file = this.getCurrentFile();
-						
+
 						if (file != null)
 						{
 							var tmp = extractDiagramXml(data.xml);
 
 							if (tmp != null && tmp != '')
 							{
-								file.mergeFile(new LocalFile(this, tmp), function()
+								file.mergeFile(new LocalFile(this, tmp), mxUtils.bind(this, function()
 								{
+									// Reset shadow after merge when diff sync is enabled
+									if (this.embedDiffSync)
+									{
+										embedShadowPages = this.clonePages(this.pages);
+										lastData = getData();
+									}
+
 									parent.postMessage(JSON.stringify({event: 'merge', message: data}), '*');
-								}, function(err)
+								}), function(err)
 								{
 									parent.postMessage(JSON.stringify({event: 'merge', message: data, error: err}), '*');
 								});
 							}
 						}
-						
+
+						return;
+					}
+					else if (data.action == 'patch')
+					{
+						var file = this.getCurrentFile();
+
+						if (file != null && data.patch != null)
+						{
+							try
+							{
+								ignoreChange = true;
+								file.patch([data.patch]);
+
+								// Update shadow to reflect the patched state
+								if (this.embedDiffSync && embedShadowPages != null)
+								{
+									embedShadowPages = this.applyPatches(
+										embedShadowPages, [data.patch]);
+								}
+
+								lastData = getData();
+								ignoreChange = false;
+
+								// Send acknowledgment with checksum
+								var resp = {event: 'patch', message: data};
+								var currentChecksum = this.getHashValueForPages(this.pages);
+								resp.checksum = currentChecksum;
+
+								if (data.checksum != null && data.checksum != currentChecksum)
+								{
+									resp.checksumMismatch = true;
+								}
+
+								parent.postMessage(JSON.stringify(resp), '*');
+							}
+							catch (e)
+							{
+								ignoreChange = false;
+								parent.postMessage(JSON.stringify({event: 'patch',
+									message: data, error: e.message || e.toString()}), '*');
+							}
+						}
+
+						return;
+					}
+					else if (data.action == 'getDiff')
+					{
+						var msg = {event: 'getDiff', message: data};
+
+						if (this.embedDiffSync && embedShadowPages != null)
+						{
+							var currentPages = this.clonePages(this.pages);
+							msg.patch = this.diffPages(embedShadowPages, currentPages);
+							msg.checksum = this.getHashValueForPages(currentPages);
+						}
+						else
+						{
+							msg.xml = getData();
+						}
+
+						parent.postMessage(JSON.stringify(msg), '*');
+
+						return;
+					}
+					else if (data.action == 'resetDiff')
+					{
+						if (this.embedDiffSync)
+						{
+							if (data.xml != null)
+							{
+								var tmp = extractDiagramXml(data.xml);
+								var file = this.getCurrentFile();
+
+								if (tmp != null && tmp != '' && file != null)
+								{
+									file.mergeFile(new LocalFile(this, tmp), mxUtils.bind(this, function()
+									{
+										embedShadowPages = this.clonePages(this.pages);
+										lastData = getData();
+										parent.postMessage(JSON.stringify({event: 'resetDiff',
+											message: data, checksum: this.getHashValueForPages(
+											this.pages)}), '*');
+									}), function(err)
+									{
+										parent.postMessage(JSON.stringify({event: 'resetDiff',
+											message: data, error: err}), '*');
+									});
+								}
+							}
+							else
+							{
+								embedShadowPages = this.clonePages(this.pages);
+								lastData = getData();
+								parent.postMessage(JSON.stringify({event: 'resetDiff',
+									message: data, checksum: this.getHashValueForPages(
+									this.pages)}), '*');
+							}
+						}
+
 						return;
 					}
 					else if (data.action == 'remoteInvokeReady') 
@@ -19178,21 +20145,55 @@
 
 				lastData = getData();
 
+				// Initialize shadow pages for diff-based sync
+				if (this.embedDiffSync)
+				{
+					embedShadowPages = this.clonePages(this.pages);
+				}
+
 				if (autosave && changeListener == null)
 				{
 					changeListener = mxUtils.bind(this, function(sender, eventObject)
 					{
 						var data = getData();
-						
+
 						if (data != lastData && !ignoreChange)
 						{
 							var msg = this.createLoadMessage('autosave');
-							msg.xml = data;
 							msg.message = message;
+
+							if (this.embedDiffSync && embedShadowPages != null)
+							{
+								var currentPages = this.clonePages(this.pages);
+								var patch = this.diffPages(embedShadowPages, currentPages);
+
+								if (!mxUtils.isEmptyObject(patch))
+								{
+									msg.patch = patch;
+									msg.checksum = this.getHashValueForPages(currentPages);
+
+									if (!this.embedDiffSyncPatchOnly)
+									{
+										msg.xml = data;
+									}
+								}
+								else
+								{
+									// No structural changes but data changed
+									msg.xml = data;
+								}
+
+								embedShadowPages = currentPages;
+							}
+							else
+							{
+								msg.xml = data;
+							}
+
 							var parent = this.embedMessageSource || window.opener || window.parent;
 							parent.postMessage(JSON.stringify(msg), '*');
 						}
-						
+
 						lastData = data;
 					});
 					
@@ -19227,6 +20228,12 @@
 
 					// Attaches XML to response
 					resp.xml = data;
+
+					// Include checksum when diff sync is enabled
+					if (this.embedDiffSync && this.pages != null)
+					{
+						resp.checksum = this.getHashValueForPages(this.pages);
+					}
 
 					parent.postMessage(JSON.stringify(resp), '*');
 				}
