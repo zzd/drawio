@@ -1222,6 +1222,27 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 				rect.width, rect.height, null, null,
 				isect, null, true);
 
+			// Collapses descendants of locked groups into the group itself
+			if (cells != null && cells.length > 0)
+			{
+				var seen = new mxDictionary();
+				var filtered = [];
+
+				for (var i = 0; i < cells.length; i++)
+				{
+					var anc = this.getLockedGroupAncestor(this.model.getParent(cells[i]));
+					var eff = (anc != null) ? anc : cells[i];
+
+					if (!seen.get(eff))
+					{
+						seen.put(eff, true);
+						filtered.push(eff);
+					}
+				}
+
+				cells = filtered;
+			}
+
 			if (this.isToggleEvent(evt))
 			{
 				for (var i = 0; i < cells.length; i++)
@@ -1233,7 +1254,7 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 			{
 				this.selectCellsForEvent(cells, evt);
 			}
-			
+
 			return cells;
 		};
 
@@ -1275,10 +1296,16 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 			return me;
 		};
 
-		// Cells in locked layers are not selectable
+		// Cells in locked layers and descendants of locked groups are not selectable
 		var graphIsCellSelectable = this.isCellSelectable;
 		this.isCellSelectable = function(cell)
 		{
+			if (cell != null && this.getLockedGroupAncestor(
+				this.model.getParent(cell)) != null)
+			{
+				return false;
+			}
+
 			return graphIsCellSelectable.apply(this, arguments) &&
 				!this.isCellLocked(this.getLayerForCell(cell));
 		};
@@ -1409,6 +1436,46 @@ Graph.fileSupport = window.File != null && window.FileReader != null && window.F
 Graph.translateDiagram = urlParams['translate-diagram'] == '1';
 
 /**
+ * Specifies if foreignObject content should be mirrored to a hidden DOM
+ * element so that browser-level translation (e.g. Chrome Translate) can
+ * detect and translate the text. A MutationObserver syncs translated
+ * content back into the foreignObjects. Default is true.
+ */
+Graph.browserTranslate = mxClient.IS_GC && urlParams['browser-translate'] != '0';
+
+/**
+ * Returns true if the browser translation engine is currently active.
+ * Chrome adds "translated-ltr" / "translated-rtl" to <html>.
+ */
+Graph.isBrowserTranslated = function()
+{
+	try
+	{
+		var doc = document;
+
+		try
+		{
+			if (window.parent != window && window.parent.document != null)
+			{
+				doc = window.parent.document;
+			}
+		}
+		catch (e)
+		{
+			// ignore
+		}
+
+		var cls = doc.documentElement.className;
+
+		return cls != null && /\btranslated/.test(cls);
+	}
+	catch (e)
+	{
+		return false;
+	}
+};
+
+/**
  * Shortcut for capability check.
  */
 Graph.diagramLanguage = (urlParams['diagram-language'] != null) ? urlParams['diagram-language'] : mxClient.language;
@@ -1494,6 +1561,14 @@ Graph.textStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'fontSt
 	'horizontal', 'textDirection', 'autosizeText'];
 
 /**
+ * Styles that are used for pasting text styles.
+ */
+Graph.pasteTextStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'fontStyle',
+	'textOpacity', 'align', 'verticalAlign', 'spacingLeft', 'spacingRight',
+	'spacingTop', 'spacingBottom', 'spacing', 'labelBorderColor', 'labelBackgroundColor',
+	'horizontal', 'textDirection'];
+
+/**
  * Styles that are used for edges.
  */
 Graph.edgeStyles = ['edgeStyle', 'elbow', 'jumpStyle', 'jumpSize', 'startArrow',
@@ -1550,8 +1625,7 @@ Graph.newBackgroundPlaceholder = 'rgb(0, 0, 0)';
 /**
  * Default value for adaptiveColors. Default is 'auto'.
  */
-Graph.defaultAdaptiveColors = (window.mxIsElectron ||
-	urlParams['contrast'] == '0') ? 'simple' : 'auto';
+Graph.defaultAdaptiveColors = (urlParams['contrast'] == '0') ? 'simple' : 'auto';
 
 /**
  * Default value for adaptiveColors. Default is 'auto'.
@@ -3110,8 +3184,44 @@ Graph.clipSvgDataUri = function(dataUri)
 									maxStrokeWidths[i].getAttribute('stroke-width')));
 							}
 
+							// Also checks CSS-defined stroke-width
+							var visualElts = svgs[0].querySelectorAll(
+								'rect,circle,ellipse,line,polyline,polygon,path');
+
+							for (var i = 0; i < visualElts.length; i++)
+							{
+								try
+								{
+									var cs = window.getComputedStyle(visualElts[i]);
+
+									if (cs.stroke && cs.stroke !== 'none')
+									{
+										maxStrokeWidth = Math.max(maxStrokeWidth,
+											parseFloat(cs.strokeWidth) || 0);
+									}
+								}
+								catch (e)
+								{
+									// ignore
+								}
+							}
+
 							var size = new mxRectangle(bbox.x, bbox.y, bbox.width, bbox.height);
 							size.grow(maxStrokeWidth / 2);
+
+							// Uses the original viewBox as a lower bound
+							if (vb != null)
+							{
+								var tokens = vb.split(' ');
+
+								if (tokens.length >= 4)
+								{
+									var orig = new mxRectangle(parseFloat(tokens[0]),
+										parseFloat(tokens[1]), parseFloat(tokens[2]),
+										parseFloat(tokens[3]));
+									size.add(orig);
+								}
+							}
 
 							// Clips to the smaller of the given size and the bbox
 							if (!isNaN(w) && !isNaN(h) &&
@@ -3506,13 +3616,23 @@ Graph.prototype.init = function(container)
 	if (this.tooltipHandler != null)
 	{
 		var tooltipHandlerInit = this.tooltipHandler.init;
-		
+
 		this.tooltipHandler.init = function()
 		{
 			tooltipHandlerInit.apply(this, arguments);
-			
+
 			if (this.div != null)
 			{
+				if (Editor.tooltipFontSize != null)
+				{
+					this.div.style.fontSize = Editor.tooltipFontSize + 'px';
+				}
+
+				if (Editor.tooltipMaxWidth > 0)
+				{
+					this.div.style.maxWidth = Editor.tooltipMaxWidth + 'px';
+				}
+
 				mxEvent.addListener(this.div, 'click', mxUtils.bind(this, function(evt)
 				{
 					var source = mxEvent.getSource(evt);
@@ -3534,6 +3654,544 @@ Graph.prototype.init = function(container)
 	}
 
 	this.initLayoutManager();
+};
+
+/**
+ * Waits for the browser translation engine to start before initialising
+ * the full mirror infrastructure. Observes the <html> element for a
+ * "translated-*" class (added by Chrome Translate and similar engines).
+ * If already translated, initialises immediately.
+ */
+Graph.prototype.waitForBrowserTranslate = function()
+{
+	var graph = this;
+
+	if (Graph.isBrowserTranslated())
+	{
+		this.initBrowserTranslate();
+		this.btActive = true;
+		this.activateBrowserTranslate();
+		return;
+	}
+
+	var callback = function()
+	{
+		if (graph.btClassObservers != null && Graph.isBrowserTranslated())
+		{
+			for (var i = 0; i < graph.btClassObservers.length; i++)
+			{
+				graph.btClassObservers[i].disconnect();
+			}
+
+			graph.btClassObservers = null;
+			graph.initBrowserTranslate();
+			graph.btActive = true;
+			graph.activateBrowserTranslate();
+		}
+	};
+
+	this.btClassObservers = [];
+	var opts = { attributes: true, attributeFilter: ['class'] };
+
+	// Always observe the local <html> element
+	var localObs = new MutationObserver(callback);
+	localObs.observe(document.documentElement, opts);
+	this.btClassObservers.push(localObs);
+
+	// In a same-origin iframe also observe the parent <html>
+	try
+	{
+		if (window.parent != window && window.parent.document != null &&
+			window.parent.document.documentElement != document.documentElement)
+		{
+			var parentObs = new MutationObserver(callback);
+			parentObs.observe(window.parent.document.documentElement, opts);
+			this.btClassObservers.push(parentObs);
+		}
+	}
+	catch (e)
+	{
+		// Cross-origin or sandboxed iframe
+	}
+};
+
+/**
+ * Initializes the browser translation mirror. Creates a hidden container
+ * in the regular DOM (outside SVG) and hooks into the rendering pipeline
+ * so that foreignObject HTML content is cloned there. Browser translation
+ * engines can then find and translate the mirrored text. A MutationObserver
+ * syncs changes back into the original foreignObject elements.
+ */
+Graph.prototype.initBrowserTranslate = function()
+{
+	var graph = this;
+
+	// Map from mirror node to the original SVG text node / Text node
+	this.btMirrorMap = new Map();
+
+	// Flag to ignore mutations caused by our own mirror rebuilds
+	this.btRebuilding = false;
+
+	// Hoist mirror into the top-level document when inside a same-origin
+	// iframe so Chrome Translate reliably discovers and translates the
+	// text. Falls back to the current document when cross-origin or
+	// when any security restriction prevents access.
+	var mirrorDoc = document;
+
+	try
+	{
+		if (window.parent != window && window.parent.document != null)
+		{
+			mirrorDoc = window.parent.document;
+		}
+	}
+	catch (e)
+	{
+		// Cross-origin or sandboxed iframe — fall back to local document
+	}
+
+	// Hidden container: positioned offscreen but not display:none
+	// so browser translation engines can detect the content
+	var mirror = mirrorDoc.createElement('div');
+	mirror.id = 'bt-mirror';
+	mirror.setAttribute('aria-hidden', 'true');
+	mirror.style.cssText = 'position:fixed;left:-10000px;' +
+		'top:0;width:1px;overflow:hidden;';
+	mirrorDoc.body.appendChild(mirror);
+	this.btMirrorContainer = mirror;
+
+	// Syncs translated text from a mirror node back to the SVG
+	var syncMirrorMutation = function(mutations)
+	{
+		// Ignore mutations from our own rebuilds
+		if (graph.btRebuilding)
+		{
+			return;
+		}
+
+		// On the first real translation mutation, register the
+		// expensive per-change event listeners for mirror rebuilds.
+		if (!graph.btActive)
+		{
+			graph.btActive = true;
+			graph.activateBrowserTranslate();
+		}
+
+		for (var i = 0; i < mutations.length; i++)
+		{
+			var target = mutations[i].target;
+
+			// Walk up to find the direct child of the mirror container
+			var mirrorChild = target;
+
+			while (mirrorChild != null && mirrorChild.parentNode != null &&
+				mirrorChild.parentNode != graph.btMirrorContainer)
+			{
+				mirrorChild = mirrorChild.parentNode;
+			}
+
+			if (mirrorChild != null)
+			{
+				var original = graph.btMirrorMap.get(mirrorChild);
+
+				if (original != null)
+				{
+					graph.syncTranslationToForeignObject(mirrorChild, original);
+				}
+			}
+		}
+	};
+
+	this.btObserver = new MutationObserver(syncMirrorMutation);
+
+	this.btObserver.observe(mirror,
+	{
+		childList: true,
+		subtree: true,
+		characterData: true
+	});
+
+	// Populate mirror once so Chrome has content to discover
+	this.refreshBrowserTranslateMirror();
+};
+
+/**
+ * Registers per-change event listeners to keep the mirror in sync.
+ * Called on first translation mutation to avoid the overhead when
+ * the browser never translates.
+ */
+Graph.prototype.activateBrowserTranslate = function()
+{
+	// Rebuild mirror after full revalidation
+	this.addListener(mxEvent.SIZE, mxUtils.bind(this, function()
+	{
+		this.refreshBrowserTranslateMirror();
+	}));
+
+	// Rebuild mirror after label edit or cell add
+	var btRefresh = mxUtils.bind(this, function()
+	{
+		this.refreshBrowserTranslateMirror();
+	});
+
+	this.addListener(mxEvent.LABEL_CHANGED, btRefresh);
+	this.addListener(mxEvent.CELLS_ADDED, btRefresh);
+
+	// Refresh after any model change (move, resize, style, etc.)
+	// to pick up recreated SVG text nodes. Deferred so the view
+	// has revalidated before we query the new SVG nodes.
+	this.getModel().addListener(mxEvent.CHANGE, function()
+	{
+		setTimeout(btRefresh, 0);
+	});
+};
+
+/**
+ * Adds mirror spans for an SVG text element or foreignObject div
+ * to the hidden container and stores the references.
+ * For foreignObject divs, each leaf text node is mirrored separately
+ * so that translation and sync happen per-node.
+ */
+Graph.prototype.addBrowserTranslateMirror = function(originalNode)
+{
+	if (this.btMirrorContainer == null)
+	{
+		return;
+	}
+
+	var isForeignObject = originalNode.namespaceURI == 'http://www.w3.org/1999/xhtml';
+
+	if (isForeignObject)
+	{
+		// Mirror each leaf text node separately
+		var walker = document.createTreeWalker(originalNode,
+			NodeFilter.SHOW_TEXT, null, false);
+		var textNode;
+
+		while ((textNode = walker.nextNode()) != null)
+		{
+			var text = textNode.data;
+
+			if (text != null && text.trim().length > 0)
+			{
+				var span = document.createElement('p');
+				span.style.cssText = 'margin:0;';
+				span.textContent = text;
+				span.setAttribute('data-bt-original', text);
+				this.btMirrorContainer.appendChild(span);
+				// Map directly to the text node, not the div
+				this.btMirrorMap.set(span, textNode);
+			}
+		}
+	}
+	else
+	{
+		// SVG text element - single span
+		var text = originalNode.textContent;
+
+		if (text != null && text.length > 0)
+		{
+			var span = document.createElement('p');
+			span.style.cssText = 'margin:0;';
+			span.textContent = text;
+			span.setAttribute('data-bt-original', text);
+			this.btMirrorContainer.appendChild(span);
+			this.btMirrorMap.set(span, originalNode);
+		}
+	}
+};
+
+/**
+ * Copies translated text from a mirror span back into the
+ * original SVG text element or foreignObject div.
+ */
+Graph.prototype.syncTranslationToForeignObject = function(mirrorSpan, originalNode)
+{
+	var newText = mirrorSpan.textContent;
+
+	// originalNode is either a Text node (foreignObject case)
+	// or an SVG text element
+	var oldText = (originalNode.nodeType == 3) ?
+		originalNode.data : originalNode.textContent;
+
+	if (newText == oldText)
+	{
+		return;
+	}
+
+	if (originalNode.nodeType == 3)
+	{
+		// Text node (foreignObject) - direct update
+		originalNode.data = newText;
+	}
+	else
+	{
+		// SVG text element - may have tspan children
+		var tspans = originalNode.querySelectorAll('tspan');
+
+		if (tspans.length == 0)
+		{
+			originalNode.textContent = newText;
+		}
+		else if (tspans.length == 1)
+		{
+			tspans[0].textContent = newText;
+		}
+		else
+		{
+			// Multiple tspans (multi-line) - put all text in first,
+			// clear the rest
+			tspans[0].textContent = newText;
+
+			for (var i = 1; i < tspans.length; i++)
+			{
+				tspans[i].textContent = '';
+			}
+		}
+	}
+};
+
+/**
+ * Clears and rebuilds the browser translation mirror. Called after
+ * graph revalidation when all foreignObjects have been recreated.
+ */
+Graph.prototype.refreshBrowserTranslateMirror = function()
+{
+
+
+	if (this.btMirrorContainer == null || this.container == null)
+	{
+		return;
+	}
+
+	// Flag to ignore our own mutations during rebuild
+	this.btRebuilding = true;
+
+	// Cache existing translations before clearing (original text -> translated text).
+	// Starts with any externally seeded cache (e.g. from viewer -> lightbox transfer)
+	// so that translations survive page switches even if they weren't in the current mirror.
+	var translationCache = {};
+	var cacheCount = 0;
+
+	if (this.btTranslationCache != null)
+	{
+		for (var key in this.btTranslationCache)
+		{
+			translationCache[key] = this.btTranslationCache[key];
+			cacheCount++;
+		}
+	}
+
+	var spans = this.btMirrorContainer.children;
+
+	for (var i = 0; i < spans.length; i++)
+	{
+		var origText = spans[i].getAttribute('data-bt-original');
+		var curText = spans[i].textContent;
+
+		if (origText != null && curText != origText)
+		{
+			translationCache[origText] = curText;
+			cacheCount++;
+		}
+	}
+
+	this.btMirrorMap.clear();
+	this.btMirrorContainer.innerHTML = '';
+
+	// Find all text-bearing elements: SVG text elements and foreignObject divs
+	var svg = this.container.querySelector('svg');
+	if (svg != null)
+	{
+		// SVG text elements (convertToSvg path)
+		var textElements = svg.querySelectorAll('text');
+		var svgCount = 0;
+
+		for (var i = 0; i < textElements.length; i++)
+		{
+			// Skip text elements inside foreignObject (they are
+			// handled by the foreignObject path below)
+			if (textElements[i].closest('foreignObject') == null)
+			{
+				this.addBrowserTranslateMirror(textElements[i]);
+				svgCount++;
+			}
+		}
+
+		// foreignObject divs (non-convertToSvg path)
+		var foElements = svg.querySelectorAll('foreignObject > div');
+		var foCount = 0;
+
+		for (var i = 0; i < foElements.length; i++)
+		{
+			this.addBrowserTranslateMirror(foElements[i]);
+			foCount++;
+		}
+
+	}
+
+	// Reapply cached translations to new mirror spans and their SVG targets.
+	// syncTranslationToForeignObject writes translated text into the SVG,
+	// so after a view refresh the SVG (and thus the new mirror spans) may
+	// already contain translated text. Build a reverse map to detect this
+	// and restore the true original in data-bt-original.
+	if (cacheCount > 0)
+	{
+		var reverseCache = {};
+
+		for (var key in translationCache)
+		{
+			reverseCache[translationCache[key]] = key;
+		}
+
+		var reapplied = 0;
+		var entries = this.btMirrorContainer.children;
+
+		for (var i = 0; i < entries.length; i++)
+		{
+			var origText = entries[i].getAttribute('data-bt-original');
+
+			// If the "original" is actually a cached translation
+			// (SVG had translated text), restore the true original
+			if (origText != null && reverseCache[origText] != null)
+			{
+				origText = reverseCache[origText];
+				entries[i].setAttribute('data-bt-original', origText);
+			}
+
+			var cached = (origText != null) ? translationCache[origText] : null;
+
+			if (cached != null)
+			{
+				entries[i].textContent = cached;
+				var target = this.btMirrorMap.get(entries[i]);
+
+				if (target != null)
+				{
+					this.syncTranslationToForeignObject(entries[i], target);
+				}
+
+				reapplied++;
+			}
+		}
+
+	}
+
+	// Allow observer to process browser translation mutations again
+	this.btRebuilding = false;
+};
+
+/**
+ * Returns a map of original text to translated text from the current mirror.
+ * Returns null if no translations are present.
+ */
+Graph.prototype.getBrowserTranslationCache = function()
+{
+	if (this.btMirrorContainer == null)
+	{
+		return null;
+	}
+
+	var cache = {};
+	var count = 0;
+	var spans = this.btMirrorContainer.children;
+
+	for (var i = 0; i < spans.length; i++)
+	{
+		var origText = spans[i].getAttribute('data-bt-original');
+		var curText = spans[i].textContent;
+
+		if (origText != null && curText != origText)
+		{
+			cache[origText] = curText;
+			count++;
+		}
+	}
+
+	return (count > 0) ? cache : null;
+};
+
+/**
+ * Applies a translation cache (original text -> translated text) to
+ * the current mirror spans and syncs the translations to the SVG.
+ */
+Graph.prototype.applyBrowserTranslationCache = function(cache)
+{
+	if (cache == null || this.btMirrorContainer == null)
+	{
+		return;
+	}
+
+	// Store the cache so refreshBrowserTranslateMirror can
+	// reapply it after page switches or model changes
+	this.btTranslationCache = cache;
+
+	this.btRebuilding = true;
+	var entries = this.btMirrorContainer.children;
+
+	for (var i = 0; i < entries.length; i++)
+	{
+		var origText = entries[i].getAttribute('data-bt-original');
+		var cached = (origText != null) ? cache[origText] : null;
+
+		if (cached != null)
+		{
+			entries[i].textContent = cached;
+			var target = this.btMirrorMap.get(entries[i]);
+
+			if (target != null)
+			{
+				this.syncTranslationToForeignObject(entries[i], target);
+			}
+		}
+	}
+
+	this.btRebuilding = false;
+};
+
+/**
+ * Cleans up browser translation resources.
+ */
+Graph.prototype.destroyBrowserTranslate = function()
+{
+	if (this.btClassObservers != null)
+	{
+		for (var i = 0; i < this.btClassObservers.length; i++)
+		{
+			this.btClassObservers[i].disconnect();
+		}
+
+		this.btClassObservers = null;
+	}
+
+	if (this.btObserver != null)
+	{
+		this.btObserver.disconnect();
+		this.btObserver = null;
+	}
+
+	if (this.btMirrorContainer != null && this.btMirrorContainer.parentNode != null)
+	{
+		this.btMirrorContainer.parentNode.removeChild(this.btMirrorContainer);
+		this.btMirrorContainer = null;
+	}
+
+	if (this.btMirrorMap != null)
+	{
+		this.btMirrorMap.clear();
+		this.btMirrorMap = null;
+	}
+};
+
+/**
+ * Overrides destroy to clean up browser translation resources.
+ */
+var graphDestroy = Graph.prototype.destroy;
+
+Graph.prototype.destroy = function()
+{
+	this.destroyBrowserTranslate();
+	graphDestroy.apply(this, arguments);
 };
 
 /**
@@ -3643,10 +4301,10 @@ Graph.prototype.init = function(container)
 	Graph.prototype.isGlassState = function(state)
 	{
 		var shape = mxUtils.getValue(state.style, mxConstants.STYLE_SHAPE, null);
-		
+
 		return (shape == 'label' || shape == 'rectangle' || shape == 'internalStorage' ||
 				shape == 'ext' || shape == 'umlLifeline' || shape == 'swimlane' ||
-				shape == 'process');
+				shape == 'process' || shape == 'ellipse' || shape == 'rhombus');
 	};
 	
 	/**
@@ -3990,7 +4648,7 @@ Graph.prototype.init = function(container)
 				var appliedStyles;
 
 				// Applies basic text styles for cells with text class
-				if (cell.style != null)
+				if (cell.style != null && typeof cell.style === 'string')
 				{
 					pairs = cell.style.split(';');
 					isText = isText || mxUtils.indexOf(pairs, 'text') >= 0;
@@ -4008,7 +4666,7 @@ Graph.prototype.init = function(container)
 					if (!force)
 					{
 						// Removes styles defined in the cell style from the styles to be applied
-						var tokens = (cellStyle != null) ? cellStyle.split(';') : [];
+						var tokens = (typeof cellStyle === 'string') ? cellStyle.split(';') : [];
 						
 						for (var j = 0; j < tokens.length; j++)
 						{
@@ -4059,23 +4717,30 @@ Graph.prototype.init = function(container)
 
 					// Edge style is only applied if user assigned a default style using
 					// the UI but not if the edge style is globally configured
-					if (styleValue != null && (key != 'edgeStyle' || pasteEdgeStyle))
+					if (key != 'edgeStyle' || pasteEdgeStyle)
 					{
 						// Edge styles are never assigned to vertices
 						if (edge || (!edge && mxUtils.indexOf(Graph.edgeStyles, key) < 0))
 						{
-							cellStyle = mxUtils.setStyle(cellStyle, key, styleValue);
-
-							// Removes fontSource if fontFamily is assigned
-							if (key == 'fontFamily' && current['fontSource'] == null)
+							if (styleValue != null)
 							{
-								cellStyle = mxUtils.setStyle(cellStyle, 'fontSource', null);
+								cellStyle = mxUtils.setStyle(cellStyle, key, styleValue);
+
+								// Removes fontSource if fontFamily is assigned
+								if (key == 'fontFamily' && current['fontSource'] == null)
+								{
+									cellStyle = mxUtils.setStyle(cellStyle, 'fontSource', null);
+								}
+
+								// Removes curved for edges if rounded is assigned
+								if (edge && key == 'rounded' && styleValue == '1' && current['curved'] == null)
+								{
+									cellStyle = mxUtils.setStyle(cellStyle, 'curved', null);
+								}
 							}
-
-							// Removes curved for edges if rounded is assigned
-							if (edge && key == 'rounded' && styleValue == '1' && current['curved'] == null)
+							else if (force)
 							{
-								cellStyle = mxUtils.setStyle(cellStyle, 'curved', null);
+								cellStyle = mxUtils.setStyle(cellStyle, key, null);
 							}
 						}
 					}
@@ -4088,6 +4753,57 @@ Graph.prototype.init = function(container)
 				}
 				
 				this.model.setStyle(cell, cellStyle);
+			}
+		}
+		finally
+		{
+			this.model.endUpdate();
+		}
+
+		return cells;
+	};
+
+	/**
+	 * Pastes text styles to the given cells.
+	 */
+	Graph.prototype.pasteTextStyles = function(cells, textStyle)
+	{
+		this.model.beginUpdate();
+		try
+		{
+			for (var i = 0; i < cells.length; i++)
+			{
+				var cell = cells[i];
+
+				if (this.model.isVertex(cell) || this.model.isEdge(cell))
+				{
+					var cellStyle = this.model.getStyle(cell);
+
+					for (var j = 0; j < Graph.pasteTextStyles.length; j++)
+					{
+						var key = Graph.pasteTextStyles[j];
+						var styleValue = textStyle[key];
+
+						if (styleValue != null)
+						{
+							cellStyle = mxUtils.setStyle(cellStyle, key, styleValue);
+
+							// Removes fontSource if fontFamily is assigned
+							if (key == 'fontFamily' && textStyle['fontSource'] == null)
+							{
+								cellStyle = mxUtils.setStyle(cellStyle, 'fontSource', null);
+							}
+						}
+					}
+
+					if (Editor.simpleLabels)
+					{
+						cellStyle = mxUtils.setStyle(mxUtils.setStyle(
+							cellStyle, 'html', null), 'whiteSpace', null);
+					}
+
+					this.model.setStyle(cell, cellStyle);
+				}
 			}
 		}
 		finally
@@ -6035,14 +6751,114 @@ Graph.prototype.restoreSelection = function(cells)
 };
 
 /**
- * Adds table range selection with Shift+Click.
+ * Returns true if the given cell has the lockedGroup=1 style (active lock).
+ */
+Graph.prototype.isLockedGroup = function(cell)
+{
+	return cell != null && mxUtils.getValue(
+		this.getCurrentCellStyle(cell), 'lockedGroup', '0') == '1';
+};
+
+/**
+ * Returns true if the cell has the lockedGroup style key (either '0' or '1').
+ * Used to decide whether double-clicks inside the group should route to the
+ * mermaid editor.
+ */
+Graph.prototype.hasLockedGroupStyle = function(cell)
+{
+	return cell != null && this.getCurrentCellStyle(cell)['lockedGroup'] != null;
+};
+
+/**
+ * Returns true if the lock-toggle handle should be rendered for the cell.
+ * lockedGroupIcon=0 hides the icon, lockedGroupIcon=1 forces it to show, and
+ * undefined falls back to the lockedGroup style being defined.
+ */
+Graph.prototype.isLockedGroupIconVisible = function(cell)
+{
+	if (cell == null)
+	{
+		return false;
+	}
+
+	var override = this.getCurrentCellStyle(cell)['lockedGroupIcon'];
+
+	if (override == '0')
+	{
+		return false;
+	}
+
+	if (override == '1')
+	{
+		return true;
+	}
+
+	return this.hasLockedGroupStyle(cell);
+};
+
+/**
+ * Returns true if the edit-icon handle should be rendered for the cell.
+ */
+Graph.prototype.isEditIconVisible = function(cell)
+{
+	return cell != null && mxUtils.getValue(
+		this.getCurrentCellStyle(cell), 'editIcon', '0') == '1';
+};
+
+/**
+ * Returns the nearest ancestor (including cell) with lockedGroup=1, or null.
+ */
+Graph.prototype.getLockedGroupAncestor = function(cell)
+{
+	while (cell != null)
+	{
+		if (this.isLockedGroup(cell))
+		{
+			return cell;
+		}
+
+		cell = this.model.getParent(cell);
+	}
+
+	return null;
+};
+
+/**
+ * Returns the nearest ancestor (including cell) with any lockedGroup style
+ * (locked or unlocked), or null.
+ */
+Graph.prototype.getLockedGroupStyleAncestor = function(cell)
+{
+	while (cell != null)
+	{
+		if (this.hasLockedGroupStyle(cell))
+		{
+			return cell;
+		}
+
+		cell = this.model.getParent(cell);
+	}
+
+	return null;
+};
+
+/**
+ * Adds table range selection with Shift+Click. Redirects clicks on descendants
+ * of locked groups to the locked ancestor so the group is selected as a unit.
  */
 Graph.prototype.selectCellForEvent = function(cell, evt)
 {
+	var anc = this.getLockedGroupAncestor(this.model.getParent(cell));
+
+	if (anc != null)
+	{
+		cell = anc;
+	}
+
 	if (!mxEvent.isShiftDown(evt) || this.isSelectionEmpty() ||
 		!this.selectTableRange(this.getSelectionCell(), cell))
 	{
-		mxGraph.prototype.selectCellForEvent.apply(this, arguments);
+		mxGraph.prototype.selectCellForEvent.apply(this, [cell, evt]);
 	}
 };
 
@@ -6198,7 +7014,7 @@ Graph.prototype.updateShapes = function(source, targets, replaceStyles)
 					// Removes style classes
 					var cellStyle = this.model.getStyle(targets[i]);
 
-					if (cellStyle != null)
+					if (typeof cellStyle === 'string')
 					{
 						var tokens = cellStyle.split(';');
 
@@ -7381,10 +8197,18 @@ Graph.prototype.convertValueToTooltip = function(cell)
 };
 
 /**
- * Overrides tooltips to show custom tooltip or metadata.
+ * Overrides tooltips to show custom tooltip or metadata. Descendants of a
+ * locked group inherit the group's tooltip.
  */
 Graph.prototype.getTooltipForCell = function(cell)
 {
+	var lockedAncestor = this.getLockedGroupAncestor(cell);
+
+	if (lockedAncestor != null)
+	{
+		cell = lockedAncestor;
+	}
+
 	var tip = '';
 	
 	if (mxUtils.isNode(cell.value))
@@ -8474,622 +9298,28 @@ HoverIcons.prototype.setCurrentState = function(state)
 {
 	if (state.style['portConstraint'] != 'eastwest')
 	{
-		this.graph.container.appendChild(this.arrowUp);
-		this.graph.container.appendChild(this.arrowDown);
+		if (this.arrowUp != null)
+		{
+			this.graph.container.appendChild(this.arrowUp);
+		}
+
+		if (this.arrowDown != null)
+		{
+			this.graph.container.appendChild(this.arrowDown);
+		}
 	}
 
-	this.graph.container.appendChild(this.arrowRight);
-	this.graph.container.appendChild(this.arrowLeft);
+	if (this.arrowRight != null)
+	{
+		this.graph.container.appendChild(this.arrowRight);
+	}
+
+	if (this.arrowLeft != null)
+	{
+		this.graph.container.appendChild(this.arrowLeft);
+	}
+
 	this.currentState = state;
-};
-
-/**
- * Floating toolbar that appears when a single edge is selected,
- * providing quick access to edge style changes.
- */
-InlineToolbar = function(editorUi)
-{
-	this.editorUi = editorUi;
-	this.graph = editorUi.editor.graph;
-	this.init();
-};
-
-/**
- * Size of the icon button in pixels.
- */
-InlineToolbar.prototype.iconSize = 24;
-
-/**
- * Offset from the cell midpoint in pixels.
- */
-InlineToolbar.prototype.offset = 16;
-
-/**
- * Current cell state.
- */
-InlineToolbar.prototype.currentState = null;
-
-/**
- * Initializes the toolbar icon and event listeners.
- */
-InlineToolbar.prototype.init = function()
-{
-	// Container for both buttons
-	this.toolbar = document.createElement('div');
-	this.toolbar.style.position = 'absolute';
-	this.toolbar.style.display = 'none';
-	this.toolbar.style.zIndex = 1;
-	this.toolbar.style.borderRadius = '3px';
-	this.toolbar.style.backgroundColor = 'light-dark(white, var(--dark-color))';
-	this.toolbar.style.border = '1px solid light-dark(#d0d0d0, #505050)';
-	this.toolbar.style.opacity = '0.9';
-	this.toolbar.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)';
-	this.toolbar.style.whiteSpace = 'nowrap';
-
-	var createButton = mxUtils.bind(this, function(title)
-	{
-		var btn = document.createElement('div');
-		btn.style.width = this.iconSize + 'px';
-		btn.style.height = this.iconSize + 'px';
-		btn.style.backgroundSize = '16px';
-		btn.style.backgroundRepeat = 'no-repeat';
-		btn.style.backgroundPosition = 'center';
-		btn.style.cursor = 'pointer';
-		btn.style.display = 'inline-block';
-		btn.style.verticalAlign = 'top';
-		btn.style.borderRadius = '2px';
-		btn.className = 'geAdaptiveAsset';
-		btn.setAttribute('title', title);
-
-		return btn;
-	});
-
-	// Edge style button (existing functionality)
-	this.icon = createButton(mxResources.get('line'));
-	this.toolbar.appendChild(this.icon);
-
-	// Separator before bend button
-	this.bendSep = document.createElement('div');
-	this.bendSep.style.display = 'inline-block';
-	this.bendSep.style.verticalAlign = 'top';
-	this.bendSep.style.width = '1px';
-	this.bendSep.style.height = this.iconSize + 'px';
-	this.bendSep.style.backgroundColor = 'light-dark(#d0d0d0, #505050)';
-	this.toolbar.appendChild(this.bendSep);
-
-	// Bend style button (shows current bend, opens dropdown)
-	this.bendIcon = createButton(mxResources.get('sharp'));
-	this.toolbar.appendChild(this.bendIcon);
-
-	// Append container to DOM
-	this.graph.container.appendChild(this.toolbar);
-
-	// Prevent mousedown from deselecting the edge
-	mxEvent.addListener(this.toolbar, 'mousedown', mxUtils.bind(this, function(evt)
-	{
-		if (this.graph.isEnabled())
-		{
-			mxEvent.consume(evt);
-		}
-	}));
-
-	// Show line menu on click of edge style button
-	mxEvent.addListener(this.icon, 'click', mxUtils.bind(this, function(evt)
-	{
-		if (this.graph.isEnabled())
-		{
-			this.showMenu(evt);
-			mxEvent.consume(evt);
-		}
-	}));
-
-	// Show bend menu on click of bend style button
-	mxEvent.addListener(this.bendIcon, 'click', mxUtils.bind(this, function(evt)
-	{
-		if (this.graph.isEnabled())
-		{
-			this.showBendMenu(evt);
-			mxEvent.consume(evt);
-		}
-	}));
-
-	this.selectionHandler = mxUtils.bind(this, function()
-	{
-		this.updateSelection();
-	});
-
-	this.repaintHandler = mxUtils.bind(this, function()
-	{
-		this.repaint();
-	});
-
-	this.modelHandler = mxUtils.bind(this, function()
-	{
-		this.updateSelection();
-	});
-
-	this.hideHandler = mxUtils.bind(this, function()
-	{
-		this.hide();
-	});
-
-	this.graph.selectionModel.addListener(mxEvent.CHANGE, this.selectionHandler);
-	this.graph.model.addListener(mxEvent.CHANGE, this.modelHandler);
-	this.graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, this.repaintHandler);
-	this.graph.view.addListener(mxEvent.TRANSLATE, this.repaintHandler);
-	this.graph.view.addListener(mxEvent.SCALE, this.repaintHandler);
-	this.graph.view.addListener(mxEvent.DOWN, this.repaintHandler);
-	this.graph.view.addListener(mxEvent.UP, this.repaintHandler);
-	this.graph.addListener(mxEvent.ROOT, this.repaintHandler);
-	this.graph.addListener(mxEvent.ESCAPE, this.selectionHandler);
-	this.graph.addListener(mxEvent.START_EDITING, this.hideHandler);
-	mxEvent.addListener(this.graph.container, 'scroll', this.repaintHandler);
-};
-
-/**
- * Updates visibility based on the current selection.
- */
-InlineToolbar.prototype.updateSelection = function()
-{
-	var cells = this.graph.getSelectionCells();
-	var state = null;
-
-	if (cells.length == 1 && this.graph.model.isEdge(cells[0]) &&
-		this.graph.isEnabled() && !this.graph.isCellLocked(cells[0]))
-	{
-		state = this.graph.view.getState(cells[0]);
-	}
-
-	if (state != null)
-	{
-		this.currentState = state;
-		this.show();
-	}
-	else
-	{
-		this.currentState = null;
-		this.hide();
-	}
-};
-
-/**
- * Computes the midpoint along the edge path.
- */
-InlineToolbar.prototype.getEdgeMidpoint = function(state)
-{
-	var pts = state.absolutePoints;
-
-	if (pts == null || pts.length < 2)
-	{
-		return null;
-	}
-
-	// Compute total path length
-	var totalLength = 0;
-	var segments = [];
-
-	for (var i = 1; i < pts.length; i++)
-	{
-		if (pts[i] != null && pts[i - 1] != null)
-		{
-			var dx = pts[i].x - pts[i - 1].x;
-			var dy = pts[i].y - pts[i - 1].y;
-			var len = Math.sqrt(dx * dx + dy * dy);
-			segments.push(len);
-			totalLength += len;
-		}
-		else
-		{
-			segments.push(0);
-		}
-	}
-
-	// Find point at half-length
-	var halfLength = totalLength / 2;
-	var accumulated = 0;
-
-	for (var i = 0; i < segments.length; i++)
-	{
-		if (accumulated + segments[i] >= halfLength)
-		{
-			var remaining = halfLength - accumulated;
-			var ratio = (segments[i] > 0) ? remaining / segments[i] : 0;
-			var p1 = pts[i];
-			var p2 = pts[i + 1];
-
-			if (p1 != null && p2 != null)
-			{
-				return new mxPoint(
-					p1.x + (p2.x - p1.x) * ratio,
-					p1.y + (p2.y - p1.y) * ratio
-				);
-			}
-
-			break;
-		}
-
-		accumulated += segments[i];
-	}
-
-	// Fallback: midpoint of first and last
-	var first = pts[0];
-	var last = pts[pts.length - 1];
-
-	if (first != null && last != null)
-	{
-		return new mxPoint((first.x + last.x) / 2, (first.y + last.y) / 2);
-	}
-
-	return null;
-};
-
-/**
- * Shows the toolbar.
- */
-InlineToolbar.prototype.show = function()
-{
-	this.updateIcons();
-	this.toolbar.style.display = 'block';
-	this.repaint();
-};
-
-/**
- * Hides the toolbar.
- */
-InlineToolbar.prototype.hide = function()
-{
-	this.toolbar.style.display = 'none';
-};
-
-/**
- * Returns true if the current edge shape supports the curved bend style.
- */
-InlineToolbar.prototype.supportsCurvedBend = function(style)
-{
-	var shape = mxUtils.getValue(style, mxConstants.STYLE_SHAPE, null);
-
-	return shape == null || shape == 'connector' ||
-		shape == 'filledEdge' || shape == 'wire' || shape == 'pipe';
-};
-
-/**
- * Updates both icon images to match the current cell style.
- */
-InlineToolbar.prototype.updateIcons = function()
-{
-	if (this.currentState != null)
-	{
-		var style = this.graph.getCurrentCellStyle(this.currentState.cell);
-
-		// Edge style icon
-		var src = this.editorUi.getImageForEdgeStyle(style);
-
-		if (style[mxConstants.STYLE_SHAPE] == 'arrow')
-		{
-			src = Format.straightImage.src;
-		}
-
-		this.icon.style.backgroundImage = 'url(' + src + ')';
-
-		// Show bend icon for edges that support curved or rounded bends
-		var state = this.graph.view.getState(this.currentState.cell);
-		var showBend = this.supportsCurvedBend(style) ||
-			(state != null && this.graph.isRoundedState(state));
-		this.bendSep.style.display = showBend ? 'inline-block' : 'none';
-		this.bendIcon.style.display = showBend ? 'inline-block' : 'none';
-
-		if (showBend)
-		{
-			if (mxUtils.getValue(style, mxConstants.STYLE_CURVED, null) == '1')
-			{
-				this.bendIcon.style.backgroundImage = 'url(' + Format.curvedBendImage.src + ')';
-			}
-			else if (mxUtils.getValue(style, mxConstants.STYLE_ROUNDED, null) == '1')
-			{
-				this.bendIcon.style.backgroundImage = 'url(' + Format.roundedBendImage.src + ')';
-			}
-			else
-			{
-				this.bendIcon.style.backgroundImage = 'url(' + Format.sharpBendImage.src + ')';
-			}
-		}
-	}
-};
-
-/**
- * Returns true if the line segment from (x1,y1) to (x2,y2) intersects
- * the axis-aligned rectangle at (rx, ry) with size (rw, rh).
- * Uses the Liang-Barsky clipping algorithm.
- */
-InlineToolbar.prototype.segmentIntersectsRect = function(x1, y1, x2, y2, rx, ry, rw, rh)
-{
-	var dx = x2 - x1;
-	var dy = y2 - y1;
-	var p = [-dx, dx, -dy, dy];
-	var q = [x1 - rx, rx + rw - x1, y1 - ry, ry + rh - y1];
-	var tMin = 0;
-	var tMax = 1;
-
-	for (var i = 0; i < 4; i++)
-	{
-		if (p[i] == 0)
-		{
-			if (q[i] < 0)
-			{
-				return false;
-			}
-		}
-		else
-		{
-			var t = q[i] / p[i];
-
-			if (p[i] < 0)
-			{
-				tMin = Math.max(tMin, t);
-			}
-			else
-			{
-				tMax = Math.min(tMax, t);
-			}
-
-			if (tMin > tMax)
-			{
-				return false;
-			}
-		}
-	}
-
-	return true;
-};
-
-/**
- * Repositions the toolbar at the cell midpoint, avoiding overlap with
- * edge waypoint handles and edge segments.
- */
-InlineToolbar.prototype.repaint = function()
-{
-	if (this.currentState != null && this.toolbar.style.display != 'none')
-	{
-		// Refresh state in case cell was deleted or edge changed
-		var state = this.graph.view.getState(this.currentState.cell);
-
-		if (state != null)
-		{
-			this.currentState = state;
-			this.updateIcons();
-			var mid = this.getEdgeMidpoint(state);
-
-			if (mid != null)
-			{
-				// Toolbar width depends on bend icon visibility
-				var bendVisible = this.bendIcon.style.display != 'none';
-				var toolbarWidth = bendVisible ? this.iconSize * 2 + 1 : this.iconSize;
-				var toolbarHeight = this.iconSize;
-
-				// Default position: above the edge midpoint, centered
-				var x = mid.x - toolbarWidth / 2;
-				var y = mid.y - toolbarHeight - this.offset;
-
-				// Check for overlap with edge handler bends and reposition if needed
-				var handler = this.graph.selectionCellsHandler.getHandler(state.cell);
-
-				if (handler != null)
-				{
-					var minGap = 8;
-					var allBends = (handler.bends || []).concat(handler.virtualBends || []);
-
-					var checkOverlap = mxUtils.bind(this, function(tx, ty)
-					{
-						var bounds = new mxRectangle(Math.round(tx) - minGap,
-							Math.round(ty) - minGap, toolbarWidth + 2 * minGap,
-							toolbarHeight + 2 * minGap);
-
-						for (var i = 0; i < allBends.length; i++)
-						{
-							if (allBends[i] != null && allBends[i].bounds != null &&
-								allBends[i].node.style.visibility !== 'hidden' &&
-								mxUtils.intersects(bounds, allBends[i].bounds))
-							{
-								return true;
-							}
-						}
-
-						// Check intersection with edge segments
-						var pts = state.absolutePoints;
-
-						if (pts != null)
-						{
-							for (var i = 1; i < pts.length; i++)
-							{
-								if (pts[i] != null && pts[i - 1] != null &&
-									this.segmentIntersectsRect(
-										pts[i - 1].x, pts[i - 1].y,
-										pts[i].x, pts[i].y,
-										bounds.x, bounds.y,
-										bounds.width, bounds.height))
-								{
-									return true;
-								}
-							}
-						}
-
-						// Check overlap with edge label
-						if (state.text != null && state.text.boundingBox != null &&
-							mxUtils.intersects(bounds, state.text.boundingBox))
-						{
-							return true;
-						}
-
-						// Check overlap with edge child elements
-						var model = this.graph.getModel();
-						var childCount = model.getChildCount(state.cell);
-
-						for (var i = 0; i < childCount; i++)
-						{
-							var childState = this.graph.view.getState(
-								model.getChildAt(state.cell, i));
-
-							if (childState != null)
-							{
-								if (childState.shape != null &&
-									childState.shape.boundingBox != null &&
-									mxUtils.intersects(bounds, childState.shape.boundingBox))
-								{
-									return true;
-								}
-
-								if (childState.text != null &&
-									childState.text.boundingBox != null &&
-									mxUtils.intersects(bounds, childState.text.boundingBox))
-								{
-									return true;
-								}
-							}
-						}
-
-						return false;
-					});
-
-					if (checkOverlap(x, y))
-					{
-						// Try below the edge midpoint instead
-						var belowY = mid.y + this.offset;
-						var found = false;
-
-						if (!checkOverlap(x, belowY))
-						{
-							y = belowY;
-							found = true;
-						}
-
-						// Try left/right of the edge midpoint
-						if (!found)
-						{
-							var centerY = mid.y - toolbarHeight / 2;
-							var leftX = mid.x - toolbarWidth - this.offset;
-							var rightX = mid.x + this.offset;
-
-							if (!checkOverlap(leftX, centerY))
-							{
-								x = leftX;
-								y = centerY;
-								found = true;
-							}
-							else if (!checkOverlap(rightX, centerY))
-							{
-								x = rightX;
-								y = centerY;
-								found = true;
-							}
-						}
-
-						// Find nearest non-overlapping position by
-						// moving further away from the midpoint
-						if (!found)
-						{
-							var centerY = mid.y - toolbarHeight / 2;
-
-							for (var d = this.offset + minGap; d < 100; d += minGap)
-							{
-								if (!checkOverlap(x, mid.y - toolbarHeight - d))
-								{
-									y = mid.y - toolbarHeight - d;
-									break;
-								}
-								else if (!checkOverlap(x, mid.y + d))
-								{
-									y = mid.y + d;
-									break;
-								}
-								else if (!checkOverlap(mid.x - toolbarWidth - d, centerY))
-								{
-									x = mid.x - toolbarWidth - d;
-									y = centerY;
-									break;
-								}
-								else if (!checkOverlap(mid.x + d, centerY))
-								{
-									x = mid.x + d;
-									y = centerY;
-									break;
-								}
-							}
-						}
-					}
-				}
-
-				this.toolbar.style.left = Math.round(x) + 'px';
-				this.toolbar.style.top = Math.round(y) + 'px';
-			}
-		}
-	}
-};
-
-/**
- * Shows the popup menu for the current selection.
- */
-InlineToolbar.prototype.showMenu = function(evt)
-{
-	var editorUi = this.editorUi;
-	editorUi.hideCurrentMenu();
-
-	editorUi.showPopupMenu(mxUtils.bind(this, function(menu, parent)
-	{
-		editorUi.menus.addMenu('line', menu, parent);
-	}), mxEvent.getClientX(evt), mxEvent.getClientY(evt), evt);
-};
-
-/**
- * Shows the bend style popup menu.
- */
-InlineToolbar.prototype.showBendMenu = function(evt)
-{
-	var editorUi = this.editorUi;
-	editorUi.hideCurrentMenu();
-
-	editorUi.showPopupMenu(mxUtils.bind(this, function(menu, parent)
-	{
-		var menus = editorUi.menus;
-		var keys = [mxConstants.STYLE_ROUNDED, mxConstants.STYLE_CURVED];
-
-		Format.processMenuIcon(menus.edgeStyleChange(menu, '', keys,
-			['0', '0'], null, parent, false, Format.sharpBendImage.src))
-			.setAttribute('title', mxResources.get('sharp'));
-		Format.processMenuIcon(menus.edgeStyleChange(menu, '', keys,
-			['1', '0'], null, parent, false, Format.roundedBendImage.src))
-			.setAttribute('title', mxResources.get('rounded'));
-
-		if (this.currentState != null)
-		{
-			var style = this.graph.getCurrentCellStyle(this.currentState.cell);
-
-			if (this.supportsCurvedBend(style))
-			{
-				Format.processMenuIcon(menus.edgeStyleChange(menu, '', keys,
-					['0', '1'], null, parent, false, Format.curvedBendImage.src))
-					.setAttribute('title', mxResources.get('curved'));
-			}
-		}
-	}), mxEvent.getClientX(evt), mxEvent.getClientY(evt), evt);
-};
-
-/**
- * Removes all listeners and DOM elements.
- */
-InlineToolbar.prototype.destroy = function()
-{
-	this.graph.selectionModel.removeListener(this.selectionHandler);
-	this.graph.model.removeListener(this.modelHandler);
-	this.graph.view.removeListener(this.repaintHandler);
-	this.graph.removeListener(this.selectionHandler);
-	this.graph.removeListener(this.repaintHandler);
-	this.graph.removeListener(this.hideHandler);
-	mxEvent.removeListener(this.graph.container, 'scroll', this.repaintHandler);
-
-	if (this.toolbar.parentNode != null)
-	{
-		this.toolbar.parentNode.removeChild(this.toolbar);
-	}
 };
 
 /**
@@ -9278,6 +9508,15 @@ Graph.prototype.visitTableCells = function(cell, visitor)
 		for (var j = 0; j < cols.length; j++)
 		{
 			var geo = this.getCellGeometry(cols[j]);
+
+			// Skips cells with no geometry (consistent with TableLayout.layoutRow).
+			// Pushes null to keep lastRow[j] indexing aligned with the cols array.
+			if (geo == null)
+			{
+				row.push(null);
+				continue;
+			}
+
 			var col = {cell: cols[j], rospan: 1, colspan: 1, row: i, col: j, geo: geo};
 			geo = (geo.alternateBounds != null) ? geo.alternateBounds : geo;
 			col.point = new mxPoint(geo.width + (lastCol != null ? lastCol.point.x : start.x + rowStart.x),
@@ -9997,10 +10236,11 @@ TableLayout.prototype.layoutRow = function(row, positions, height, tw)
  */
 TableLayout.prototype.execute = function(parent)
 {
-	if (parent != null)
+	var table = (parent != null) ? this.graph.getCellGeometry(parent) : null;
+
+	if (table != null)
 	{
 		var offset = this.graph.getActualStartSize(parent, true);
-		var table = this.graph.getCellGeometry(parent);
 		var style = this.graph.getCellStyle(parent);
 		var resizeLastRow = mxUtils.getValue(style,
 			'resizeLastRow', '0') == '1';
@@ -10010,7 +10250,7 @@ TableLayout.prototype.execute = function(parent)
 			'fixedRows', '0') == '1';
 		var model = this.graph.getModel();
 		var sw = 0;
-		
+
 		model.beginUpdate();
 		try
 		{
@@ -10067,10 +10307,10 @@ TableLayout.prototype.execute = function(parent)
 						
 						row.height = Math.round(y) - row.y;
 						model.setGeometry(rows[i], row);
+
+						// Updates cell geometries
+						sw = Math.max(sw, this.layoutRow(rows[i], pos, row.height, tw, lastCells));
 					}
-					
-					// Updates cell geometries
-					sw = Math.max(sw, this.layoutRow(rows[i], pos, row.height, tw, lastCells));
 				}
 				
 				if (fixedRows && th < sh)
@@ -12288,7 +12528,9 @@ if (typeof mxVertexHandler !== 'undefined')
 				rows = rows && this.isTableRow(cells[i]);
 			}
 
-			return !this.isCellLocked(cell) && (this.isTargetShape(cell, cells, evt) ||
+			return !this.isCellLocked(cell) &&
+				this.getLockedGroupAncestor(cell) == null &&
+				(this.isTargetShape(cell, cells, evt) ||
 				((mxUtils.getValue(style, 'part', '0') != '1' || this.isContainer(cell)) &&
 				mxUtils.getValue(style, 'dropTarget', '1') != '0' && (mxGraph.prototype.
 				isValidDropTarget.apply(this, arguments) || this.isContainer(cell)) &&
@@ -12697,7 +12939,8 @@ if (typeof mxVertexHandler !== 'undefined')
 			if (change instanceof mxGeometryChange &&
 				(this.isTableCell(change.cell) || this.isTableRow(change.cell)) &&
 				((change.previous == null && change.geometry != null) ||
-				(change.previous != null && !change.previous.equals(change.geometry))))
+				(change.previous != null && (change.previous.equals == null ||
+				!change.previous.equals(change.geometry)))))
 			{
 				var cell = change.cell;
 				
@@ -12997,10 +13240,22 @@ if (typeof mxVertexHandler !== 'undefined')
 				overlay.isLinkOverlay = true;
 
 				var graph = this;
-				overlay.addListener(mxEvent.CLICK, function(sender, evt)
+				overlay.addListener(mxEvent.CLICK, mxUtils.bind(this, function(sender, evt)
 				{
-					graph.setSelectionCell(evt.getProperty('cell'));
-				});
+					if (graph.isEnabled())
+					{
+						graph.setSelectionCell(evt.getProperty('cell'));
+					}
+					else if (this.isCustomLink(link))
+					{
+						this.customLinkClicked(link, cell);
+					}
+					else
+					{
+						var target = this.getLinkTargetForCell(cell);
+						this.openLink(this.getAbsoluteUrl(link), target);
+					}
+				}));
 
 				return overlay;
 			}
@@ -13249,7 +13504,8 @@ if (typeof mxVertexHandler !== 'undefined')
 					state.text.boundingBox == null || (!mxUtils.contains(state.text.boundingBox,
 					pt.x, pt.y) && !mxUtils.isAncestorNode(state.text.node, mxEvent.getSource(evt))))) &&
 					((state == null && !this.isCellLocked(this.getDefaultParent())) ||
-					(state != null && !this.isCellLocked(state.cell))) &&
+					(state != null && !this.isCellLocked(state.cell) &&
+					this.getLockedGroupAncestor(this.model.getParent(state.cell)) == null)) &&
 					(state != null ||
 					(mxClient.IS_SVG && src == this.view.getCanvas().ownerSVGElement)))
 				{
@@ -15203,51 +15459,79 @@ if (typeof mxVertexHandler !== 'undefined')
 					var rows = model.getChildCells(table, true);
 					row = rows[(before) ? 0 : rows.length - 1];
 				}
-				
-				var cells = model.getChildCells(row, true);
-				var index = table.getIndex(row);
-				row = model.cloneCell(row, false);
-				row.value = null;
-				
-				var rowGeo = this.getCellGeometry(row);
-				
-				if (rowGeo != null)
+
+				if (row != null)
 				{
-					for (var i = 0; i < cells.length; i++)
+					var cells = model.getChildCells(row, true);
+					var index = table.getIndex(row);
+					row = model.cloneCell(row, false);
+					row.value = null;
+
+					var rowGeo = this.getCellGeometry(row);
+
+					if (rowGeo != null)
 					{
-						var cell = model.cloneCell(cells[i], false);
-
-						// Removes value, col/rowspan and alternate bounds
-						cell.value = null;
-						cell.style = mxUtils.setStyle(mxUtils.setStyle(
-							cell.style, 'rowspan', null), 'colspan', null);
-
-						var geo = this.getCellGeometry(cell);
-						
-						if (geo != null)
+						for (var i = 0; i < cells.length; i++)
 						{
-							if (geo.alternateBounds != null)
+							var cell = model.cloneCell(cells[i], false);
+
+							// Removes value, col/rowspan and alternate bounds
+							cell.value = null;
+							cell.style = mxUtils.setStyle(mxUtils.setStyle(
+								cell.style, 'rowspan', null), 'colspan', null);
+
+							var geo = this.getCellGeometry(cell);
+
+							if (geo != null)
 							{
-								geo.width = geo.alternateBounds.width;
-								geo.height = geo.alternateBounds.height;
-								geo.alternateBounds = null;
+								if (geo.alternateBounds != null)
+								{
+									geo.width = geo.alternateBounds.width;
+									geo.height = geo.alternateBounds.height;
+									geo.alternateBounds = null;
+								}
+
+								geo.height = rowGeo.height;
 							}
 
-							geo.height = rowGeo.height;
+							row.insert(cell);
 						}
-						
-						row.insert(cell);
-					}
 
-					model.add(table, row, index + ((before) ? 0 : 1));
-					
+						model.add(table, row, index + ((before) ? 0 : 1));
+
+						var tableGeo = this.getCellGeometry(table);
+
+						if (tableGeo != null)
+						{
+							tableGeo = tableGeo.clone();
+							tableGeo.height += rowGeo.height;
+
+							model.setGeometry(table, tableGeo);
+						}
+					}
+				}
+				else
+				{
+					// Empty table: insert initial row with a single column
 					var tableGeo = this.getCellGeometry(table);
-					
+
 					if (tableGeo != null)
 					{
+						var rowHeight = 40;
+						var rowWidth = tableGeo.width;
+
+						var rowStyle = 'shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;' +
+							'top=0;left=0;bottom=0;right=0;collapsible=0;dropTarget=0;fillColor=none;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fixedHeader=1;';
+						var cellStyle = 'shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;strokeColor=inherit;' +
+							'overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;';
+
+						row = this.createVertex(null, null, '', 0, 0, rowWidth, rowHeight, rowStyle);
+						row.insert(this.createVertex(null, null, '', 0, 0, rowWidth, rowHeight, cellStyle));
+
+						model.add(table, row);
+
 						tableGeo = tableGeo.clone();
-						tableGeo.height += rowGeo.height;
-						
+						tableGeo.height += rowHeight;
 						model.setGeometry(table, tableGeo);
 					}
 				}
@@ -15257,9 +15541,9 @@ if (typeof mxVertexHandler !== 'undefined')
 				model.endUpdate();
 			}
 		};
-	
+
 		/**
-		 * 
+		 *
 		 */
 		Graph.prototype.deleteTableColumn = function(cell)
 		{
@@ -15926,11 +16210,11 @@ if (typeof mxVertexHandler !== 'undefined')
 			cell = this.graph.getStartEditingCell(cell, trigger);
 
 			mxCellEditorStartEditing.apply(this, arguments);
-			
+
 			// Overrides class in case of HTML content to add
 			// dashed borders for divs and table cells
 			var state = this.graph.view.getState(cell);
-	
+
 			if (state != null && state.style['html'] == 1)
 			{
 				this.textarea.className = 'mxCellEditor geContentEditable';
@@ -15938,6 +16222,13 @@ if (typeof mxVertexHandler !== 'undefined')
 			else
 			{
 				this.textarea.className = 'mxCellEditor mxPlainTextEditor';
+			}
+
+			// Prevents browser translation from modifying editor content
+			if (Graph.browserTranslate)
+			{
+				this.textarea.classList.add('notranslate');
+				this.textarea.setAttribute('translate', 'no');
 			}
 
 			// Sets colorScheme for current adaptiveColors
@@ -16450,6 +16741,29 @@ if (typeof mxVertexHandler !== 'undefined')
 		};
 
 		/**
+		 * Redirects the initial cell for click-and-drag to the locked group
+		 * ancestor so descendants of a locked group cannot be dragged out.
+		 */
+		var mxGraphHandlerGetInitialCellForEvent = mxGraphHandler.prototype.getInitialCellForEvent;
+		mxGraphHandler.prototype.getInitialCellForEvent = function(me)
+		{
+			var cell = mxGraphHandlerGetInitialCellForEvent.apply(this, arguments);
+
+			if (cell != null)
+			{
+				var anc = this.graph.getLockedGroupAncestor(
+					this.graph.model.getParent(cell));
+
+				if (anc != null)
+				{
+					cell = anc;
+				}
+			}
+
+			return cell;
+		};
+
+		/**
 		 * Hints on handlers
 		 */
 		function createHint()
@@ -16759,7 +17073,7 @@ if (typeof mxVertexHandler !== 'undefined')
 		var vertexHandlerIsCustomHandleVisible = mxVertexHandler.prototype.isCustomHandleVisible;
 		mxVertexHandler.prototype.isCustomHandleVisible = function(handle)
 		{
-			return handle.tableHandle ||
+			return handle.tableHandle || handle.lockHandle || handle.editIconHandle ||
 				(vertexHandlerIsCustomHandleVisible.apply(this, arguments) &&
 				(!this.graph.isTable(this.state.cell) ||
 				this.graph.isCellSelected(this.state.cell)));
@@ -17079,6 +17393,146 @@ if (typeof mxVertexHandler !== 'undefined')
 				}
 			}
 			
+			// Adds lock-toggle handle when the lockedGroupIcon visibility
+			// rule says so (renders a lock icon when locked, unlock when not).
+			if (this.graph.isLockedGroupIconVisible(this.state.cell) &&
+				this.graph.isCellMovable(this.state.cell))
+			{
+				if (handles == null)
+				{
+					handles = [];
+				}
+
+				var self = this;
+				var graph = this.graph;
+				var cell = this.state.cell;
+				var size = 16;
+				var isLocked = this.graph.isLockedGroup(cell);
+
+				var shape = new mxImageShape(new mxRectangle(0, 0, size, size),
+					(isLocked ? HoverIcons.prototype.lockHandle :
+						HoverIcons.prototype.unlockHandle).src);
+				shape.preserveImageAspect = false;
+
+				var handle = new mxHandle(this.state, 'pointer', null, shape);
+				handle.lockHandle = true;
+
+				// Non-draggable: position directly, ignore drag events
+				handle.setPosition = function() {};
+				handle.positionChanged = function() {};
+				handle.reset = function() {};
+
+				handle.redraw = function()
+				{
+					if (this.shape != null)
+					{
+						// Top-left corner. Mirrors the rotate handle: pads outward
+						// for small bounds via getHandlePadding so the icon stays
+						// clear of the resize sizers. Rotated around the cell center
+						// so the icon tracks the rotated corner.
+						var padding = self.getHandlePadding();
+						var pt = new mxPoint(
+							self.bounds.x - 12 - padding.x / 2,
+							self.bounds.y - 12 - padding.y / 2);
+						var deg = Number((self.currentAlpha != null) ? self.currentAlpha :
+							(self.state.style[mxConstants.STYLE_ROTATION] || '0'));
+						var alpha = mxUtils.toRadians(deg);
+
+						if (alpha != 0)
+						{
+							var ct = new mxPoint(self.state.getCenterX(),
+								self.state.getCenterY());
+							pt = mxUtils.getRotatedPoint(pt,
+								Math.cos(alpha), Math.sin(alpha), ct);
+						}
+
+						this.shape.bounds.width = size;
+						this.shape.bounds.height = size;
+						this.shape.bounds.x = pt.x - size / 2;
+						this.shape.bounds.y = pt.y - size / 2;
+						this.shape.rotation = deg;
+						this.shape.redraw();
+					}
+				};
+
+				handle.execute = function(me)
+				{
+					graph.getModel().beginUpdate();
+					try
+					{
+						graph.setCellStyles('lockedGroup', isLocked ? '0' : '1', [cell]);
+					}
+					finally
+					{
+						graph.getModel().endUpdate();
+					}
+				};
+
+				handles.push(handle);
+			}
+
+			// Adds edit-icon handle when editIcon=1 (pen icon in bottom-right).
+			// Clicking it triggers editing on the cell.
+			if (this.graph.isEditIconVisible(this.state.cell))
+			{
+				if (handles == null)
+				{
+					handles = [];
+				}
+
+				var self = this;
+				var graph = this.graph;
+				var cell = this.state.cell;
+				var size = 16;
+
+				var shape = new mxImageShape(new mxRectangle(0, 0, size, size),
+					HoverIcons.prototype.editHandle.src);
+				shape.preserveImageAspect = false;
+
+				var handle = new mxHandle(this.state, 'pointer', null, shape);
+				handle.editIconHandle = true;
+
+				handle.setPosition = function() {};
+				handle.positionChanged = function() {};
+				handle.reset = function() {};
+
+				handle.redraw = function()
+				{
+					if (this.shape != null)
+					{
+						var padding = self.getHandlePadding();
+						var pt = new mxPoint(
+							self.bounds.x - 12 - padding.x / 2,
+							self.bounds.y + self.bounds.height + 12 + padding.y / 2);
+						var deg = Number((self.currentAlpha != null) ? self.currentAlpha :
+							(self.state.style[mxConstants.STYLE_ROTATION] || '0'));
+						var alpha = mxUtils.toRadians(deg);
+
+						if (alpha != 0)
+						{
+							var ct = new mxPoint(self.state.getCenterX(),
+								self.state.getCenterY());
+							pt = mxUtils.getRotatedPoint(pt,
+								Math.cos(alpha), Math.sin(alpha), ct);
+						}
+
+						this.shape.bounds.width = size;
+						this.shape.bounds.height = size;
+						this.shape.bounds.x = pt.x - size / 2;
+						this.shape.bounds.y = pt.y - size / 2;
+						this.shape.rotation = deg;
+						this.shape.redraw();
+					}
+				};
+
+				handle.execute = function(me)
+				{
+					graph.startEditingAtCell(cell);
+				};
+
+				handles.push(handle);
+			}
+
 			// Reserve gives point handles precedence over line handles
 			return (handles != null) ? handles.reverse() : null;
 		};
@@ -17337,7 +17791,12 @@ if (typeof mxVertexHandler !== 'undefined')
 				{
 					for (var i = 0; i < this.customHandles.length; i++)
 					{
+						// Skip lock and edit icon handles: they position themselves
+						// using the result of this function, so they would cause
+						// oscillating overlap detection.
 						if (this.customHandles[i] != null &&
+							!this.customHandles[i].lockHandle &&
+							!this.customHandles[i].editIconHandle &&
 							this.customHandles[i].shape != null &&
 							this.customHandles[i].shape.bounds != null)
 						{
@@ -17534,15 +17993,20 @@ if (typeof mxVertexHandler !== 'undefined')
 		/**
 		 * Replaces folding icons with SVG.
 		 */
-		Graph.prototype.expandedImage = Graph.createSvgImage(9, 9, '<defs><linearGradient id="grad1" x1="50%" y1="0%" x2="50%" y2="100%">' +
-			'<stop offset="30%" style="stop-color:#f0f0f0;" /><stop offset="100%" style="stop-color:#AFB0B6;" /></linearGradient></defs>' +
-			'<rect x="0" y="0" width="9" height="9" stroke="#8A94A5" fill="url(#grad1)" stroke-width="2"/>' +
-			'<path d="M 2 4.5 L 7 4.5 z" stroke="#000"/>');
-		Graph.prototype.collapsedImage = Graph.createSvgImage(9, 9, '<defs><linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">' +
-			'<stop offset="30%" style="stop-color:#f0f0f0;" /><stop offset="100%" style="stop-color:#AFB0B6;" /></linearGradient></defs>' +
-			'<rect x="0" y="0" width="9" height="9" stroke="#8A94A5" fill="url(#grad1)" stroke-width="2"/>' +
-			'<path d="M 4.5 2 L 4.5 7 M 2 4.5 L 7 4.5 z" stroke="#000"/>');
-		
+		Graph.updateFoldingImages = function(s)
+		{
+			Graph.prototype.expandedImage = Graph.createSvgImage(s, s, '<defs><linearGradient id="grad1" x1="50%" y1="0%" x2="50%" y2="100%">' +
+				'<stop offset="30%" style="stop-color:#f0f0f0;" /><stop offset="100%" style="stop-color:#AFB0B6;" /></linearGradient></defs>' +
+				'<rect x="0" y="0" width="9" height="9" stroke="#8A94A5" fill="url(#grad1)" stroke-width="2"/>' +
+				'<path d="M 2 4.5 L 7 4.5 z" stroke="#000"/>', 9, 9);
+			Graph.prototype.collapsedImage = Graph.createSvgImage(s, s, '<defs><linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">' +
+				'<stop offset="30%" style="stop-color:#f0f0f0;" /><stop offset="100%" style="stop-color:#AFB0B6;" /></linearGradient></defs>' +
+				'<rect x="0" y="0" width="9" height="9" stroke="#8A94A5" fill="url(#grad1)" stroke-width="2"/>' +
+				'<path d="M 4.5 2 L 4.5 7 M 2 4.5 L 7 4.5 z" stroke="#000"/>', 9, 9);
+		};
+
+		Graph.updateFoldingImages(9);
+
 		/**
 		 * Updates the hint for the current operation.
 		 */
@@ -17573,6 +18037,18 @@ if (typeof mxVertexHandler !== 'undefined')
 		HoverIcons.prototype.connectHandle = Graph.createSvgImage(16, 16,
 			'<circle cx="12" cy="12" r="10" stroke="#fff" fill="' + HoverIcons.prototype.arrowFill + '"/>' +
 				'<path transform="translate(5,5) scale(0.583)" d="M6 18v-3h7.6L4 5.4 5.4 4 15 13.6V6h3v12z" fill="#fff"/>',
+				24, 24);
+		HoverIcons.prototype.lockHandle = Graph.createSvgImage(16, 16,
+			'<path stroke="' + HoverIcons.prototype.arrowFill + '" stroke-width="0.7" fill="' + HoverIcons.prototype.arrowFill +
+				'" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/>',
+				24, 24);
+		HoverIcons.prototype.unlockHandle = Graph.createSvgImage(16, 16,
+			'<path stroke="' + HoverIcons.prototype.arrowFill + '" stroke-width="0.7" fill="' + HoverIcons.prototype.arrowFill +
+				'" d="M18 8h-1V6c0-2.76-2.24-5-5-5-2.28 0-4.27 .54-4.84 2.75-.14.54.18 1.08.72 1.22.53.14 1.08-.18 1.22-.72C9.44 3.93 10.63 3 12 3c1.65 0 3 1.35 3 3v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/>',
+				24, 24);
+		HoverIcons.prototype.editHandle = Graph.createSvgImage(16, 16,
+			'<path stroke="' + HoverIcons.prototype.arrowFill + '" stroke-width="0.7" fill="' + HoverIcons.prototype.arrowFill +
+				'" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>',
 				24, 24);
 	
 		mxConstraintHandler.prototype.pointImage = Graph.createSvgImage(5, 5,
@@ -18533,6 +19009,41 @@ if (typeof mxVertexHandler !== 'undefined')
 			}
 
 			vertexHandlerRedrawHandles.apply(this);
+
+			// Repositions the lock and edit icon handles after the base redraw
+			// so they pick up the final handle padding. They depend on the
+			// start-size custom handle for overlap detection in getHandlePadding,
+			// but that handle is only refreshed during the base redraw and (for
+			// hover hit-testing) must stay last in the custom handle array, so it
+			// is redrawn after them. Mirrors the rotation and connect handles,
+			// which are also positioned after the base call.
+			if (this.customHandles != null)
+			{
+				for (var i = 0; i < this.customHandles.length; i++)
+				{
+					if (this.customHandles[i] != null &&
+						(this.customHandles[i].lockHandle ||
+						this.customHandles[i].editIconHandle))
+					{
+						this.customHandles[i].redraw();
+					}
+				}
+			}
+
+			// Rotates the rotation handle image itself so it visually matches
+			// the cell's orientation (base mxVertexHandler only translates it
+			// to the rotated corner, keeping the icon axis-aligned).
+			if (this.rotationShape != null && this.rotationShape.node != null)
+			{
+				var deg = Number((this.currentAlpha != null) ? this.currentAlpha :
+					(this.state.style[mxConstants.STYLE_ROTATION] || '0'));
+
+				if (this.rotationShape.rotation !== deg)
+				{
+					this.rotationShape.rotation = deg;
+					this.rotationShape.redraw();
+				}
+			}
 
 			// Shows connect handle only if one vertex is selected
 			// Must be after base redrawHandles to override sizer visibility

@@ -436,10 +436,10 @@ Toolbar.prototype.createTextToolbar = function()
 						table.style.border = '1px solid ' + newColor;
 						table.style.borderCollapse = 'collapse';
 					}
-				});
+				}, null, null, null, mxResources.get('borderColor'));
 			}));
 			elt.setAttribute('title', mxResources.get('borderColor'));
-			
+
 			elt = menu.addItem('', Editor.fillColorImage, mxUtils.bind(this, function()
 			{
 				// Converts rgb(r,g,b) values
@@ -458,7 +458,7 @@ Toolbar.prototype.createTextToolbar = function()
 					{
 						table.style.backgroundColor = newColor;
 					}
-				});
+				}, null, null, null, mxResources.get('backgroundColor'));
 			}));
 			elt.setAttribute('title', mxResources.get('backgroundColor'));
 			

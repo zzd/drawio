@@ -298,7 +298,7 @@
 			{
 				var bg1 = new mxCell('', new mxGeometry(0, 0, 12, 12), s + 'ellipse;fillColor=#808080;strokeColor=none;');
 				bg1.vertex = true;
-				var bg2 = new mxCell('', new mxGeometry(16, 18, 12, 12), s2 + 'message_1;fillColor=#ff5500;fontStyle=1;whiteSpace=wrap;html=1;');
+				var bg2 = new mxCell('', new mxGeometry(16, 18, 12, 12), s2 + 'message_1;fillColor1=#ffff00;fillColor=#ff5500;fontStyle=1;whiteSpace=wrap;html=1;');
 				bg2.vertex = true;
 				var edge1 = new mxCell('', new mxGeometry(0, 0, 0, 0), 'edgeStyle=orthogonalEdgeStyle;rounded=0;exitX=0;exitY=0.5;endArrow=none;dashed=0;html=1;strokeColor=#808080;strokeWidth=2;');
 		    	edge1.geometry.relative = true;
@@ -313,7 +313,7 @@
 			{
 				var bg1 = new mxCell('', new mxGeometry(0, 0, 12, 12), s + 'ellipse;fillColor=#808080;strokeColor=none;');
 				bg1.vertex = true;
-				var bg2 = new mxCell('', new mxGeometry(16, 18, 12, 12), s2 + 'message_2;fillColor=#00cc00;fontStyle=1;whiteSpace=wrap;html=1;');
+				var bg2 = new mxCell('', new mxGeometry(16, 18, 12, 12), s2 + 'message_2;fillColor1=#ffff00;fillColor=#00cc00;fontStyle=1;whiteSpace=wrap;html=1;');
 				bg2.vertex = true;
 				var edge1 = new mxCell('', new mxGeometry(0, 0, 0, 0), 'edgeStyle=orthogonalEdgeStyle;rounded=0;exitX=0;exitY=0.5;endArrow=none;dashed=0;html=1;strokeColor=#808080;strokeWidth=2;');
 		    	edge1.geometry.relative = true;

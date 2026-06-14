@@ -880,7 +880,7 @@ mxGraphHandler.prototype.start = function(cell, x, y, cells)
 	var geo = model.getGeometry(cell);
 
 	if (this.first == null && (this.graph.isCellMovable(cell) && ((!model.isEdge(cell) ||
-		this.graph.getSelectionCount() > 1 || (geo.points != null && geo.points.length > 0) ||
+		this.graph.getSelectionCount() > 1 || (geo != null && geo.points != null && geo.points.length > 0) ||
 		model.getTerminal(cell, true) == null || model.getTerminal(cell, false) == null) ||
 		this.graph.allowDanglingEdges)))
 	{

@@ -154,6 +154,7 @@ OUTPUT FILES (in src/main/webapp/js/):
 				<file name="EditorUi.js" />
 				<file name="Sidebar.js" />
 				<file name="Graph.js" />
+				<file name="InlineToolbar.js" />
 				<file name="Format.js" />
 				<file name="Shapes.js" />
 				<file name="Actions.js" />
@@ -204,6 +205,7 @@ OUTPUT FILES (in src/main/webapp/js/):
 				<file name="Sidebar-FluidPower.js" />
 				<file name="Sidebar-GCP.js" />
 				<file name="Sidebar-GCP2.js" />
+				<file name="Sidebar-GCP3.js" />
 				<file name="Sidebar-GCPIcons.js" />
 				<file name="Sidebar-Gmdl.js" />
 				<file name="Sidebar-IBM.js" />
@@ -389,6 +391,7 @@ OUTPUT FILES (in src/main/webapp/js/):
 				<file name="Dialogs.js" />
 				<file name="Editor.js" />
 				<file name="EditorUi.js" />
+				<file name="ConfigEditor.js" />
 				<file name="DiffSync.js" />
 				<file name="Settings.js" />
 				<file name="DrawioFilePolling.js" />
@@ -487,6 +490,7 @@ OUTPUT FILES (in src/main/webapp/js/):
 				<file name="Dialogs.js" />
 				<file name="Editor.js" />
 				<file name="EditorUi.js" />
+				<file name="ConfigEditor.js" />
 				<file name="DiffSync.js" />
 				<file name="Settings.js" />
 				<file name="DrawioFilePolling.js" />

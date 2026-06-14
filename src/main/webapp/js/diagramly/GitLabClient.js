@@ -17,6 +17,13 @@ window.GitLabClient = function(editorUi)
 mxUtils.extend(GitLabClient, GitHubClient);
 
 /**
+ * Default GitLab server URL. Retained as an immutable class constant so the
+ * "has the URL been overridden?" check is not affected by Init.js mutating
+ * window.DRAWIO_GITLAB_URL in response to the ?gitlab= URL parameter.
+ */
+GitLabClient.DEFAULT_URL = 'https://gitlab.com';
+
+/**
  * Gitlab Client ID, see https://gitlab.com/oauth/applications/135239
  */
 GitLabClient.prototype.clientId = DRAWIO_GITLAB_ID;
@@ -48,6 +55,19 @@ GitLabClient.prototype.redirectUri = window.DRAWIO_SERVER_URL + 'gitlab';
  */
 GitLabClient.prototype.authenticate = function(success, error)
 {
+	if (DRAWIO_GITLAB_URL !== GitLabClient.DEFAULT_URL && !Editor.enableCustomGitLabUrl)
+	{
+		this.ui.showDialog(new CustomGitLabUrlWarningDialog(
+			this.ui, DRAWIO_GITLAB_URL).container, 420, null, true, true);
+
+		if (error != null)
+		{
+			error({message: mxResources.get('accessDenied')});
+		}
+
+		return;
+	}
+
 	var req = new mxXmlRequest(this.redirectUri + '?getState=1', null, 'GET');
 	
 	req.send(mxUtils.bind(this, function(req)

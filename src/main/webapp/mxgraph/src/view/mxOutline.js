@@ -509,6 +509,12 @@ mxOutline.prototype.update = function(fullUpdate)
  */
 mxOutline.prototype.destroy = function()
 {
+	if (this.thread != null)
+	{
+		window.clearTimeout(this.thread);
+		this.thread = null;
+	}
+
 	if (this.svg != null)
 	{
 		this.svg.parentNode.removeChild(this.svg);

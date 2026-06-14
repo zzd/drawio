@@ -18,6 +18,16 @@ EmbedFile.prototype.getMode = function()
 	return this.mode;
 };
 
+EmbedFile.prototype.getDescriptor = function()
+{
+	return this.desc;
+};
+
+EmbedFile.prototype.setDescriptor = function(desc)
+{
+	this.desc = desc || {};
+};
+
 EmbedFile.prototype.getTitle = function()
 {
 	return this.desc.title || '';

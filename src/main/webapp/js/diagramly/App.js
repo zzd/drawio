@@ -499,8 +499,8 @@ App.getStoredMode = function()
 						navigator.userAgent.indexOf('MSIE') < 0 || document.documentMode >= 10))
 					{
 						// Immediately loads client
-						if (App.mode == App.MODE_ONEDRIVE || (window.location.hash != null &&
-							window.location.hash.substring(0, 2) == '#W'))
+						if (App.mode == App.MODE_ONEDRIVE || App.mode == App.MODE_M365 || (window.location.hash != null &&
+							(window.location.hash.substring(0, 2) == '#W' || window.location.hash.substring(0, 2) == '#M')))
 						{
 							//Editor.oneDriveInlinePicker can be set with configuration which is done later, so load it all time
 							mxscript(App.ONEDRIVE_URL);
@@ -3202,8 +3202,16 @@ App.prototype.start = function()
 			// Ignores Grammarly error [1344]
 			if (message != 'ResizeObserver loop limit exceeded')
 			{
-				EditorUi.logError('Uncaught: ' + ((message != null) ? message : ''),
-					url, linenumber, colno, err, null, true);
+				// "Invalid or unexpected token" is a JS engine parse error that can only
+				// come from eval() or new Function(). All eval() calls in the codebase are
+				// wrapped in try/catch, so this reaching window.onerror indicates external
+				// interference (browser extensions, corrupted cache, proxy injection).
+				if (message == null || message.indexOf('Invalid or unexpected token') < 0)
+				{
+					EditorUi.logError('Uncaught: ' + ((message != null) ? message : ''),
+						url, linenumber, colno, err, null, true);
+				}
+
 				ui.handleError({message: message}, mxResources.get('unknownError'),
 					null, null, null, null, true);
 			}
@@ -3531,21 +3539,35 @@ App.prototype.start = function()
 						
 						var dlg = new CreateDialog(this, title, mxUtils.bind(this, function(filename, mode)
 						{
-							if (mode == null)
+							try
 							{
-								this.hideDialog();
-								var prev = Editor.useLocalStorage;
-								this.createFile((filename.length > 0) ? filename : this.defaultFilename,
-									this.getFileData(), null, null, null, true, null, true);
-								Editor.useLocalStorage = prev;
-							}
-							else
-							{
-								this.pickFolder(mode, mxUtils.bind(this, function(folderId)
+								if (mode == null)
 								{
-									this.createFile(filename, this.getFileData(true),
-										null, mode, null, true, folderId);
-								}));
+									this.hideDialog();
+									var prev = Editor.useLocalStorage;
+									this.createFile((filename.length > 0) ? filename : this.defaultFilename,
+										this.getFileData(), null, null, null, true, null, true);
+									Editor.useLocalStorage = prev;
+								}
+								else
+								{
+									this.pickFolder(mode, mxUtils.bind(this, function(folderId)
+									{
+										try
+										{
+											this.createFile(filename, this.getFileData(true),
+												null, mode, null, true, folderId);
+										}
+										catch (e)
+										{
+											this.handleError(e);
+										}
+									}));
+								}
+							}
+							catch (e)
+							{
+								this.handleError(e);
 							}
 						}), null, null, null, null, urlParams['browser'] == '1',
 							null, null, true, rowLimit, null, null, null,
@@ -3806,7 +3828,13 @@ App.prototype.openGenerateDialog = function(prompt)
 {
 	if (this.chatWindow == null)
 	{
-		this.chatWindow = new ChatWindow(this, 224, 104, 360, 480);
+		var saved = mxSettings.getWindowState('chat');
+		var cx = (saved != null && saved.x != null) ? saved.x : 224;
+		var cy = (saved != null && saved.y != null) ? saved.y : 104;
+		var cw = (saved != null && saved.w != null) ? saved.w : 360;
+		var ch = (saved != null && saved.h != null) ? saved.h : 480;
+
+		this.chatWindow = new ChatWindow(this, cx, cy, cw, ch);
 		this.chatWindow.window.addListener('show', mxUtils.bind(this, function()
 		{
 			this.fireEvent(new mxEventObject('chat'));
@@ -3815,7 +3843,18 @@ App.prototype.openGenerateDialog = function(prompt)
 		{
 			this.fireEvent(new mxEventObject('chat'));
 		});
-		this.chatWindow.window.setVisible(true);
+
+		this.installWindowPersistence('chat', this.chatWindow);
+
+		if (saved != null && prompt == null)
+		{
+			this.restoreWindowState('chat', this.chatWindow);
+		}
+		else
+		{
+			this.chatWindow.window.setVisible(true);
+		}
+
 		this.fireEvent(new mxEventObject('chat'));
 	}
 	else
@@ -3916,13 +3955,24 @@ App.prototype.filterDrafts = function(filePath, guid, callback)
 					if (key != null && key.substring(0, 7) == '.draft_')
 					{
 						var obj = JSON.parse(items[i].data);
-						
-						if (obj != null && obj.type == 'draft' && obj.aliveCheck != guid && 
+
+						if (obj != null && obj.type == 'draft' && obj.aliveCheck != guid &&
 							((filePath == null && obj.fileObject == null) ||
-								(obj.fileObject != null && obj.fileObject.path == filePath)))	
+								(obj.fileObject != null && obj.fileObject.path == filePath)))
 						{
-							obj.key = key;
-							drafts.push(obj);
+							// Drop drafts whose payload has no user-added cells.
+							// These get created when a recovery draft is saved
+							// for a file the user then emptied; surfacing them
+							// in the draft picker only confuses the user.
+							if (this.isDiagramDataEmpty(obj.data))
+							{
+								this.removeDatabaseItem(key);
+							}
+							else
+							{
+								obj.key = key;
+								drafts.push(obj);
+							}
 						}
 					}
 				}
@@ -4000,8 +4050,15 @@ App.prototype.checkDrafts = function()
 							}
 							else
 							{
-								this.createFile(this.defaultFilename, this.getFileData(),
-									null, null, null, null, null, true);
+								try
+								{
+									this.createFile(this.defaultFilename, this.getFileData(),
+										null, null, null, null, null, true);
+								}
+								catch (e)
+								{
+									this.handleError(e);
+								}
 							}
 						}
 					}));
@@ -4013,8 +4070,15 @@ App.prototype.checkDrafts = function()
 				}
 				else
 				{
-					this.createFile(this.defaultFilename, this.getFileData(),
-						null, null, null, null, null, true);
+					try
+					{
+						this.createFile(this.defaultFilename, this.getFileData(),
+							null, null, null, null, null, true);
+					}
+					catch (e)
+					{
+						// ignore
+					}
 				}
 			}));
 		}), 0);
@@ -4939,24 +5003,31 @@ App.prototype.saveFile = function(forceDialog, success)
 						{
 							var createFile = mxUtils.bind(this, function(folderId)
 							{
-								var graph = this.editor.graph;
-								var selection = graph.getSelectionCells();
-								var viewState = graph.getViewState();
-								var page = this.currentPage;
+								try
+								{
+									var graph = this.editor.graph;
+									var selection = graph.getSelectionCells();
+									var viewState = graph.getViewState();
+									var page = this.currentPage;
 
-								// Opens new window if not temporary file
-								var currentFile = this.getCurrentFile();
-								var replace = this.mode == null || (currentFile == null ||
-										currentFile.mode == null);
-								
-								this.createFile(name, this.getFileData(/(\.xml)$/i.test(name) ||
-									name.indexOf('.') < 0 || /(\.drawio)$/i.test(name),
-									/(\.svg)$/i.test(name), /(\.html)$/i.test(name)), null,
-									mode, done, replace, folderId, null, null,
-									mxUtils.bind(this, function()
-									{
-										this.restoreViewState(page, viewState, selection);
-									}));
+									// Opens new window if not temporary file
+									var currentFile = this.getCurrentFile();
+									var replace = this.mode == null || (currentFile == null ||
+											currentFile.mode == null);
+
+									this.createFile(name, this.getFileData(/(\.xml)$/i.test(name) ||
+										name.indexOf('.') < 0 || /(\.drawio)$/i.test(name),
+										/(\.svg)$/i.test(name), /(\.html)$/i.test(name)), null,
+										mode, done, replace, folderId, null, null,
+										mxUtils.bind(this, function()
+										{
+											this.restoreViewState(page, viewState, selection);
+										}));
+								}
+								catch (e)
+								{
+									this.handleError(e);
+								}
 							});
 
 							if (folderId != null)
@@ -4980,8 +5051,15 @@ App.prototype.saveFile = function(forceDialog, success)
 
 			var dlg = new SaveDialog(this, filename, mxUtils.bind(this, function(input, mode, folderId)
 			{
-				saveFunction(input.value, mode, input, folderId);
-				this.hideDialog();
+				try
+				{
+					saveFunction(input.value, mode, input, folderId);
+					this.hideDialog();
+				}
+				catch (e)
+				{
+					this.handleError(e);
+				}
 			}), (allowTab) ? null : ['_blank']);
 
 			this.showDialog(dlg.container, 420, 150, true, false, mxUtils.bind(this, function()
@@ -5622,43 +5700,50 @@ App.prototype.loadFile = function(id, sameWindow, file, success, force)
 			}
 			else if (id.substring(0, 7) == 'create=')
 			{
-				var obj = JSON.parse(decodeURIComponent(id.substring(7)));
-
-				if (obj.type == 'message')
+				try
 				{
-					var sourceWindow = window.opener || window.parent;;
+					var obj = JSON.parse(decodeURIComponent(id.substring(7)));
 
-					var createMessageHandler = mxUtils.bind(this, function(evt)
+					if (obj.type == 'message')
 					{
-						EditorUi.debug('EditorUi.createMessageHandler',
-							[this], 'evt', [evt]);
+						var sourceWindow = window.opener || window.parent;;
 
-						if (evt.source != sourceWindow)
+						var createMessageHandler = mxUtils.bind(this, function(evt)
 						{
-							return;
-						}
-						
-						try
-						{
-							if (evt.data.action == 'create' && evt.data.data != null)
+							EditorUi.debug('EditorUi.createMessageHandler',
+								[this], 'evt', [evt]);
+
+							if (evt.source != sourceWindow)
 							{
-								mxEvent.removeListener(window, 'message', createMessageHandler);
-								this.executeCreateObject(evt.data.data);
+								return;
 							}
-						}
-						catch (e)
-						{
-							data = null;
-						}
-					});
-					
-					// Sends ready message to source window to trigger sending of create message with data
-					mxEvent.addListener(window, 'message', createMessageHandler);
-					sourceWindow.postMessage(JSON.stringify({event: 'ready'}), '*');
+
+							try
+							{
+								if (evt.data.action == 'create' && evt.data.data != null)
+								{
+									mxEvent.removeListener(window, 'message', createMessageHandler);
+									this.executeCreateObject(evt.data.data);
+								}
+							}
+							catch (e)
+							{
+								data = null;
+							}
+						});
+
+						// Sends ready message to source window to trigger sending of create message with data
+						mxEvent.addListener(window, 'message', createMessageHandler);
+						sourceWindow.postMessage(JSON.stringify({event: 'ready'}), '*');
+					}
+					else
+					{
+						this.executeCreateObject(obj);
+					}
 				}
-				else
+				catch (e)
 				{
-					this.executeCreateObject(obj);
+					this.handleError(e, mxResources.get('errorLoadingFile'));
 				}
 			}
 			else if (id.charAt(0) == 'R')
@@ -6104,7 +6189,14 @@ App.prototype.loadLibraries = function(libs, done)
 					{
 						if (files[i] != null)
 						{
-							this.loadLibrary(files[i], i <= idx);
+							try
+							{
+								this.loadLibrary(files[i], i <= idx);
+							}
+							catch (e)
+							{
+								// ignore
+							}
 						}
 					}
 				}

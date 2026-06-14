@@ -1,3 +1,368 @@
+27-MAY-2026: 30.0.4
+
+- Adds GCP3 to build
+- Build of version 30.0.4
+
+27-MAY-2026: 30.0.4
+
+
+
+26-MAY-2026: 30.0.3
+
+- Test Cloud Build trigger
+- Test Cloud Build trigger
+- Upgrades to JDK 21
+- Adds new GCP3 stencils. Preliminary version, content added, but many things to fix.
+- Adds new GCP3 stencils to the sidebar
+- Adds pointerEvents=1 style to GCP3 stencils and changes labels to a more conventional format
+- Adds multicolor support to some iOS7 stencils
+- Adds more multicolor options for some Rack stencils
+- Removes duplicate entry
+- Removes quotes from bool
+- Adds vertical text check to wrapping check [DID-18880]
+- Updates DOMPurify from 3.4.2 to 3.4.5
+- Adds lockedGroupIcon, editIcon styles and lock/edit handles
+- Adjusts footer position in Notion dialog to improve layout
+- Adds editPolygon option in edit menu
+- Adds line breaks for dev tooltips
+- Blocks drops and child drags inside locked groups
+- Pads lock and edit icon handles like the rotation handle
+- Adds multicolor support for IBM stencils
+- Adds multicolor support for Atlassian stencils
+- Refactors an Azure stencil, so it's in line with the others in the set
+- Adds multicolor support for a Bootstrap stencil
+- Adds multicolor support for EIP stencils
+- Adds multicolor support for a Flowchart stencil
+- Adds multicolor support for VVD stencils
+- Adds multicolor support for some Android stencils
+- Promote text and anonymize plugins to core functionality
+
+15-MAY-2026: 30.0.2
+
+- Makes some Mockup shapes multi-color flexible
+- Makes some MSCAE shapes multi-color flexible
+- Makes some Salesforce shapes multi-color flexible
+- Small fix for a Network 2025 shape
+- Small bugfix for some Mockup shapes
+- Additional color flexibility for some Cisco Safe shapes
+- Adds multi color fill for some Citrix stencils
+- Adds multi-color support for some GCP2 shapes and stencils
+- Adds multi-color support for GCP2 shapes and stencils
+- Adds multi-color support for a GCP2 icon stencil
+- Adds multi-color support for MS Office stencils
+- Fixes size for some stencils in the Rack library
+- Adds multi-color support for some Rack stencils
+- Makes HPE Aruba Gateways and Controllers subgroup in Rack shapes color flexible
+- Makes HPE Aruba Security subgroup in Rack shapes color flexible
+- Makes part of HPE Aruba Switches subgroup in Rack shapes color flexible
+- Makes some Rack stencils color flexible
+- Makes some Rack stencils color flexible
+- Makes the rest of Rack/Aruba stencils color flexible
+- Small fix for an Aruba switch stencil
+- Makes Rack/IBM stencils color flexible
+- Stencil size fix for a Rack stencil
+- Makes Rack/Oracle stencils color flexible
+- Adds multicolor support to Veeam stencils
+- Adds multicolor support to EIP stencils
+- Adds multicolor support to some GMDL stencils
+- Adds multicolor support to some Floorplan stencils
+- Fixed NPE in mermaid to draw.io [#drawio-5553]
+- Fallback to FO when vertical writing-mode set in HTML [DID-18880]
+- Updated github actions, replaced 3rd party actions, and specified needed permissions
+- Build of version 30.0.2
+
+15-MAY-2026: 30.0.2
+
+- Makes some Mockup shapes multi-color flexible
+- Makes some MSCAE shapes multi-color flexible
+- Makes some Salesforce shapes multi-color flexible
+- Small fix for a Network 2025 shape
+- Small bugfix for some Mockup shapes
+- Additional color flexibility for some Cisco Safe shapes
+- Adds multi color fill for some Citrix stencils
+- Adds multi-color support for some GCP2 shapes and stencils
+- Adds multi-color support for GCP2 shapes and stencils
+- Adds multi-color support for a GCP2 icon stencil
+- Adds multi-color support for MS Office stencils
+- Fixes size for some stencils in the Rack library
+- Adds multi-color support for some Rack stencils
+- Makes HPE Aruba Gateways and Controllers subgroup in Rack shapes color flexible
+- Makes HPE Aruba Security subgroup in Rack shapes color flexible
+- Makes part of HPE Aruba Switches subgroup in Rack shapes color flexible
+- Makes some Rack stencils color flexible
+- Makes some Rack stencils color flexible
+- Makes the rest of Rack/Aruba stencils color flexible
+- Small fix for an Aruba switch stencil
+- Makes Rack/IBM stencils color flexible
+- Stencil size fix for a Rack stencil
+- Makes Rack/Oracle stencils color flexible
+- Adds multicolor support to Veeam stencils
+- Adds multicolor support to EIP stencils
+- Adds multicolor support to some GMDL stencils
+- Adds multicolor support to some Floorplan stencils
+- Fixed NPE in mermaid to draw.io [#drawio-5553]
+- Fallback to FO when vertical writing-mode set in HTML [DID-18880]
+- Updated github actions, replaced 3rd party actions, and specified needed permissions
+
+11-MAY-2026: 30.0.1
+
+- Corrects rounded of Archimate Techonology Functions shape [jgraph/drawio#5571]
+- ci: fix MCP index trigger tag pattern
+- Shows up to 4 matching pages in omnisearch dropdown
+
+09-MAY-2026: 30.0.0
+
+- Uses cached sanitized label for SVG support detection
+- Updates DOMPurify from 3.4.0 to 3.4.2
+- Persists minimized state of floating windows
+- Moves adaptive colors to page setup, adds page setup in simple+min UI
+- Adds mermaid shapes from native-ports branch
+- Sizes math labels and view to rendered MathJax output [jgraph/drawio#3311]
+- Fixes math fit-to-window on page switch with sync MathJax typeset
+- Adds configurable tooltipFontSize and tooltipMaxWidth
+- Adds lockedGroup cell style for grouping cells as one image
+- Adds Mindmap Bang, Git Tag, and Smiley Faces in Basic sidebar
+- Fixes dropped initialText in cellEditor.startEditing override
+- Fixes tab scroller jumping left when switching from rightmost page
+- Keeps inline toolbar and popovers inside visible viewport
+- Fixed Lucid import chrome extension
+- Skips empty drafts on save and cleans up existing ones on startup
+- Default adaptive colours no longer simple in desktop
+
+05-MAY-2026: 29.7.12
+
+- Adds boundedLbl for manual input shape
+- Removes quip references
+- Adds label sanitize https://github.com/jgraph/docker-drawio/security/advisories/GHSA-wj8x-4c77-v8v3
+
+04-MAY-2026: 29.7.11
+
+- Upgrades to JDK 21
+- Fixes offline local shape search pagination [jgraph/drawio-desktop#2409]
+- Updated mermaid to v11.14.0
+- Fixes NPE in insertTableRow on empty table; inserts initial row with single column
+- Disables insert column buttons in Format panel for empty tables
+- Updates MathJax from 4.1.1 to 4.1.2
+- Replaces diagramly source in GAE release
+
+01-MAY-2026: 29.7.10
+
+- Fixed lightbox mode for MS360 files
+- Conf Cloud: Added configuration editor
+- Added Confluence specific configurations to config-editor
+- Inline configuration editor into dialog instead of iframe
+- Update i18n submodule with normalized English capitalization
+- Add missed lineend/linestart capitalization in i18n submodule
+- Remove unused hateApp/loveIt keys and expand procEng in i18n submodule
+- Expand Proc. Eng. abbreviation in PID sidebar and i18n submodule
+- Fixes page format options vertical alignment
+- Fixes print dialog inconsistencies
+- Fixes inconsistent sections in Format panel
+- Adds rounding for arrow handle values
+- Fixes inconsistent padding for Format sections
+- Adds glass style support for ellipse and rhombus shapes
+- Show style tiles for mixed selections including edge labels
+- Fixes fill pattern issues with crop print and color leak [jgraph/drawio#5546]
+- Adjusts padding for edge geometry and stroke panels for improved layout
+- Fixes ignored current dark mode in config editor
+- Replaces rounded button with checkbox in diagram style panel
+- Restyles file properties dialog using dialog style guide
+- Restyles font dialog using dialog style guide
+- Saving embed macro preview with the actual diagram [DID-18496]
+- Recovers broken desktop saved PDFs jgraph/drawio-desktop#2394]
+- Removed incorrect gitlinks added for submodules
+
+20-APR-2026: 29.7.9
+
+- Skip clipboard init in read-only chromeless EditorUi
+- Restricts third-party gitlab integrations without config [DID-18566]
+
+17-APR-2026: 29.7.8
+
+- Fixes NPE in mxEdgeHandler.reset when handle reset triggers destroy
+- Fixes NPE in mxCellRenderer.insertStateAfter when node is orphaned
+- Fixes NPE in mxWindow.setLocation when window is destroyed during drag
+- Fixes NPE in mxVertexHandler.start when handle shapes are not created
+- Fixes NPE in EditorUi.diffPages when pages array contains null entries
+- Fixes NPE in EmbedFile.isAutosaveOptional when desc is null
+- Add defensive settings check in restoreVisibleWindows
+
+14-APR-2026: 29.7.7
+
+- Creates default viewState in patchViewState when null
+- Fix null crashes in HoverIcons and mxConstraintHandler during mouse events
+- Handle atob error in noFile fallback when error dialog is dismissed
+- Fix null crash in PolygonDialog drag when points array is modified
+- Exclude InvalidCharacterError from mergeFile error logging
+- Guard against non-function success callback in DriveFile.saveFile
+- Fix mxObjectCodec mapping default picking up Array.prototype methods
+- Persist size of modal resizable edit/insert dialogs
+- Guard pasteCellStyles split against non-string cell styles
+- Guard mxSvgCanvas2D.setCssText against non-Element nodes
+- Guard mxUtils.setStyleFlag against non-string style values
+- Add configurable foldingIconSize for collapse/expand icons
+- Enable collapse/expand actions for multi-selection [DID-18161]
+- Guard EditorUi.highlightElement against null document.body
+- Guard Sidebar.addEntry against non-string tags values
+- Skip null-geometry cells in Graph.visitTableCells
+- Guard Minimal.js hideCurrentMenu override against null editor
+- Guard Sidebar.addCustomEntries against missing entry.libs
+- Guard Dialog constructor against null document.body
+- Guard updateShapes split against non-string cell styles
+- Declare loop variable in Menus.showIconOnly
+- Fix diffViewState null asymmetry causing checksum errors in mergeFile
+- Persist Selection Only state in export dialogs within session
+- Updates DOMPurify from 3.3.3 to 3.4.0
+- Fixes link dialog layout in confluence connect
+
+12-APR-2026: 29.7.6
+
+- Thinner inline toolbar icons and toggle popover on click
+- Shows inline toolbar popover above when below viewport
+- Fix InlineToolbar ReferenceError in viewer builds
+- Disables server logging for handled errors in handleError
+- Excludes "Invalid or unexpected token" SyntaxError from server log
+- Use specific color dialog titles instead of panel labels
+- Move InlineToolbar creation override to InlineToolbar.js
+
+12-APR-2026: 29.7.5
+
+- Fixes URL hash update when switching pages in presentation mode
+- Refactors theme submenu addition logic for better readability and maintainability
+- Increases minimum width for shape window to improve layout consistency
+- Fixes null reference errors in TableLayout, updateTabContainer, and ColorDialog
+- A workaround for multipart doesn't support non ascii characters in diagram save comments
+- Adds try-catch for image metadata stripping to handle malformed chunks
+- Adds realtime checksum debugging documentation to CLAUDE.md
+- Fixes null geometry in TableLayout.execute
+- Fixes TypeError in EmbedFile.getTitle when descriptor is null
+- Fixes JSON.parse error in loadLibraries when external library returns invalid content
+- Handle corrupt page data in getPagesForXml without aborting
+- Handles corrupted data errors in async pickFolder callbacks
+- Extract InlineToolbar into separate InlineToolbar.js file
+- Fixes edge color button in InlineToolbar to pass default color and show diagonal light-dark swatch
+- Hides inline toolbar when edge color picker is opened
+- Hides inline toolbar when edge color is picked or color picker is closed
+- Adds arrow key navigation for sidebar search dropdown
+- Excludes errors from blob: URLs in client error logging
+- Excludes strict mode errors from extensions.min.js in client error logging
+- Adds error handling for JSON.parse of create hash parameter in loadFile
+- Adds error handling for menu factory in createMenubar
+- Logs decodeChild errors to console instead of throwing
+- Logs duplicate ID errors to console instead of throwing in putObject
+- Adds null check for geometry in mxGraphHandler.start
+- Fixes infinite loop in wedgeArrowDashed2 when stepSize is 0
+- Adds null check for bounds in fitDiagramToWindow
+
+10-APR-2026: 29.7.4
+
+- Fixes Sidebar.destroy NPE by destroying sidebar before editor
+- Fixes TypeError in updateEdgeState for invalid geometry objects
+- Fixes TypeError in mxOutline.getViewBox after destroy
+- Fixes TypeError in mxUtils.setStyle for non-string style values
+- Refactors link overlay click handling to support custom links and improve link opening logic
+- Uses page dropdown with chevronDown in presentation mode toolbar
+- Fixes TypeError in refreshBrowserTranslateMirror for destroyed graph
+- Fixes TypeError in keydown/keyup handlers for null graph container
+- Fixes TypeError in windowResized for destroyed EditorUi
+- Fixes TypeError in mxGeometry.equals for non-mxPoint offset objects
+- Fixes TypeError in EmbedFile.getDescriptorRevisionId for null descriptor
+- Fixes TypeError in mxPolyline.redraw for null node in updatePageBreaks
+- Fixes possible NPE in mxCellState.clone
+- Fixes possible NPE
+- Adds error handling for corrupted data in dialog save actions
+- Fixes TypeError in pasteCellStyles for non-string cell style
+- Fixes paste style not removing default styles from target [jgraph/drawio-desktop#2383]
+- Revert "Fixes encoding for connect attachments comments"
+
+09-APR-2026: 29.7.3
+
+- Changes to dashboard URL
+- ci: trigger drawio-mcp search index update on new version tags
+- Adds null check for callback in showExportDialog
+- Adds null check for setTerminalPoint in cellsRemoved and disconnectGraph
+- Fix URIError in StyleFormatPanel.addProperties for malformed style values
+- Adds null check for equals in processChange for mxGeometryChange
+- Fixes TypeError in addPaletteFunctions by protecting createVertexTemplateFromCells restore in addEntry
+- Adds presentation mode for desktop using fullscreen DIV overlay
+- Jira Cloud: Fixed a bug in Confluence search [DID-18214]
+- Jira Conf: Added support for Forge diagrams in Confluence embed [DID-18214]
+- Fix checksum errors from external tools adding extra diagram attributes
+
+09-APR-2026: 29.7.2
+
+- Prefers non-current page in omni search results
+- Moves copy/paste text style from edit dropdown to text format panel buttons
+- Adds page actions for omnibox access and reuses them in page tab menus
+- Restores geUrlLinkContainer class on link dialog URL row for Confluence plugin
+- Adds adaptiveColors to viewStateProperties for diff sync
+- Fixes NPE in page tab drag when requestAnimationFrame fires after dragend
+- Fixes NPE in table color picker when selection changes during async callback
+- Fixes stroke color condition typo and non-string style in color scheme panel
+- Adds error handling for corrupted data in Graph.decompress
+- Adds error handling for corrupted draft data in DraftDialog
+- Exposes urlInput property on LinkDialog for stable access from plugins
+- Prevents showing sparkle button in simple theme if generate action is null
+
+08-APR-2026: 29.7.1
+
+- Jira Cloud: Fixed Confluence auth in embed [DID-18214]
+
+08-APR-2026: 29.7.0
+
+- Fixes dashboard URL
+- Fixes possible NPE for invalid shape picker configuration
+- Adds experimental curved text shape in Misc sidebar [jgraph/drawio#2651]
+- feat: improve shape search with scored fallback and compound token splitting
+- Redesigned edit data dialog
+- Redesigned edit geometry dialog
+- Redesigned page setup dialog
+- Redesigned page background dialog
+- Redesigned edit link dialog
+- Update dialog style guide
+- Redesigned edit library dialog and added resizing
+- Redesigned edit diagram dialog
+- Redesigned parse dialog
+- Redesigned create graph dialog
+- Redesigned plugins dialog
+- Redesigned text dialog
+- Redesigned simple text dialog
+- Makes text dialog resizable
+- Adds ms365 to proxy list
+- Redesigned insert table drop down
+- Persists sidebar width across page reloads
+- Persists format panel collapsed section states across page reloads
+- Persists sidebar library collapsed states across page reloads
+- Adds pop animation when inserting single vertices from sidebar via click
+- Shortens insert animation and defers selection until it completes
+- Adds drag-and-drop reordering of sidebar library entries with persistence
+- Convert color picker from modal dialog to non-modal tool window
+- Fixes mxWindow title accumulation when browser translation is active
+- Adds persistence for window positions, sizes, docking states and visibility
+- Fixes layers window disabled state and tool windows not showing on first click
+- Fixes recent colors duplication after reset in color picker
+- Adds shift+click on tag eye icon to show only that tag
+- Adds browserTranslate configuration switch and documentation
+- Adds experimental support for browser translation
+- Adds browser translation support to GraphViewer and changes default to enabled
+- Adds spacer placeholder for page tab drag reorder
+- Fixes tab scroller jumping on page activation
+- Lazy browser translate init, default on in viewer, same-origin iframe support
+- Fixes default color button missing in color picker tool window
+- Adjusts animation delay in itemClicked function for faster transitions
+- Fixes typing shim stealing focus from clipboard handler during copy/paste
+- Adds Ctrl/Cmd+Enter shortcut to omnisearch dropdown for first entry after separator
+- Fixes clipped SVG borders in clipSvgDataUri [jgraph/drawio#5534]
+- Fixes stencil connection points with direction and aspect=fixed [jgraph/drawio#5537]
+- Fixes stencil edge routing bounds with direction and self-loop state corruption [jgraph/drawio#5537]
+- Improved localized shape search using fast, local reverse lookup for available resources [jgraph/drawio#5518]
+- Adds copy/paste text style feature [jgraph/drawio#4752]
+- Adds rounded border support for image shapes
+- Fixes Find/Replace window not showing on first invocation from omni search
+- Adds exact page name match in omni search when query ends with space
+- Removes enableAi hard coded to true in conf connect plugin
+- Defaults enableAi to false for new Confluence installs
+
 02-APR-2026: 29.6.10
 
 - Fixes build dashboard URL

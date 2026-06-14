@@ -850,17 +850,23 @@ Sidebar.prototype.addEntry = function(tags, fn)
 			}
 		};
 
-		fn();
-		this.createVertexTemplateFromCells = createVertexTemplateFromCells;
+		try
+		{
+			fn();
+		}
+		finally
+		{
+			this.createVertexTemplateFromCells = createVertexTemplateFromCells;
+		}
 	}
 	
-	if (this.taglist != null && tags != null && tags.length > 0)
+	if (this.taglist != null && typeof tags === 'string' && tags.length > 0)
 	{
 		if (this.currentSearchEntryLibrary != null)
 		{
 			fn.parentLibraries = [this.currentSearchEntryLibrary];
 		}
-		
+
 		// Replaces special characters
 		var tmp = tags.toLowerCase().replace(/[\/\,\(\)]/g, ' ').split(' ');
 		var tagList = [];
@@ -939,6 +945,109 @@ Sidebar.prototype.isEntryIgnored = function(entry, searchClosedLibraries)
 };
 
 /**
+ * Splits a token on camelCase and letter-digit boundaries.
+ * e.g. "pid2misc" → ["pid", "misc"], "discInst" → ["disc", "inst"]
+ */
+Sidebar.prototype.splitCompoundToken = function(token)
+{
+	var parts = token.replace(/([a-z])([A-Z])/g, '$1 $2')
+		.replace(/([a-zA-Z])(\d)/g, '$1 $2')
+		.replace(/(\d)([a-zA-Z])/g, '$1 $2')
+		.toLowerCase().split(/\s+/);
+
+	return parts.filter(function(p) { return p.length >= 2; });
+};
+
+/**
+ * Collects entries matching a single term (exact + Soundex).
+ * Returns { exact: [entries], phonetic: [entries] }.
+ */
+Sidebar.prototype.matchTermEntries = function(term, reverseMap)
+{
+	var exact = [];
+	var phonetic = [];
+
+	var found = this.taglist[term];
+
+	if (found != null)
+	{
+		exact = found.entries.slice();
+	}
+
+	// Checks English translation for localized search terms
+	if (reverseMap != null)
+	{
+		var english = reverseMap[term];
+
+		if (english != null && english !== term)
+		{
+			found = this.taglist[english];
+
+			if (found != null)
+			{
+				for (var i = 0; i < found.entries.length; i++)
+				{
+					if (mxUtils.indexOf(exact, found.entries[i]) < 0)
+					{
+						exact.push(found.entries[i]);
+					}
+				}
+			}
+		}
+	}
+
+	var normalized = Editor.soundex(term.replace(/\.*\d*$/, ''));
+
+	if (normalized.length > 0 && normalized !== term)
+	{
+		found = this.taglist[normalized];
+
+		if (found != null)
+		{
+			phonetic = found.entries.slice();
+		}
+	}
+
+	return { exact: exact, phonetic: phonetic };
+};
+
+/**
+ * Returns a reverse lookup map from localized resource values to
+ * their resource keys (which are the English terms). Rebuilds
+ * the map when the language changes.
+ */
+Sidebar.prototype.getResourceReverseMap = function()
+{
+	var lang = mxClient.language || 'en';
+
+	if (this.resourceReverseMap == null || this.resourceReverseLang !== lang)
+	{
+		this.resourceReverseMap = {};
+		this.resourceReverseLang = lang;
+
+		if (lang !== 'en' && mxResources.resources != null)
+		{
+			for (var key in mxResources.resources)
+			{
+				var value = mxResources.resources[key];
+
+				if (value != null && typeof value === 'string' && value !== key)
+				{
+					var lower = value.toLowerCase();
+
+					if (lower !== key && this.resourceReverseMap[lower] == null)
+					{
+						this.resourceReverseMap[lower] = key;
+					}
+				}
+			}
+		}
+	}
+
+	return this.resourceReverseMap;
+};
+
+/**
  * Adds shape search UI.
  */
 Sidebar.prototype.searchEntries = function(searchTerms, count, page, success, error, searchClosedLibraries)
@@ -951,69 +1060,162 @@ Sidebar.prototype.searchEntries = function(searchTerms, count, page, success, er
 		{
 			searchTerms = searchTerms.substring(8).replace(/\./g, ' ');
 		}
-		
-		var tmp = searchTerms.toLowerCase().split(' ');
-		var dict = new mxDictionary();
-		var max = (page + 1) * count;
-		var results = [];
-		var index = 0;
-		
-		for (var i = 0; i < tmp.length; i++)
+
+		// Normalize: split compound tokens like "pid2misc" → ["pid", "misc"]
+		var rawTerms = searchTerms.toLowerCase().split(' ');
+		var tmp = [];
+		var seenTerms = {};
+
+		for (var i = 0; i < rawTerms.length; i++)
 		{
-			var normalized = Editor.soundex(tmp[i].replace(/\.*\d*$/, ''));
+			var subTokens = this.splitCompoundToken(rawTerms[i]);
 
-			if (normalized.length > 0)
+			if (subTokens.length == 0 && rawTerms[i].length >= 2)
 			{
-				// Moves exact matches to start of array
-				var found = this.taglist[tmp[i]];
-				var arr = (found != null) ? found.entries.slice() : [];
+				subTokens = [rawTerms[i]];
+			}
 
-				// Adds results for normalized search term
-				found = this.taglist[normalized];
-				arr = (found != null) ? arr.concat(found.entries) : arr;
-
-				var tmpDict = new mxDictionary();
-				
-				if (arr.length > 0)
+			for (var j = 0; j < subTokens.length; j++)
+			{
+				if (!seenTerms[subTokens[j]])
 				{
-					results = [];
-
-					for (var j = 0; j < arr.length; j++)
-					{
-						var entry = arr[j];
-	
-						// NOTE Array does not contain duplicates
-						if (((index == 0) ==(dict.get(entry) == null)) &&
-							tmpDict.get(entry) == null)
-						{
-							tmpDict.put(entry, entry);
-
-							if (!this.isEntryIgnored(entry, searchClosedLibraries))
-							{
-								results.push(entry);
-							
-								if (i == tmp.length - 1 && results.length == max)
-								{
-									success(results.slice(page * count, max), max, true, tmp);
-									
-									return;
-								}
-							}
-						}
-					}
+					seenTerms[subTokens[j]] = true;
+					tmp.push(subTokens[j]);
 				}
-				else
-				{
-					results = [];
-				}
-				
-				dict = tmpDict;
-				index++;
 			}
 		}
-		
+
+		// Builds reverse map for localized search term translation
+		var reverseMap = this.getResourceReverseMap();
+
+		var max = (page + 1) * count;
+
+		// Collect per-term match entries
+		var termMatches = [];
+
+		for (var i = 0; i < tmp.length; i++)
+		{
+			termMatches.push(this.matchTermEntries(tmp[i], reverseMap));
+		}
+
+		// Try strict AND to find the candidate set
+		var dict = new mxDictionary();
+		var andResults = null;
+		var index = 0;
+		var andFailed = false;
+
+		for (var i = 0; i < termMatches.length; i++)
+		{
+			var arr = termMatches[i].exact.concat(termMatches[i].phonetic);
+			var tmpDict = new mxDictionary();
+
+			if (arr.length > 0)
+			{
+				andResults = [];
+
+				for (var j = 0; j < arr.length; j++)
+				{
+					var entry = arr[j];
+
+					if (((index == 0) == (dict.get(entry) == null)) &&
+						tmpDict.get(entry) == null)
+					{
+						tmpDict.put(entry, entry);
+						andResults.push(entry);
+					}
+				}
+			}
+			else
+			{
+				andResults = [];
+			}
+
+			dict = tmpDict;
+			index++;
+
+			if (andResults.length == 0 && i < termMatches.length - 1)
+			{
+				andFailed = true;
+				break;
+			}
+		}
+
+		// Score candidates: +1.0 per exact match, +0.5 per Soundex-only match
+		// Each shape scores at most once per term (exact wins over Soundex)
+		var scores = new mxDictionary();
+		var allEntries = new mxDictionary();
+		var candidateFilter = null;
+
+		// If AND succeeded, only score the AND results
+		if (!andFailed && andResults != null && andResults.length > 0)
+		{
+			candidateFilter = new mxDictionary();
+
+			for (var i = 0; i < andResults.length; i++)
+			{
+				candidateFilter.put(andResults[i], true);
+			}
+		}
+
+		for (var i = 0; i < termMatches.length; i++)
+		{
+			var exactForTerm = new mxDictionary();
+
+			for (var j = 0; j < termMatches[i].exact.length; j++)
+			{
+				var entry = termMatches[i].exact[j];
+
+				if (candidateFilter == null || candidateFilter.get(entry) != null)
+				{
+					var prev = scores.get(entry);
+
+					scores.put(entry, (prev || 0) + 1.0);
+					allEntries.put(entry, entry);
+					exactForTerm.put(entry, true);
+				}
+			}
+
+			for (var j = 0; j < termMatches[i].phonetic.length; j++)
+			{
+				var entry = termMatches[i].phonetic[j];
+
+				if ((candidateFilter == null || candidateFilter.get(entry) != null) &&
+					exactForTerm.get(entry) == null)
+				{
+					var prev = scores.get(entry);
+
+					scores.put(entry, (prev || 0) + 0.5);
+					allEntries.put(entry, entry);
+				}
+			}
+		}
+
+		// Collect and sort by score descending
+		var candidates = [];
+
+		allEntries.visit(function(key, entry)
+		{
+			candidates.push({ entry: entry, score: scores.get(entry) || 0 });
+		});
+
+		candidates.sort(function(a, b)
+		{
+			return b.score - a.score;
+		});
+
+		var results = [];
+
+		for (var i = 0; i < candidates.length; i++)
+		{
+			if (!this.isEntryIgnored(candidates[i].entry, searchClosedLibraries))
+			{
+				results.push(candidates[i].entry);
+			}
+		}
+
 		var len = results.length;
-		success(results.slice(page * count, (page + 1) * count), len, false, tmp);
+		var more = (page + 1) * count < len;
+		success(results.slice(page * count, (page + 1) * count), len, more, tmp);
 	}
 	else
 	{
@@ -1220,6 +1422,8 @@ Sidebar.prototype.addSearchPalette = function(expand)
 	});
 
 	var enterAction = null;
+	var ctrlEnterAction = null;
+	var selectedItem = null;
 
 	function setEnterAction(item, fn)
 	{
@@ -1229,6 +1433,24 @@ Sidebar.prototype.addSearchPalette = function(expand)
 		span.style.color = 'gray';
 		span.innerHTML = 'Enter';
 		td.appendChild(span);
+	};
+
+	var ctrlEnterSpan = null;
+
+	function setCtrlEnterAction(item, fn)
+	{
+		ctrlEnterAction = fn;
+
+		if (ctrlEnterSpan != null && ctrlEnterSpan.parentNode != null)
+		{
+			ctrlEnterSpan.parentNode.removeChild(ctrlEnterSpan);
+		}
+
+		var td = item.firstChild.nextSibling.nextSibling;
+		ctrlEnterSpan = document.createElement('span');
+		ctrlEnterSpan.style.color = 'gray';
+		ctrlEnterSpan.innerHTML = (mxClient.IS_MAC) ? 'Cmd+Enter' : 'Ctrl+Enter';
+		td.appendChild(ctrlEnterSpan);
 	};
 
 	// Consumes Shift keyup after Shift+Enter to prevent
@@ -1246,8 +1468,22 @@ Sidebar.prototype.addSearchPalette = function(expand)
 
 	editorUi.addMenuHandler(input, mxUtils.bind(this, function(menu, parent)
 	{
+		selectedItem = null;
+
+		// Wraps addItem to store action function on each menu item
+		var origAddItem = menu.addItem;
+
+		menu.addItem = function(title, image, funct, parent, iconCls, enabled, active, noHover)
+		{
+			var tr = origAddItem.apply(menu, arguments);
+			tr._action = funct;
+			tr._enabled = (enabled != false);
+			return tr;
+		};
+
 		var lc = input.value.toLowerCase();
 		enterAction = null;
+		ctrlEnterAction = null;
 
 		var item = menu.addItem(mxResources.get('searchShapes'), null, mxUtils.bind(this, function()
 		{
@@ -1332,6 +1568,16 @@ Sidebar.prototype.addSearchPalette = function(expand)
 						graph.container.focus();
 					});
 				}
+
+				if (ctrlEnterAction == null && action.isEnabled() &&
+					(bestMatch == action || input.value.length == 0))
+				{
+					setCtrlEnterAction(item, function()
+					{
+						executeAction(action, arguments);
+						graph.container.focus();
+					});
+				}
 			}
 		};
 
@@ -1345,43 +1591,62 @@ Sidebar.prototype.addSearchPalette = function(expand)
 			}
 		}
 
-		// Finds first matching page
+		// Finds first matching page, preferring non-current page
 		if (lc.length > 0 && editorUi.pages != null)
 		{
 			menu.addSeparator();
+			var matchingPages = [];
 
 			for (var i = 0; i < editorUi.pages.length; i++)
 			{
-				if ((function(page)
+				var page = editorUi.pages[i];
+
+				if (page.getName() != null && ((lc.charAt(lc.length - 1) == ' ') ?
+					page.getName().toLowerCase() == lc.substring(0, lc.length - 1) :
+					page.getName().toLowerCase().indexOf(lc) >= 0))
 				{
-					if (page.getName() != null && page.getName().toLowerCase().indexOf(lc) >= 0)
+					matchingPages.push(page);
+				}
+			}
+
+			// Sorts non-current pages first
+			if (matchingPages.length > 1)
+			{
+				var currentPage = editorUi.currentPage;
+
+				matchingPages.sort(function(a, b)
+				{
+					if (a == currentPage) return 1;
+					if (b == currentPage) return -1;
+					return 0;
+				});
+			}
+
+			for (var i = 0; i < Math.min(4, matchingPages.length); i++)
+			{
+				(function(page, isFirst)
+				{
+					var fn = function()
 					{
-						var fn = function()
-						{
-							editorUi.selectPage(page);
-							graph.container.focus();
-							input.value = '';
-						};
+						editorUi.selectPage(page);
+						graph.container.focus();
+						input.value = '';
+					};
 
-						var item = menu.addItem(page.getName() +
-							' (' + mxResources.get('page') + ')',
-							null, fn, parent);
+					var item = menu.addItem(page.getName() +
+						' (' + mxResources.get('page') + ')',
+						null, fn, parent);
 
+					if (isFirst)
+					{
 						if (enterAction == null)
 						{
 							setEnterAction(item, fn);
 						}
 
-						return true;
+						setCtrlEnterAction(item, fn);
 					}
-					else
-					{
-						return false;
-					}	
-				})(editorUi.pages[i]))
-				{
-					break;
-				}
+				})(matchingPages[i], i == 0);
 			}
 		}
 		
@@ -1426,10 +1691,15 @@ Sidebar.prototype.addSearchPalette = function(expand)
 							var item = menu.addItem(entry.title + ' (' +
 								mxResources.get('openLibrary') + ')',
 								null, fn, parent);
-							
+
 							if (enterAction == null)
 							{
 								setEnterAction(item, fn);
+							}
+
+							if (ctrlEnterAction == null)
+							{
+								setCtrlEnterAction(item, fn);
 							}
 						}
 
@@ -1686,9 +1956,61 @@ Sidebar.prototype.addSearchPalette = function(expand)
 			find(false);
 			mxEvent.consume(evt);
 		}
+		else if (evt.keyCode == 13 /* Enter */ && (evt.metaKey || evt.ctrlKey) &&
+			ctrlEnterAction != null)
+		{
+			ctrlEnterAction(evt, evt);
+			mxEvent.consume(evt);
+		}
 		else if (evt.keyCode == 13 /* Enter */ && enterAction != null)
 		{
 			enterAction(evt, evt);
+			mxEvent.consume(evt);
+		}
+		else if (evt.keyCode == 38 /* ArrowUp */ || evt.keyCode == 40 /* ArrowDown */)
+		{
+			var menu = editorUi.currentMenu;
+
+			if (menu != null && menu.tbody != null)
+			{
+				var items = [];
+				var children = menu.tbody.childNodes;
+
+				for (var i = 0; i < children.length; i++)
+				{
+					if (children[i].nodeName == 'TR' &&
+						children[i]._action != null &&
+						children[i]._enabled)
+					{
+						items.push(children[i]);
+					}
+				}
+
+				if (items.length > 0)
+				{
+					var idx = items.indexOf(selectedItem);
+
+					if (evt.keyCode == 40 /* ArrowDown */)
+					{
+						idx = (idx + 1) % items.length;
+					}
+					else
+					{
+						idx = (idx <= 0) ? items.length - 1 : idx - 1;
+					}
+
+					if (selectedItem != null)
+					{
+						selectedItem.className = 'mxPopupMenuItem';
+					}
+
+					selectedItem = items[idx];
+					selectedItem.className = 'mxPopupMenuItemHover';
+					selectedItem.scrollIntoView({block: 'nearest'});
+					enterAction = selectedItem._action;
+				}
+			}
+
 			mxEvent.consume(evt);
 		}
 		else if (evt.keyCode == 9 /* Tab */)
@@ -1983,14 +2305,9 @@ Sidebar.prototype.addMiscPalette = function(expand)
 	var fns = [
 		this.createVertexTemplateEntry(mxUtils.setStyle(mxUtils.setStyle(graph.appendFontSize(Editor.defaultTextStyle, graph.vertexFontSize), 'autosize', '1'), 'resizable', '0'),
 			60, 30, 'Text', 'Autosize Text', null, null, 'autosize text'),
-   	 	this.createVertexTemplateEntry('text;strokeColor=none;fillColor=none;html=1;fontSize=24;fontStyle=1;verticalAlign=middle;align=center;', 100, 40, 'Title', 'Title', null, null, 'text heading title'),
-	 	this.createVertexTemplateEntry('text;strokeColor=none;fillColor=none;html=1;whiteSpace=wrap;verticalAlign=middle;overflow=hidden;', 100, 80,
- 			'<ul><li>Value 1</li><li>Value 2</li><li>Value 3</li></ul>', 'Unordered List'),
-	 	this.createVertexTemplateEntry('text;strokeColor=none;fillColor=none;html=1;whiteSpace=wrap;verticalAlign=middle;overflow=hidden;', 100, 80,
- 			'<ol><li>Value 1</li><li>Value 2</li><li>Value 3</li></ol>', 'Ordered List'),
-		this.addDataEntry('vertical list', 60, 60, 'Vertical List',
-			'7VjbbqMwEP0aXldcQrp9hfSyUvel3R9wwwRba2xkJiX063eMnaRNgxR2V1EUIYHkGWYGzznjI0SQ5NXmwbCa/9QFyCC5C5LcaI1uVW1ykDKIQ1EEySKI45DuIL4feBr1T8OaGVB4SkLsEt6YXIPzOEeDnfSOhrPaLpG9WlfWIDP4It6tLyR7qRUyocCQHfW2lKxuRB/tIriQxRPr9Bq3dbZWtqJsXyyy2SshZa6lttWUVu6FRv+GA6ffNxiEzWDvvcs3/gC6AjQdhbSiQO4i5g6ekIMoOX72scbZ5S5zDyQtPJbHcU1G4vqsW2qKayPeLZzSI3eIddOKSjIFj8CKA1emi26X9REwoTgYYbFGXfsICSv0y1eNqCtvGI9CeJTHwuj6FzMlbEOOkFVrobAHLs3oIijz8FsapNRxTna0t+my4QZzrWjHNEK2LLAGW2gOR2N+KuXxX1Eepf9O+ewL5T8QKvJEg9TTxlEw+QxLZKrsTxfHSvqD1HKB8FKzpQ1tSSLcYVM2ek/KENmagFpJO1YLLooC1HG+xs1Ezy6YuzdwJEcHNBH0GZOipJctXL2soQaEKp9c9fRUHpP/zqMvtgd7dDUmqXfFkM7aWhXNl+HY7fOkeUknibgoieg+k34GxZgPKcbwJEyKMUhrevWKcTMpxiUqRhKeTTG+DylGMinGeMW4uXrFuJ0E4gIEYna+T4ooHFKI2aQQ4xXi9toUgsz9zyUX/vHf0x8='),
-	 	this.addEntry('vertical list', mxUtils.bind(this, function()
+   	 	this.createVertexTemplateEntry('text;strokeColor=none;fillColor=none;html=1;fontSize=25;fontStyle=1;verticalAlign=middle;align=center;autosizeText=1;',
+			160, 40, 'Autosize Title', 'Autosize Title', null, null, 'text heading title'),
+		this.addEntry('link url hyperlink text label', mxUtils.bind(this, function()
 	 	{
 	 		var cell = new mxCell('Link', new mxGeometry(0, 0, 60, 40), 'text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontColor=#0000EE;fontStyle=4;');
 	 		cell.vertex = true;
@@ -1998,7 +2315,36 @@ Sidebar.prototype.addMiscPalette = function(expand)
 
 	 		return this.createVertexTemplateFromCells([cell], cell.geometry.width, cell.geometry.height, 'Link');
 	 	})),
- 		this.addDataEntry('table', 180, 120, 'Table 1', '7VnbcpswEP0aXjtcYsd9NUnTh/Yl6Q8o1trSVEiMWAeTr+8KhGlSe2xwJpMSZvCMdtmVteccwY4IkjTb3VmWi5+GgwqS2yBJrTHYjLJdCkoFcSh5kNwEcRzSL4i/Hbkb1XfDnFnQeE5C3CQ8MbWFxtM4CqyUdxSC5W6I7NG5lgUyiw/y2flCsldGI5MaLNlRbSvF8kLW0U2EkIr/YJXZYjtPay3XlO0ni+Zk+/WARdgdral2+YLuwGSAtqKQUnIUPmLR1B0KkBvRpnkwQlY0js0+t4OIBh6lw4glPRG7NyWVJYyVzw4o5TF5jWJRykwxDd+B8VeupeHVPsua35AaZRzaUguw0qGIJvcRCtboh48G0WTesB6G8CBD3Jr8F7MbaEPWUqn2b7TRjvfcSI01cLMlXQRlGn6ZBTOqOCU76my6XLjF1GhaMYnDTQuswBKKwaTHw0i/egPOr87nnFaMkql7WCHTm3rDCMyU3xulkAgPOVu50JJ2fbN/tIvu2DjGsiGE1srp6UZIzkEfJqqfGGpawd4+QcNuNJSf5CQ/8570+Mk6LHvPxhSVphnSHtpqXvzD+X6dZ8lgNslgsAx2L0kbkSrmkyouVcX+xTwiWVxPfcKH6hOql6S/R9uwmJ4Mp+m6Hn3b8HWSwWAZjLdtiMJJFpfKYox9QxRNjcNHbBwW79g4RD2O5T7vsyE6fQz43z8Mepw2TkL4RM3DdCJ5uS5G0D2Q2X0rasL//pT0Bw=='),
+		this.createVertexTemplateEntry('shape=curvedText;noLabel=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;',
+			70, 50, 'Curved Text', 'Curved Text', null, null, 'text curved arc path'),
+		this.addEntry('variable placeholder metadata hello world text label', mxUtils.bind(this, function()
+	 	{
+	 		var cell = new mxCell('%name% Text', new mxGeometry(0, 0, 80, 20), 'text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;');
+	 		cell.vertex = true;
+	 		this.graph.setAttributeForCell(cell, 'placeholders', '1');
+	 		this.graph.setAttributeForCell(cell, 'name', 'Variable');
+
+	 		return this.createVertexTemplateFromCells([cell], cell.geometry.width, cell.geometry.height, 'Variable');
+	 	})),
+		this.addEntry('timestamp date time text label', mxUtils.bind(this, function()
+	 	{
+	 		var cell = new mxCell('%date{ddd mmm dd yyyy HH:MM:ss}%', new mxGeometry(0, 0, 160, 20), 'text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;');
+	 		cell.vertex = true;
+	 		this.graph.setAttributeForCell(cell, 'placeholders', '1');
+
+	 		return this.createVertexTemplateFromCells([cell], cell.geometry.width, cell.geometry.height, 'Timestamp');
+	 	})),
+		this.createVertexTemplateEntry('text;strokeColor=none;fillColor=none;html=1;whiteSpace=wrap;verticalAlign=middle;overflow=hidden;', 100, 80,
+ 			'<ul><li>Value 1</li><li>Value 2</li><li>Value 3</li></ul>', 'Unordered List'),
+	 	this.createVertexTemplateEntry('text;strokeColor=none;fillColor=none;html=1;whiteSpace=wrap;verticalAlign=middle;overflow=hidden;', 100, 80,
+ 			'<ol><li>Value 1</li><li>Value 2</li><li>Value 3</li></ol>', 'Ordered List'),
+		this.addDataEntry('vertical list', 60, 60, 'Vertical List',
+			'7VjbbqMwEP0aXldcQrp9hfSyUvel3R9wwwRba2xkJiX063eMnaRNgxR2V1EUIYHkGWYGzznjI0SQ5NXmwbCa/9QFyCC5C5LcaI1uVW1ykDKIQ1EEySKI45DuIL4feBr1T8OaGVB4SkLsEt6YXIPzOEeDnfSOhrPaLpG9WlfWIDP4It6tLyR7qRUyocCQHfW2lKxuRB/tIriQxRPr9Bq3dbZWtqJsXyyy2SshZa6lttWUVu6FRv+GA6ffNxiEzWDvvcs3/gC6AjQdhbSiQO4i5g6ekIMoOX72scbZ5S5zDyQtPJbHcU1G4vqsW2qKayPeLZzSI3eIddOKSjIFj8CKA1emi26X9REwoTgYYbFGXfsICSv0y1eNqCtvGI9CeJTHwuj6FzMlbEOOkFVrobAHLs3oIijz8FsapNRxTna0t+my4QZzrWjHNEK2LLAGW2gOR2N+KuXxX1Eepf9O+ewL5T8QKvJEg9TTxlEw+QxLZKrsTxfHSvqD1HKB8FKzpQ1tSSLcYVM2ek/KENmagFpJO1YLLooC1HG+xs1Ezy6YuzdwJEcHNBH0GZOipJctXL2soQaEKp9c9fRUHpP/zqMvtgd7dDUmqXfFkM7aWhXNl+HY7fOkeUknibgoieg+k34GxZgPKcbwJEyKMUhrevWKcTMpxiUqRhKeTTG+DylGMinGeMW4uXrFuJ0E4gIEYna+T4ooHFKI2aQQ4xXi9toUgsz9zyUX/vHf0x8='),
+ 		this.createVertexTemplateEntry('shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;autosizeText=1;' +
+			'fontColor=#000000;darkOpacity=0.05;fillColor=#FFF9B2;strokeColor=none;fillStyle=solid;fontSize=20;' +
+			'direction=west;gradientDirection=north;gradientColor=#FFF2A1;shadow=1;size=20;pointerEvents=1;',
+			150, 150, 'The size of the font in this note will change so that it fits within the note shape', mxResources.get('note')),
+		this.addDataEntry('table', 180, 120, 'Table 1', '7VnbcpswEP0aXjtcYsd9NUnTh/Yl6Q8o1trSVEiMWAeTr+8KhGlSe2xwJpMSZvCMdtmVteccwY4IkjTb3VmWi5+GgwqS2yBJrTHYjLJdCkoFcSh5kNwEcRzSL4i/Hbkb1XfDnFnQeE5C3CQ8MbWFxtM4CqyUdxSC5W6I7NG5lgUyiw/y2flCsldGI5MaLNlRbSvF8kLW0U2EkIr/YJXZYjtPay3XlO0ni+Zk+/WARdgdral2+YLuwGSAtqKQUnIUPmLR1B0KkBvRpnkwQlY0js0+t4OIBh6lw4glPRG7NyWVJYyVzw4o5TF5jWJRykwxDd+B8VeupeHVPsua35AaZRzaUguw0qGIJvcRCtboh48G0WTesB6G8CBD3Jr8F7MbaEPWUqn2b7TRjvfcSI01cLMlXQRlGn6ZBTOqOCU76my6XLjF1GhaMYnDTQuswBKKwaTHw0i/egPOr87nnFaMkql7WCHTm3rDCMyU3xulkAgPOVu50JJ2fbN/tIvu2DjGsiGE1srp6UZIzkEfJqqfGGpawd4+QcNuNJSf5CQ/8570+Mk6LHvPxhSVphnSHtpqXvzD+X6dZ8lgNslgsAx2L0kbkSrmkyouVcX+xTwiWVxPfcKH6hOql6S/R9uwmJ4Mp+m6Hn3b8HWSwWAZjLdtiMJJFpfKYox9QxRNjcNHbBwW79g4RD2O5T7vsyE6fQz43z8Mepw2TkL4RM3DdCJ5uS5G0D2Q2X0rasL//pT0Bw=='),
  		this.addDataEntry('table', 180, 120, 'Table 2', '7ZlLc9owEMc/ja8dP3jlimnSQ3pJOr0reMGayFqPvNSQT9+VLUMCOEDbyaTYM2ZGWq9e/99K7MheFGfrOyPy9DsmoLzoqxfFBpHqUraOQSkv9GXiRTMvDH3+eeFty9ugeuvnwoCmcxqEdYNfQq2gttSGgjbKGYpU5LZI4smapillPM1ZwMUylQSPuZjb9yUvgm0FCUOP8sWafK7PUZOQGoxrM0elRF7IqrPaI5UquRcbXFEzTFOz3qtM33P7wnkbLF9XF9y9Gy0YVcMbfIYYFdoBE1iIlbIduXWCIVi3alWZnFB3gBmQ2bBLKRNKncek1tNPQS7TppkT2RdFbVhu2+6k54JT/ziJ6EISD1haGGjki1VYOT325S9KmSmh4RuIZM80xWTjTIS5KylYkCs+IRFmjexuuf5RhInB/IcwS2hcFlKpBoJGbeMmR6mpEmg45Ycli/0vQ2/IK4u5Huzq/Fh3QzFq5snRY7sFUVAJBZ2ELnUKRp4NPfwz6IN/wHxwwPxnVQz9oBU+T52kUA8wJ6GX5+xI3oHaeu9wHaFzWQQga7pQNgJnqUwS0HtQwr+FEp2EMrqQietsp9vFvQlFYLQg3jgrnRQHoLfzPIv9sJV9+8bvNPv1W1JXFAqj1lCI+lB4JxS2/7tXFAvjPg34VGnA5i30j8gKJq3HwaDjx8H46rOCm1b2w559t7KCwG+NhVEfCx1LC4Kgzws+Y14w+cC8IDi8rGsOhHHHD4Tg9M3df38CHF4QNvQnPf2u5QbtN4c3fTBceXLA1d0Hotr99fej3w=='),
 		this.addDataEntry('table title', 180, 150, 'Table with Title 1', '7VnbbtswDP0avw6WXSfda5yue9he2v6AGjGRMFkyZKZO+vWjbOWyJVluQ9G6BmxApChaOudIIOQozYvFveOl/GkF6Ci9i9LcWYttq1jkoHWUxEpE6ThKkpjeKPl2oJc1vXHJHRg8ZUDSDnjheg6t54k/a2i9FS518FaSl76JTW86qpA7fFSv3pfG5JhYg1wZcORgja01LyvVhI+bCKm0+MGXdo6rRCuL0jn7C3KrrR8vYMrn2vunlDV8hQ3IDrMFh7A4uOLGFZZ7D7YAdEsKqZVAGSJuW1RiCWomV8Oy4ORV65itx24ApEbAcD+e6Q6e/4bywda0LGmdevUA6oDVNryNXatCcwPfgYu/XCMrlutR2ygqI8EpjyLaMkRomGJoPltEWwTDBRjivcwJZ8sn7mawCpkqrVefMdZ4QZRWGWyAy0b0EJR5/CWLMlpxTjbb2PT4cIe5NTRjEo1PC7zCGqqLSU/2k74MtARqj2ng5j9I4OZ0CdACUHH9ABPkZtZsLImFDluolgrhseQTH1rTEdFuM+OjN+QcIt0SYFPt5TWWSggw+3k7TxsNy+DuXqAlm11KV3p0jw7OpCck22B5djauaWmGI22puRHVDufreZ4kg6yXwcUyWPxJWodUMehVca0qWNI9WQz7suE9lg3DNywbbvuT4Thdw86XDV97GVwsg+6WDSzuZXGtLLpYNzDWFw7vsXBg7A0rB7Z7idcfDru3gsevBT/8aXDG7WMvhE9UPfRXktfrogPlA5mbP0tt+PaPp98='),
 		this.addDataEntry('table title', 180, 120, 'Table with Title 2', '7VhNb6MwEP01XFd8NNnmGtLtHrKXptq7Gw9grbGRmZSkv34HbEJ3CdtklaYoqgSSZxgP+L1nPwkvivPtvWFF9kNzkF5050Wx0RrtKN/GIKUX+oJ70cILQ59uL/w28DRonvoFM6DwmAmhnfDM5AZs5pE9SbDZEnfSZcuMFfUQm6fRvERmcCVe6lzkU2KtFTKhwFAiaGIpWVGKpnzRVGRC8iXb6Q22jdponogt8AddlW620dWSmpVuakLNV+5j/ObtRv+CWEtdv45DwjYS2zr7UcGUYrc4MAjbQYCalEPnHnQOaHZUUgmOmau4tSD6GYg0a6c5ZH1W2kS6n9vhTQMH+WH4ox78/0aeIKJlZdqIlxpvucejY6OJK5FLpuA7MP5Xaq75zqVQF24kIUE3fNKIOneBccv1DxLKjS4emUmhLUmElC0pSqtaJ4UWChuAJnO6CLLY/zLxJrSymOKgi+mqyw3GWhG/pKW6LbASKyixR7pQGRjx36SHh0nfOVoctW9pIDqDBG56EggGNUArQMHkA6yRqbTZiBnm0m2aKhMIq4Kt69KKjhS7LVVd3bF2gKTThKAJ2kTWQlxkgnNQLc1g7p7Bsh2cm6/ozU16cyI/rlmH5cndmKQlK4a0pzaKlz3S9995lA4mPR38bIahP3I9MClS0sDC1s5LeqFQ6dLOnA4I5hLi2P5J5evNfF6xHNXuvGqZfhrHGI1jekHj+NqTwLAGRnFQvPs5ML16k7gdNImRc//xJjEgjms2idmnSYzRJGYXNInA72kgGvdJ8e4HwezqXSIIBm1i5OR/vE0MqOOKbILC7v+iLX/9+/E3'),
@@ -2012,28 +2358,6 @@ Sidebar.prototype.addMiscPalette = function(expand)
  			'<tr><th align="center"><b>Title</b></th></tr>' +
  			'<tr><td align="center">Section 1.1\nSection 1.2\nSection 1.3</td></tr>' +
  			'<tr><td align="center">Section 2.1\nSection 2.2\nSection 2.3</td></tr></table>', 'HTML Table 4'),
-	 	this.addEntry('timestamp date time text label', mxUtils.bind(this, function()
-	 	{
-	 		var cell = new mxCell('%date{ddd mmm dd yyyy HH:MM:ss}%', new mxGeometry(0, 0, 160, 20), 'text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;');
-	 		cell.vertex = true;
-	 		this.graph.setAttributeForCell(cell, 'placeholders', '1');
-
-	 		return this.createVertexTemplateFromCells([cell], cell.geometry.width, cell.geometry.height, 'Timestamp');
-	 	})),
-	 	this.addEntry('variable placeholder metadata hello world text label', mxUtils.bind(this, function()
-	 	{
-	 		var cell = new mxCell('%name% Text', new mxGeometry(0, 0, 80, 20), 'text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;');
-	 		cell.vertex = true;
-	 		this.graph.setAttributeForCell(cell, 'placeholders', '1');
-	 		this.graph.setAttributeForCell(cell, 'name', 'Variable');
-
-	 		return this.createVertexTemplateFromCells([cell], cell.geometry.width, cell.geometry.height, 'Variable');
-	 	})),
-		this.createVertexTemplateEntry('shape=ext;double=1;rounded=0;whiteSpace=wrap;html=1;', 120, 80, '', 'Double Rectangle', null, null, 'rect rectangle box double'),
-	 	this.createVertexTemplateEntry('shape=ext;double=1;rounded=1;whiteSpace=wrap;html=1;', 120, 80, '', 'Double Rounded Rectangle', null, null, 'rounded rect rectangle box double'),
- 		this.createVertexTemplateEntry('ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;', 100, 60, '', 'Double Ellipse', null, null, 'oval ellipse start end state double'),
-		this.createVertexTemplateEntry('shape=ext;double=1;whiteSpace=wrap;html=1;aspect=fixed;', 80, 80, '', 'Double Square', null, null, 'double square'),
-		this.createVertexTemplateEntry('ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;aspect=fixed;', 80, 80, '', 'Double Circle', null, null, 'double circle'),
 		this.createVertexTemplateEntry('rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fillWeight=4;hachureGap=8;hachureAngle=45;fillColor=#1ba1e2;sketch=1;', 120, 60, '', 'Rectangle Sketch', true, null, 'rectangle rect box text sketch comic retro'),
 		this.createVertexTemplateEntry('ellipse;whiteSpace=wrap;html=1;strokeWidth=2;fillWeight=2;hachureGap=8;fillColor=#990000;fillStyle=dots;sketch=1;', 120, 60, '', 'Ellipse Sketch', true, null, 'ellipse oval sketch comic retro'),
 		this.createVertexTemplateEntry('rhombus;whiteSpace=wrap;html=1;strokeWidth=2;fillWeight=-1;hachureGap=8;fillStyle=cross-hatch;fillColor=#006600;sketch=1;', 120, 60, '', 'Diamond Sketch', true, null, 'diamond sketch comic retro'),
@@ -2068,12 +2392,7 @@ Sidebar.prototype.addMiscPalette = function(expand)
 		}),
 	 	this.createVertexTemplateEntry('shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;', 120, 60, '', 'Partial Rectangle'),
 		this.createVertexTemplateEntry('shape=partialRectangle;whiteSpace=wrap;html=1;bottom=0;top=0;fillColor=none;', 120, 60, '', 'Partial Rectangle'),
-		this.createVertexTemplateEntry('shape=partialRectangle;whiteSpace=wrap;html=1;bottom=0;right=0;fillColor=none;', 120, 60, '', 'Partial Rectangle'),
 		this.createVertexTemplateEntry('shape=partialRectangle;whiteSpace=wrap;html=1;bottom=1;right=1;left=1;top=0;fillColor=none;routingCenterX=-0.5;', 120, 60, '', 'Partial Rectangle'),
-		this.createVertexTemplateEntry('shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;' +
-			'fontColor=#000000;darkOpacity=0.05;fillColor=#FFF9B2;strokeColor=none;fillStyle=solid;' +
-			'direction=west;gradientDirection=north;gradientColor=#FFF2A1;shadow=1;size=20;pointerEvents=1;',
-			140, 160, '', mxResources.get('note')),
 		this.createVertexTemplateEntry('shape=waypoint;sketch=0;fillStyle=solid;size=6;pointerEvents=1;points=[];fillColor=none;resizable=0;rotatable=0;perimeter=centerPerimeter;snapToPoint=1;', 20, 20, '', 'Waypoint'),
 		this.createEdgeTemplateEntry('edgeStyle=segmentEdgeStyle;endArrow=classic;html=1;curved=0;rounded=0;endSize=8;startSize=8;', 50, 50, '', 'Manual Line', null, lineTags + 'manual'),
 	 	this.createEdgeTemplateEntry('shape=filledEdge;curved=0;rounded=0;fixDash=1;endArrow=none;strokeWidth=10;fillColor=#ffffff;edgeStyle=orthogonalEdgeStyle;html=1;', 60, 40, '', 'Filled Edge'),
@@ -2126,8 +2445,13 @@ Sidebar.prototype.createAdvancedShapes = function()
 	field.vertex = true;
 
 	return [
+		this.createVertexTemplateEntry('shape=ext;double=1;rounded=0;whiteSpace=wrap;html=1;', 120, 80, '', 'Double Rectangle', null, null, 'rect rectangle box double'),
+	 	this.createVertexTemplateEntry('shape=ext;double=1;rounded=1;whiteSpace=wrap;html=1;', 120, 80, '', 'Double Rounded Rectangle', null, null, 'rounded rect rectangle box double'),
+ 		this.createVertexTemplateEntry('ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;', 100, 60, '', 'Double Ellipse', null, null, 'oval ellipse start end state double'),
+		this.createVertexTemplateEntry('shape=ext;double=1;whiteSpace=wrap;html=1;aspect=fixed;', 80, 80, '', 'Double Square', null, null, 'double square'),
+		this.createVertexTemplateEntry('ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;aspect=fixed;', 80, 80, '', 'Double Circle', null, null, 'double circle'),
 	 	this.createVertexTemplateEntry('shape=tapeData;whiteSpace=wrap;html=1;perimeter=ellipsePerimeter;', 80, 80, '', 'Tape Data'),
-	 	this.createVertexTemplateEntry('shape=manualInput;whiteSpace=wrap;html=1;', 80, 80, '', 'Manual Input'),
+	 	this.createVertexTemplateEntry('shape=manualInput;boundedLbl=1;whiteSpace=wrap;html=1;', 80, 80, '', 'Manual Input'),
 	 	this.createVertexTemplateEntry('shape=loopLimit;whiteSpace=wrap;html=1;', 100, 80, '', 'Loop Limit'),
 	 	this.createVertexTemplateEntry('shape=offPageConnector;whiteSpace=wrap;html=1;', 80, 80, '', 'Off Page Connector'),
 	 	this.createVertexTemplateEntry('shape=delay;whiteSpace=wrap;html=1;', 80, 40, '', 'Delay'),
@@ -4243,6 +4567,20 @@ Sidebar.prototype.itemClicked = function(cells, ds, evt, elt)
 		var pt = (mxEvent.isAltDown(evt)) ? graph.getFreeInsertPoint() :
 			graph.getCenterInsertPoint(graph.getBoundingBoxFromGeometry(cells, true));
 		ds.drop(graph, evt, null, pt.x, pt.y, true);
+
+		var sel = graph.getSelectionCells();
+
+		if (Editor.insertAnimations && sel.length == 1 &&
+			graph.model.isVertex(sel[0]))
+		{
+			graph.clearSelection();
+			var anims = graph.createPopAnimations(sel, true);
+
+			graph.executeAnimations(anims, function()
+			{
+				graph.setSelectionCells(sel);
+			}, 20, 10);
+		}
 	}
 };
 
@@ -4457,7 +4795,12 @@ Sidebar.prototype.addPaletteFunctions = function(id, title, expanded, fns)
 	{
 		for (var i = 0; i < fns.length; i++)
 		{
-			content.appendChild(fns[i](content));
+			var elt = fns[i](content);
+
+			if (elt != null)
+			{
+				content.appendChild(elt);
+			}
 		}
 	}));
 };
@@ -4517,6 +4860,11 @@ Sidebar.prototype.addFoldingHandler = function(title, content, funct)
 
 	mxEvent.addListener(title, 'click', mxUtils.bind(this, function(evt)
 	{
+		if (this._paletteDragging)
+		{
+			return;
+		}
+
 		if (title.contains(mxEvent.getSource(evt)))
 		{
 			if (content.style.display == 'none')

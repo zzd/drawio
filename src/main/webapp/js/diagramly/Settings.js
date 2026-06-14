@@ -209,6 +209,53 @@ var mxSettings =
 	{
 		mxSettings.settings.formatWidth = formatWidth;
 	},
+	getSidebarWidth: function()
+	{
+		return mxSettings.settings.sidebarWidth;
+	},
+	setSidebarWidth: function(sidebarWidth)
+	{
+		mxSettings.settings.sidebarWidth = sidebarWidth;
+	},
+	getCollapsedSections: function()
+	{
+		return mxSettings.settings.collapsedSections || {};
+	},
+	setCollapsedSections: function(collapsedSections)
+	{
+		mxSettings.settings.collapsedSections = collapsedSections;
+	},
+	getCollapsedLibraries: function()
+	{
+		return mxSettings.settings.collapsedLibraries || {};
+	},
+	setCollapsedLibraries: function(collapsedLibraries)
+	{
+		mxSettings.settings.collapsedLibraries = collapsedLibraries;
+	},
+	getLibraryOrder: function()
+	{
+		return mxSettings.settings.libraryOrder || null;
+	},
+	setLibraryOrder: function(order)
+	{
+		mxSettings.settings.libraryOrder = order;
+	},
+	getWindowState: function(name)
+	{
+		var states = mxSettings.settings.windowStates;
+
+		return (states != null) ? states[name] : null;
+	},
+	setWindowState: function(name, state)
+	{
+		if (mxSettings.settings.windowStates == null)
+		{
+			mxSettings.settings.windowStates = {};
+		}
+
+		mxSettings.settings.windowStates[name] = state;
+	},
 	isCreateTarget: function()
 	{
 		return mxSettings.settings.createTarget;
@@ -260,6 +307,9 @@ var mxSettings =
 			plugins: [],
 			recentColors: [],
 			formatWidth: mxSettings.defaultFormatWidth,
+			sidebarWidth: null,
+			collapsedSections: {},
+			collapsedLibraries: {},
 			createTarget: urlParams['sketch'] == '1',
 			pageFormat: mxGraph.prototype.pageFormat,
 			search: true,
@@ -274,7 +324,8 @@ var mxSettings =
 			// Only defined and true for new settings which haven't been saved
 			isNew: true,
 			unit: mxConstants.POINTS,
-			isRulerOn: false
+			isRulerOn: false,
+			windowStates: {}
 		};
 	},
 	init: function()

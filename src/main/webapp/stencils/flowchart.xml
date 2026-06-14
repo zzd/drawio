@@ -616,7 +616,7 @@
 </connections>
 <background>
 <save/>
-<fillcolor color="#ffff00"/>
+<fillcolor color="accentColor" default="#ffff00"/>
 <path>
 <move x="47" y="15"/>
 <line x="52" y="20"/>

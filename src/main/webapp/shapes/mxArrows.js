@@ -2849,7 +2849,7 @@ mxShapeArrowsWedgeArrowDashed2.prototype.paintEdgeShape = function(c, pts)
 	var cny = ny; // current ny
 	var pcx = p0.x; // current x on edge
 	var pcy = p0.y; // current y on edge
-	var steps = Math.floor(dist / stepSize);
+	var steps = (stepSize > 0) ? Math.floor(dist / stepSize) : 0;
 
 	c.begin();
 	

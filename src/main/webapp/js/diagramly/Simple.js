@@ -411,7 +411,7 @@ Editor.themes.push('atlas');
 									addElt(freehandElt, mxResources.get('freehand') + ' (X)', null, 'X');
 								}
 
-								if (iw >= 500 + eo)
+								if (iw >= 500 + eo && this.actions.get('generate') != null)
 								{
 									addElt(generateElt, mxResources.get('generate'));
 								}
@@ -456,7 +456,12 @@ Editor.themes.push('atlas');
 									mxResources.get('arrow'));
 								
 								addElt(freehandElt, mxResources.get('freehand') + ' (X)', null, 'X');
-								addElt(generateElt, mxResources.get('generate'));
+
+								if (this.actions.get('generate') != null)
+								{
+									addElt(generateElt, mxResources.get('generate'));
+								}
+
 								this.sketchPickerMenuElt.appendChild(shapesElt);
 							}
 							

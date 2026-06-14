@@ -2109,7 +2109,8 @@ mxGraph.prototype.processChange = function(change)
 	{
 		// Checks if the geometry has changed to avoid unnessecary revalidation
 		if (change instanceof mxTerminalChange || ((change.previous == null && change.geometry != null) ||
-			(change.previous != null && !change.previous.equals(change.geometry))))
+			(change.previous != null && (change.previous.equals == null ||
+			!change.previous.equals(change.geometry)))))
 		{
 			this.view.invalidate(change.cell);
 		}
@@ -3284,20 +3285,25 @@ mxGraph.prototype.updatePageBreaks = function(visible, width, height)
 			        [new mxPoint(Math.round(bounds.x + i * bounds.width), Math.round(bounds.y)),
 			         new mxPoint(Math.round(bounds.x + i * bounds.width), Math.round(bounds.y + bottom))];
 
-				if (breaks[i] != null)
+				if (breaks[i] != null && breaks[i].node != null)
 				{
 					breaks[i].points = pts;
 					breaks[i].redraw();
 				}
 				else
 				{
+					if (breaks[i] != null)
+					{
+						breaks[i].destroy();
+					}
+
 					var pageBreak = new mxPolyline(pts, this.pageBreakColor);
 					pageBreak.dialect = this.dialect;
 					pageBreak.pointerEvents = false;
 					pageBreak.isDashed = this.pageBreakDashed;
 					pageBreak.init(this.view.backgroundPane);
 					pageBreak.redraw();
-					
+
 					breaks[i] = pageBreak;
 				}
 			}
@@ -5141,31 +5147,35 @@ mxGraph.prototype.cellsRemoved = function(cells)
 						if (connected)
 						{
 							geo = geo.clone();
-							var state = this.view.getState(edge);
 
-							if (state != null && state.absolutePoints != null)
+							if (geo.setTerminalPoint != null)
 							{
-								var pts = state.absolutePoints;
-								var n = (source) ? 0 : pts.length - 1;
+								var state = this.view.getState(edge);
 
-								geo.setTerminalPoint(new mxPoint(
-									pts[n].x / scale - tr.x - state.origin.x,
-									pts[n].y / scale - tr.y - state.origin.y), source);
-							}
-							else
-							{
-								// Fallback to center of terminal if routing
-								// points are not available to add new point
-								// KNOWN: Should recurse to find parent offset
-								// of edge for nested groups but invisible edges
-								// should be removed in removeCells step
-								var tstate = this.view.getState(terminal);
-
-								if (tstate != null)
+								if (state != null && state.absolutePoints != null)
 								{
+									var pts = state.absolutePoints;
+									var n = (source) ? 0 : pts.length - 1;
+
 									geo.setTerminalPoint(new mxPoint(
-										tstate.getCenterX() / scale - tr.x,
-										tstate.getCenterY() / scale - tr.y), source);
+										pts[n].x / scale - tr.x - state.origin.x,
+										pts[n].y / scale - tr.y - state.origin.y), source);
+								}
+								else
+								{
+									// Fallback to center of terminal if routing
+									// points are not available to add new point
+									// KNOWN: Should recurse to find parent offset
+									// of edge for nested groups but invisible edges
+									// should be removed in removeCells step
+									var tstate = this.view.getState(terminal);
+
+									if (tstate != null)
+									{
+										geo.setTerminalPoint(new mxPoint(
+											tstate.getCenterX() / scale - tr.x,
+											tstate.getCenterY() / scale - tr.y), source);
+									}
 								}
 							}
 
@@ -7467,7 +7477,7 @@ mxGraph.prototype.disconnectGraph = function(cells)
 									src = this.model.getParent(src);
 								}
 								
-								if (src == null)
+								if (src == null && geo.setTerminalPoint != null)
 								{
 									geo.setTerminalPoint(
 										new mxPoint(pts[0].x / scale - tr.x + dx,
@@ -7485,7 +7495,7 @@ mxGraph.prototype.disconnectGraph = function(cells)
 									trg = this.model.getParent(trg);
 								}
 								
-								if (trg == null)
+								if (trg == null && geo.setTerminalPoint != null)
 								{
 									var n = pts.length - 1;
 									geo.setTerminalPoint(
@@ -9456,7 +9466,11 @@ mxGraph.prototype.isWrapping = function(cell)
 {
 	var style = this.getCurrentCellStyle(cell);
 	var state = this.view.getState(cell);
+	var dir = style[mxConstants.STYLE_TEXT_DIRECTION];
+	// Vertical text forces the foreignObject path (see mxSvgCanvas2D.text),
+	// so use the HTML whiteSpace key, not svgWhiteSpace, in that case.
 	var usesSvg = mxUtils.getValue(style, 'convertToSvg', '0') == '1' &&
+		(dir == null || dir.substring(0, 9) != 'vertical-') &&
 		(state == null || state.text == null || state.text.node == null ||
 		state.text.node.getElementsByTagName('foreignObject').length == 0);
 

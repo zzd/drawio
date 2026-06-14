@@ -4257,7 +4257,12 @@ var mxUtils =
 	setStyle: function(style, key, value)
 	{
 		var isValue = value != null && (typeof(value.length) == 'undefined' || value.length > 0);
-		
+
+		if (style != null && typeof style !== 'string')
+		{
+			style = '' + style;
+		}
+
 		if (style == null || style.length == 0)
 		{
 			if (isValue)
@@ -4377,7 +4382,7 @@ var mxUtils =
 	 */
 	setStyleFlag: function(style, key, flag, value)
 	{
-		if (style == null || style.length == 0)
+		if (style == null || typeof style !== 'string' || style.length == 0)
 		{
 			if (value || value == null)
 			{

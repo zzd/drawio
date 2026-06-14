@@ -1142,14 +1142,15 @@ mxGraphView.prototype.updateEdgeState = function(state, geo)
 {
 	var source = state.getVisibleTerminalState(true);
 	var target = state.getVisibleTerminalState(false);
-	
+	var hasGtp = typeof geo.getTerminalPoint === 'function';
+
 	// This will remove edges with no terminals and no terminal points
 	// as such edges are invalid and produce NPEs in the edge styles.
 	// Also removes connected edges that have no visible terminals.
 	if ((this.graph.model.getTerminal(state.cell, true) != null && source == null) ||
-		(source == null && geo.getTerminalPoint(true) == null) ||
+		(source == null && (!hasGtp || geo.getTerminalPoint(true) == null)) ||
 		(this.graph.model.getTerminal(state.cell, false) != null && target == null) ||
-		(target == null && geo.getTerminalPoint(false) == null))
+		(target == null && (!hasGtp || geo.getTerminalPoint(false) == null)))
 	{
 		this.clear(state.cell, true);
 	}
@@ -1380,14 +1381,20 @@ mxGraphView.prototype.getFixedTerminalPoint = function(edge, terminal, source, c
 mxGraphView.prototype.updateBoundsFromStencil = function(state)
 {
 	var previous = null;
-	
+
 	if (state != null && state.shape != null && state.shape.stencil != null && state.shape.stencil.aspect == 'fixed')
 	{
 		previous = mxRectangle.fromRectangle(state);
-		var asp = state.shape.stencil.computeAspect(state.style, state.x, state.y, state.width, state.height);
-		state.setRect(asp.x, asp.y, state.shape.stencil.w0 * asp.width, state.shape.stencil.h0 * asp.height);
+		var direction = state.style[mxConstants.STYLE_DIRECTION];
+		var inverse = (direction == mxConstants.DIRECTION_NORTH || direction == mxConstants.DIRECTION_SOUTH);
+		var sw = inverse ? state.shape.stencil.h0 : state.shape.stencil.w0;
+		var sh = inverse ? state.shape.stencil.w0 : state.shape.stencil.h0;
+		var s = Math.min(state.width / sw, state.height / sh);
+
+		state.setRect(state.x + (state.width - sw * s) / 2,
+			state.y + (state.height - sh * s) / 2, sw * s, sh * s);
 	}
-	
+
 	return previous;
 };
 
@@ -1420,19 +1427,24 @@ mxGraphView.prototype.updatePoints = function(edge, points, source, target)
 			
 			// Uses the stencil bounds for routing and restores after routing
 			var srcBounds = this.updateBoundsFromStencil(src);
-			var trgBounds = this.updateBoundsFromStencil(trg);
+			var trgBounds = (src != trg) ? this.updateBoundsFromStencil(trg) : null;
 
-			edgeStyle(edge, src, trg, points, pts);
-			
-			// Restores previous bounds
-			if (srcBounds != null)
+			try
 			{
-				src.setRect(srcBounds.x, srcBounds.y, srcBounds.width, srcBounds.height);
+				edgeStyle(edge, src, trg, points, pts);
 			}
-			
-			if (trgBounds != null)
+			finally
 			{
-				trg.setRect(trgBounds.x, trgBounds.y, trgBounds.width, trgBounds.height);
+				// Restores previous bounds
+				if (srcBounds != null)
+				{
+					src.setRect(srcBounds.x, srcBounds.y, srcBounds.width, srcBounds.height);
+				}
+
+				if (trgBounds != null)
+				{
+					trg.setRect(trgBounds.x, trgBounds.y, trgBounds.width, trgBounds.height);
+				}
 			}
 		}
 		else if (points != null)

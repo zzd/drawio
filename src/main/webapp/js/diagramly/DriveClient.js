@@ -1462,7 +1462,7 @@ DriveClient.prototype.saveFile = function(file, revision, success, errFn, noChec
 						secret = (secret != null) ? secret : Editor.guid(32);
 						properties.push({'key': 'secret', 'value': secret});
 
-						pages = this.ui.getPagesForXml(savedData)
+						pages = this.ui.getPagesForXml(savedData, true)
 						checksum = this.ui.getHashValueForPages(pages);
 
 						// Writes checksum with secret to file properties

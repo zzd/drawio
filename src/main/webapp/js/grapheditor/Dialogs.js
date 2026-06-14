@@ -233,8 +233,14 @@ var ColorPicker = function()
 
 	var mouseUp = mxUtils.bind(this, function()
 	{
+		var wasActive = panelActive || sliderActive;
 		sliderActive = false;
 		panelActive = false;
+
+		if (wasActive)
+		{
+			this.fireEvent(new mxEventObject('release'));
+		}
 	});
 
 	mxEvent.addGestureListeners(colorPanel, panelMouseDown);
@@ -322,7 +328,7 @@ ColorPicker.prototype.arrowImage = 'data:image/gif;base64,R0lGODlhBwALAKECAAAAAP
 /**
  * Constructs a new color dialog.
  */
-var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defaultColorValue, singleColorMode)
+var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defaultColorValue, singleColorMode, liveApply)
 {
 	var cssDefaultColor = (defaultColorValue != null) ?
 		mxUtils.getLightDarkColor(defaultColorValue,
@@ -350,11 +356,10 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 
 	var input = document.createElement('input');
 	input.style.textOverflow = 'ellipsis';
-	input.style.margin = '0 0 0 4px';
+	input.style.marginLeft = '6px';
 	input.style.width = '100%';
 
 	var wrapper = document.createElement('div');
-	wrapper.style.padding = '0 4px';
 
 	var inputDiv = document.createElement('div');
 	inputDiv.style.display = 'flex';
@@ -363,7 +368,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	
 	var darkInput = document.createElement('input');
 	darkInput.style.textOverflow = 'ellipsis';
-	darkInput.style.margin = '0 4px';
+	darkInput.style.margin = '0 6px';
 	darkInput.style.maxWidth = '70px';
 	darkInput.style.width = '100%';
 
@@ -384,7 +389,6 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		'automatic' : 'custom');
 
 	var darkColorDiv = document.createElement('div');
-	darkColorDiv.style.padding = '0 6px 0 6px';
 
 	var img = document.createElement('img');
 	img.setAttribute('title', mxResources.get('dark'));
@@ -402,18 +406,18 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	darkColorDiv.appendChild(darkSelect);
 	darkColorDiv.style.display = 'flex';
 	darkColorDiv.style.alignItems = 'center';
+	darkColorDiv.style.marginTop = '6px';
 
 	var advancedDiv = document.createElement('div');
 	advancedDiv.style.display = 'flex';
 	advancedDiv.style.alignItems = 'center';
 	advancedDiv.style.userSelect = 'none';
 	advancedDiv.style.cursor = 'pointer';
-	advancedDiv.style.padding = '2px 0 2px 0';
+	advancedDiv.style.marginTop = '4px';
 	
 	var collapse = document.createElement('img');
 	collapse.setAttribute('title', mxResources.get('dark'));
 	collapse.className = 'geAdaptiveAsset';
-	collapse.style.marginLeft = '-2px';
 	advancedDiv.appendChild(collapse);
 
 	mxUtils.write(advancedDiv, mxResources.get('advanced'));
@@ -432,13 +436,14 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		toggleDarkColor(true, false);
 		darkSelect.value = 'custom';
 		setDefaultSelected(false);
-		
+
 		var tmp = input.value;
 		input.value = darkInput.value;
 		darkInput.value = tmp;
 
 		updateInputColors();
 		currentInput.focus();
+		doLiveApply();
 		mxEvent.consume(evt);
 	});
 
@@ -463,9 +468,10 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		{
 			darkInput.value = input.value;
 		}
-		
+
 		updateInputColors();
 		currentInput.focus();
+		doLiveApply();
 		mxEvent.consume(evt);
 	});
 
@@ -535,6 +541,11 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		}
 
 		updateCollapseIcon();
+
+		if (self.resizeFn != null)
+		{
+			self.resizeFn();
+		}
 	};
 	
 	mxEvent.addListener(advancedDiv, 'click', function()
@@ -542,6 +553,11 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		toggleDarkColor();
 		updateCollapseIcon();
 		ColorDialog.collapsed = darkColorDiv.style.display == 'none';
+
+		if (self.resizeFn != null)
+		{
+			self.resizeFn();
+		}
 	});
 
 	function isDefaultColor(color)
@@ -651,6 +667,8 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 				cssDefaultColor.dark :
 				cssDefaultColor.light, true);
 		}
+
+		doLiveApply();
 	});
 
 	mxEvent.addListener(darkSelect, 'change', function(evt)
@@ -668,6 +686,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		}
 
 		updateInputColors();
+		doLiveApply();
 		mxEvent.consume(evt);
 	});
 
@@ -725,21 +744,25 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	mxEvent.addListener(input, 'change', function()
 	{
 		inputChanged(input);
+		doLiveApply();
 	});
 
 	mxEvent.addListener(darkInput, 'change', function()
 	{
 		inputChanged(darkInput);
+		doLiveApply();
 	});
 	
 	var applyFunction = (apply != null) ? apply :
 		this.createApplyFunction();
 
-	function doApply()
+	var self = this;
+
+	function buildFinalColor()
 	{
 		var color = input.value;
 		var dark = darkInput.value;
-		
+
 		// Blocks any non-alphabetic chars in colors
 		if ((useDefault && cssDefaultColor != null) ||
 			((/(^#?[a-zA-Z0-9]*$)/.test(color) || mxUtils.isVarColor(color)) &&
@@ -775,32 +798,6 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 					dark = '#' + validateColor(dark);
 				}
 
-				var recentCount = 12;
-
-				if (color == mxConstants.NONE ||
-					dark == mxConstants.NONE)
-				{
-					ColorDialog.addRecentColor(mxConstants.NONE, recentCount);
-				}
-
-				if (darkSelect.value != 'automatic' &&
-					dark != mxConstants.NONE)
-				{
-					if (color == mxConstants.NONE)
-					{
-						ColorDialog.addRecentColor(dark.substring(1), recentCount);
-					}
-					else
-					{
-						var temp = 'light-dark(' + color + ',' + dark + ')';
-						ColorDialog.addRecentColor(temp, recentCount);
-					}
-				}
-				else if (color != mxConstants.NONE)
-				{
-					ColorDialog.addRecentColor(color.substring(1), recentCount);
-				}
-				
 				if (color != 'none' || dark != 'none')
 				{
 					color = (color == mxConstants.NONE) ? 'transparent' : color;
@@ -812,13 +809,130 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 					}
 				}
 			}
-			
-			applyFunction(color);
-			editorUi.hideDialog();
+
+			return {color: color, valid: true};
 		}
 		else
 		{
-			editorUi.handleError({message: mxResources.get('invalidInput')});	
+			return {color: null, valid: false};
+		}
+	};
+
+	// Tracks the recent color entry for the current editing session
+	// so successive changes update the same slot instead of flooding the list
+	var sessionRecentColor = null;
+
+	function addCurrentToRecent()
+	{
+		var color = input.value;
+		var dark = darkInput.value;
+
+		if (!((useDefault && cssDefaultColor != null) ||
+			((/(^#?[a-zA-Z0-9]*$)/.test(color) || mxUtils.isVarColor(color)) &&
+			(/(^#?[a-zA-Z0-9]*$)/.test(dark) || mxUtils.isVarColor(dark)))))
+		{
+			return;
+		}
+
+		if (!useDefault)
+		{
+			if (color == '') color = mxConstants.NONE;
+			if (dark == '') dark = mxConstants.NONE;
+
+			if (color != mxConstants.NONE &&
+				!mxUtils.isVarColor(color) &&
+				color.charAt(0) != '#')
+			{
+				color = '#' + validateColor(color);
+			}
+
+			if (dark != mxConstants.NONE &&
+				!mxUtils.isVarColor(dark) &&
+				dark.charAt(0) != '#')
+			{
+				dark = '#' + validateColor(dark);
+			}
+
+			var recentCount = 12;
+			var newEntry = null;
+
+			if (darkSelect.value != 'automatic' &&
+				dark != mxConstants.NONE)
+			{
+				if (color == mxConstants.NONE)
+				{
+					newEntry = dark.substring(1);
+				}
+				else
+				{
+					newEntry = 'light-dark(' + color + ',' + dark + ')';
+				}
+			}
+			else if (color != mxConstants.NONE)
+			{
+				newEntry = color.substring(1);
+			}
+			else
+			{
+				newEntry = mxConstants.NONE;
+			}
+
+			// Remove previous session entry before adding new one
+			if (sessionRecentColor != null)
+			{
+				mxUtils.remove(sessionRecentColor, ColorDialog.recentColors);
+			}
+
+			ColorDialog.addRecentColor(newEntry, recentCount);
+			sessionRecentColor = newEntry;
+		}
+	};
+
+	function doApply()
+	{
+		var result = buildFinalColor();
+
+		if (result.valid)
+		{
+			addCurrentToRecent();
+			applyFunction(result.color);
+			refreshRecentColors();
+
+			if (!liveApply)
+			{
+				editorUi.hideDialog();
+			}
+		}
+		else if (!liveApply)
+		{
+			editorUi.handleError({message: mxResources.get('invalidInput')});
+		}
+	};
+
+	// Debounced apply for live mode (picker drag)
+	var liveApplyTimer = null;
+
+	function doLiveApply(delay)
+	{
+		if (liveApply)
+		{
+			if (liveApplyTimer != null)
+			{
+				clearTimeout(liveApplyTimer);
+			}
+
+			liveApplyTimer = setTimeout(function()
+			{
+				liveApplyTimer = null;
+				var result = buildFinalColor();
+
+				if (result.valid)
+				{
+					addCurrentToRecent();
+					applyFunction(result.color);
+					refreshRecentColors();
+				}
+			}, delay || 0);
 		}
 	};
 
@@ -893,21 +1007,29 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		}
 	});
 
+	picker.addListener('release', function()
+	{
+		doLiveApply();
+	});
+
 	var div = document.createElement('div');
+	div.style.padding = '12px 12px 18px 12px';
+
 	div.appendChild(picker.div);
+	picker.div.style.marginBottom = '10px';
 
 	var center = document.createElement('div');
 	center.style.display = 'flex';
 	center.style.flexFlow = 'row wrap';
 	center.style.justifyContent = 'center';
-	center.style.paddingTop = '10px';
+	center.style.marginTop = '10px';
 	
 	function createRecentColorTable()
 	{
 		var table = addPresets((ColorDialog.recentColors.length == 0) ?
 			['FFFFFF'] : ColorDialog.recentColors, 11, 'FFFFFF', true);
-		table.style.marginBottom = '8px';
-		
+		table.style.marginBottom = '6px';
+
 		return table;
 	};
 	
@@ -917,9 +1039,8 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		var table = document.createElement('table');
 		table.style.borderCollapse = 'collapse';
 		table.setAttribute('cellspacing', '0');
-		table.style.marginBottom = '20px';
+		table.style.marginBottom = '10px';
 		table.style.cellSpacing = '0px';
-		table.style.marginLeft = '1px';
 		var tbody = document.createElement('tbody');
 		table.appendChild(tbody);
 
@@ -1003,6 +1124,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 								}
 
 								inputChanged(currentInput);
+								doLiveApply();
 
 								window.setTimeout(function()
 								{
@@ -1013,31 +1135,52 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 							{
 								if (mxUtils.isLightDarkColor(clr))
 								{
-									toggleDarkColor(true);
-									darkSelect.value = 'custom';
 									var cssColor = mxUtils.getLightDarkColor(clr);
-									input.value = cssColor.light.substring(1).toUpperCase();
-									darkInput.value = cssColor.dark.substring(1).toUpperCase();
-									inputChanged(input);
-									inputChanged(darkInput);
-									
-									if (currentInput == input)
+
+									if (singleColorMode)
 									{
+										input.value = cssColor.light.substring(1).toUpperCase();
+										inputChanged(input);
 										picker.fromString(cssColor.light);
+										doLiveApply();
 									}
 									else
 									{
-										picker.fromString(cssColor.dark);
-									}	
+										toggleDarkColor(true, false);
+										darkSelect.value = 'custom';
+										input.value = cssColor.light.substring(1).toUpperCase();
+										darkInput.value = cssColor.dark.substring(1).toUpperCase();
+										inputChanged(input);
+										inputChanged(darkInput);
+										doLiveApply();
+
+										if (currentInput == input)
+										{
+											picker.fromString(cssColor.light);
+										}
+										else
+										{
+											picker.fromString(cssColor.dark);
+										}
+									}
 								}
 								else
 								{
 									picker.fromString('#' + clr);
+									doLiveApply();
 								}
 							}
 						});
 						
-						mxEvent.addListener(td, 'dblclick', doApply);
+						mxEvent.addListener(td, 'dblclick', function()
+							{
+								doApply();
+
+								if (liveApply && self.closeFn != null)
+								{
+									self.closeFn();
+								}
+							});
 					}
 				}))(presets[row * rowLength + i]);
 			}
@@ -1065,7 +1208,14 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 			mxEvent.addListener(td, 'click', function()
 			{
 				ColorDialog.resetRecentColors();
-				table.parentNode.replaceChild(createRecentColorTable(), table);
+				var newTable = createRecentColorTable();
+
+				if (table.parentNode != null)
+				{
+					table.parentNode.replaceChild(newTable, table);
+				}
+
+				recentTable = newTable;
 			});
 		}
 		
@@ -1073,6 +1223,8 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		
 		return table;
 	});
+
+	var lightIcon = null;
 
 	if (!singleColorMode)
 	{
@@ -1085,15 +1237,15 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 			darkColorDiv.style.display = 'none';
 			updateCollapseIcon();
 		}
-		
-		var img = document.createElement('img');
-		img.setAttribute('title', mxResources.get('light'));
-		img.className = 'geAdaptiveAsset';
-		img.src = Editor.thinLightImage;
-		img.style.width = '20px';
-		inputDiv.appendChild(img);
 
-		mxEvent.addListener(img, 'click', function()
+		lightIcon = document.createElement('img');
+		lightIcon.setAttribute('title', mxResources.get('light'));
+		lightIcon.className = 'geAdaptiveAsset';
+		lightIcon.src = Editor.thinLightImage;
+		lightIcon.style.width = '20px';
+		inputDiv.appendChild(lightIcon);
+
+		mxEvent.addListener(lightIcon, 'click', function()
 		{
 			input.focus();
 		});
@@ -1101,13 +1253,14 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 
 	inputDiv.appendChild(input);
 
+	defaultBtn.style.cursor = 'pointer';
+	defaultBtn.style.position = 'relative';
+	defaultBtn.style.marginLeft = '6px';
+
 	if (cssDefaultColor != null)
 	{
 		defaultBtn.setAttribute('title', mxResources.get(
 			(singleColorMode) ? 'default' : 'useBlackAndWhite'));
-		defaultBtn.style.cursor = 'pointer';
-		defaultBtn.style.position = 'relative';
-		defaultBtn.style.marginLeft = '4px';
 		defaultBtn.innerText = '';
 
 		var def = document.createElement('div');
@@ -1131,10 +1284,23 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		}
 
 		defaultBtn.appendChild(def);
-		inputDiv.appendChild(defaultBtn);
-
-		mxEvent.addListener(defaultBtn, 'dblclick', doApply);
 	}
+	else
+	{
+		defaultBtn.style.display = 'none';
+	}
+
+	inputDiv.appendChild(defaultBtn);
+
+	mxEvent.addListener(defaultBtn, 'dblclick', function()
+	{
+		doApply();
+
+		if (liveApply && self.closeFn != null)
+		{
+			self.closeFn();
+		}
+	});
 
 	var clrInput = document.createElement('input');
 	clrInput.setAttribute('type', 'color');
@@ -1189,50 +1355,70 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	}
 
 	// Adds recent colors
-	createRecentColorTable();
-		
+	var recentTable = createRecentColorTable();
+
+	function refreshRecentColors()
+	{
+		if (recentTable != null && recentTable.parentNode != null)
+		{
+			recentTable.parentNode.removeChild(recentTable);
+		}
+
+		recentTable = createRecentColorTable();
+
+		if (center.firstChild != recentTable)
+		{
+			center.insertBefore(recentTable, center.firstChild);
+		}
+	};
+
 	// Adds presets
 	var table = addPresets(this.presetColors);
-	table.style.marginBottom = '8px';
+	table.style.marginBottom = '6px';
 	table = addPresets(this.defaultColors);
-	table.style.marginBottom = '16px';
+	table.style.marginBottom = '0';
 
 	div.appendChild(center);
 
-	var buttons = document.createElement('div');
-	buttons.style.display = 'flex';
-	buttons.style.whiteSpace = 'nowrap';
-	buttons.style.alignItems = 'center';
-	buttons.style.justifyContent = 'end';
+	var buttons = null;
 
-	if (!editorUi.isOffline())
+	if (!liveApply)
 	{
-		buttons.appendChild(editorUi.createHelpIcon('https://github.com/jgraph/drawio/discussions/4713'));
-	}
-	
-	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
-	{
-		editorUi.hideDialog();
-		
-		if (cancelFn != null)
+		buttons = document.createElement('div');
+		buttons.style.display = 'flex';
+		buttons.style.whiteSpace = 'nowrap';
+		buttons.style.alignItems = 'center';
+		buttons.style.justifyContent = 'end';
+
+		if (!editorUi.isOffline())
 		{
-			cancelFn();
+			buttons.appendChild(editorUi.createHelpIcon('https://github.com/jgraph/drawio/discussions/4713'));
 		}
-	});
-	cancelBtn.className = 'geBtn';
 
-	if (editorUi.editor.cancelFirst)
-	{
-		buttons.appendChild(cancelBtn);
-	}
-	
-	var applyBtn = mxUtils.button(mxResources.get('apply'), doApply);
-	applyBtn.className = 'geBtn gePrimaryBtn';
-	buttons.appendChild(applyBtn);
-	
-	if (!editorUi.editor.cancelFirst)
-	{
-		buttons.appendChild(cancelBtn);
+		var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
+		{
+			editorUi.hideDialog();
+
+			if (cancelFn != null)
+			{
+				cancelFn();
+			}
+		});
+		cancelBtn.className = 'geBtn';
+
+		if (editorUi.editor.cancelFirst)
+		{
+			buttons.appendChild(cancelBtn);
+		}
+
+		var applyBtn = mxUtils.button(mxResources.get('apply'), doApply);
+		applyBtn.className = 'geBtn gePrimaryBtn';
+		buttons.appendChild(applyBtn);
+
+		if (!editorUi.editor.cancelFirst)
+		{
+			buttons.appendChild(cancelBtn);
+		}
 	}
 	
 	if (color != null)
@@ -1310,7 +1496,11 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		updateCollapseIcon();
 	}
 	
-	div.appendChild(buttons);
+	if (buttons != null)
+	{
+		div.appendChild(buttons);
+	}
+
 	this.picker = picker;
 	this.colorInput = input;
 
@@ -1320,6 +1510,11 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		{
 			inputChanged(mxEvent.getSource(e));
 			doApply();
+
+			if (liveApply && self.closeFn != null)
+			{
+				self.closeFn();
+			}
 		}
 	};
 
@@ -1332,18 +1527,229 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	{
 		if (e.keyCode == 27)
 		{
-			editorUi.hideDialog();
-			
-			if (cancelFn != null)
+			if (liveApply)
 			{
-				cancelFn();
+				if (self.closeFn != null)
+				{
+					self.closeFn();
+				}
 			}
-			
+			else
+			{
+				editorUi.hideDialog();
+
+				if (cancelFn != null)
+				{
+					cancelFn();
+				}
+			}
+
 			mxEvent.consume(e);
 		}
 	});
-	
+
 	this.container = div;
+
+	// Methods for reuse in live mode
+	this.closeFn = null;
+	this.resizeFn = null;
+
+	this.setApplyFn = function(fn)
+	{
+		applyFunction = fn;
+	};
+
+	this.setColor = function(newColor, newDefaultColor, newDefaultColorValue, newSingleColorMode)
+	{
+		// Reset session tracking for recent colors
+		sessionRecentColor = null;
+
+		// Update default color state
+		defaultColor = newDefaultColor;
+		defaultColorValue = newDefaultColorValue;
+		singleColorMode = newSingleColorMode;
+		cssDefaultColor = (newDefaultColorValue != null) ?
+			mxUtils.getLightDarkColor(newDefaultColorValue,
+				null, null, newSingleColorMode) : null;
+		useDefault = false;
+
+		// Update singleColorMode visibility
+		if (newSingleColorMode)
+		{
+			advancedDiv.style.display = 'none';
+			darkColorDiv.style.display = 'none';
+
+			if (lightIcon != null)
+			{
+				lightIcon.style.display = 'none';
+			}
+
+			currentInput = input;
+			input.focus();
+		}
+		else
+		{
+			advancedDiv.style.display = 'flex';
+
+			if (lightIcon != null)
+			{
+				lightIcon.style.display = '';
+			}
+
+			if (ColorDialog.collapsed && darkSelect.value == 'automatic' &&
+				!Editor.isDarkMode())
+			{
+				darkColorDiv.style.display = 'none';
+			}
+			else
+			{
+				darkColorDiv.style.display = 'flex';
+			}
+
+			updateCollapseIcon();
+		}
+
+		// Update default button
+		if (cssDefaultColor != null)
+		{
+			defaultBtn.style.display = '';
+			defaultBtn.setAttribute('title', mxResources.get(
+				(newSingleColorMode) ? 'default' : 'useBlackAndWhite'));
+			defaultBtn.innerText = '';
+
+			var def = document.createElement('div');
+			def.style.display = 'inline-block';
+			def.style.verticalAlign = 'middle';
+			def.style.borderStyle = 'solid';
+			def.style.borderWidth = '1px';
+			def.style.marginTop = '-2px';
+			def.style.width = '12px';
+			def.style.height = '12px';
+
+			if (newSingleColorMode)
+			{
+				def.style.backgroundColor = cssDefaultColor.light;
+			}
+			else
+			{
+				def.style.backgroundImage = 'linear-gradient(to right bottom, ' +
+					cssDefaultColor.cssText + ' 50%, ' +
+					mxUtils.invertLightDarkColor(cssDefaultColor).cssText + ' 50.3%)';
+			}
+
+			defaultBtn.appendChild(def);
+		}
+		else
+		{
+			defaultBtn.style.display = 'none';
+		}
+
+		// Set color values
+		if (newColor != null)
+		{
+			// Converts color names to hex
+			if (newColor != 'default' &&
+				newColor != 'transparent' &&
+				newColor != mxConstants.NONE &&
+				!mxUtils.isVarColor(newColor) &&
+				!mxUtils.isHexColor(newColor) &&
+				!mxUtils.isRgbColor(newColor) &&
+				!mxUtils.isLightDarkColor(newColor))
+			{
+				newColor = mxUtils.color2hex(newColor);
+			}
+
+			darkSelect.value = (!mxUtils.isLightDarkColor(newColor) ?
+				'automatic' : 'custom');
+
+			if (newColor == 'default')
+			{
+				setDefaultSelected(true);
+				updateInputColors();
+
+				if (cssDefaultColor != null)
+				{
+					picker.fromString((currentInput == darkInput) ?
+						cssDefaultColor.dark :
+						cssDefaultColor.light, true);
+				}
+			}
+			else
+			{
+				var cssColor = mxUtils.getLightDarkColor(newColor);
+
+				if (newColor == mxConstants.NONE ||
+					cssColor.light == 'transparent')
+				{
+					input.value = mxConstants.NONE;
+				}
+				else
+				{
+					if (mxUtils.isVarColor(cssColor.light))
+					{
+						input.value = cssColor.light;
+					}
+					else
+					{
+						if (mxUtils.isRgbColor(cssColor.light))
+						{
+							cssColor.light = mxUtils.rgba2hex(cssColor.light);
+						}
+						else if (!mxUtils.isHexColor(cssColor.light))
+						{
+							cssColor.light = '#' + validateColor(cssColor.light);
+						}
+
+						input.value = cssColor.light.substring(1).toUpperCase();
+					}
+				}
+
+				if (newColor == mxConstants.NONE ||
+					cssColor.dark == 'transparent')
+				{
+					darkInput.value = mxConstants.NONE;
+				}
+				else
+				{
+					if (mxUtils.isVarColor(cssColor.dark))
+					{
+						darkInput.value = cssColor.dark;
+					}
+					else
+					{
+						if (mxUtils.isRgbColor(cssColor.dark))
+						{
+							cssColor.dark = mxUtils.rgba2hex(cssColor.dark);
+						}
+						else if (!mxUtils.isHexColor(cssColor.dark))
+						{
+							cssColor.dark = '#' + validateColor(cssColor.dark);
+						}
+
+						darkInput.value = cssColor.dark.substring(1).toUpperCase();
+					}
+				}
+
+				updatePickerFromCurrentInput();
+				updateInputColors();
+			}
+		}
+
+		if (!newSingleColorMode && ColorDialog.collapsed &&
+			darkSelect.value == 'automatic' &&
+			!Editor.isDarkMode())
+		{
+			darkColorDiv.style.display = 'none';
+			updateCollapseIcon();
+		}
+
+		refreshRecentColors();
+
+		if (self.resizeFn != null)
+		{
+			self.resizeFn();
+		}
+	};
 };
 
 /**
@@ -1432,6 +1838,103 @@ ColorDialog.resetRecentColors = function()
 ColorDialog.collapsed = true;
 
 /**
+ * Non-modal color picker tool window.
+ */
+var ColorWindow = function(editorUi, x, y, w)
+{
+	var graph = editorUi.editor.graph;
+
+	this.colorDialog = new ColorDialog(editorUi, mxConstants.NONE,
+		function() {}, null, null, null, false, true);
+
+	// Initial height from content
+	var container = this.colorDialog.container;
+	var titleHeight = 26;
+	var initH = titleHeight + 200;
+
+	this.window = new mxWindow('', container,
+		x, y, w, initH, true, true);
+	this.window.minimumSize = new mxRectangle(0, 0, 260, 200);
+	this.window.destroyOnClose = false;
+	this.window.setMaximizable(false);
+	this.window.setResizable(false);
+	this.window.setClosable(true);
+
+	var self = this;
+
+	this.fitHeight = function()
+	{
+		var titleH = self.window.title.offsetHeight || titleHeight;
+		var contentH = container.scrollHeight;
+		var newH = titleH + contentH + self.window.contentHeightCorrection;
+		self.window.setSize(parseInt(self.window.div.style.width), newH);
+		self.window.fit();
+	};
+
+	this.colorDialog.closeFn = mxUtils.bind(this, function()
+	{
+		this.window.setVisible(false);
+	});
+
+	this.colorDialog.resizeFn = mxUtils.bind(this, function()
+	{
+		this.fitHeight();
+	});
+
+	this.window.addListener(mxEvent.SHOW, mxUtils.bind(this, function()
+	{
+		this.fitHeight();
+	}));
+
+	// State for auto-refresh
+	this.getColorFn = null;
+	this.currentDefaultColor = null;
+	this.currentDefaultColorValue = null;
+	this.currentSingleColorMode = null;
+	this.applying = false;
+
+	var refreshColor = mxUtils.bind(this, function()
+	{
+		if (this.window.isVisible() && this.getColorFn != null &&
+			!this.applying)
+		{
+			var color = this.getColorFn();
+
+			if (color != null)
+			{
+				this.colorDialog.setColor(color, this.currentDefaultColor,
+					this.currentDefaultColorValue, this.currentSingleColorMode);
+			}
+		}
+	});
+
+	graph.getSelectionModel().addListener(mxEvent.CHANGE, refreshColor);
+	graph.getModel().addListener(mxEvent.CHANGE, refreshColor);
+	editorUi.addListener('styleChanged', refreshColor);
+
+	editorUi.installResizeHandler(this, true);
+};
+
+/**
+ * Updates the color window state for a new color property.
+ */
+ColorWindow.prototype.update = function(color, applyFn, title,
+	defaultColor, defaultColorValue, singleColorMode, getColorFn)
+{
+	this.getColorFn = getColorFn || null;
+	this.currentDefaultColor = defaultColor;
+	this.currentDefaultColorValue = defaultColorValue;
+	this.currentSingleColorMode = singleColorMode;
+
+	this.window.setTitle(title);
+	this.colorDialog.setApplyFn(applyFn);
+	this.colorDialog.setColor(color, defaultColor, defaultColorValue, singleColorMode);
+	this.window.setVisible(true);
+	this.fitHeight();
+	this.colorDialog.init();
+};
+
+/**
  * Constructs a new about dialog.
  */
 var AboutDialog = function(editorUi)
@@ -1473,13 +1976,16 @@ var AboutDialog = function(editorUi)
 var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
 {
 	var div = document.createElement('div');
-	
+	div.style.display = 'flex';
+	div.style.flexDirection = 'column';
+	div.style.height = '100%';
+	div.style.boxSizing = 'border-box';
+
 	var textarea = document.createElement('textarea');
-	textarea.style.position = 'absolute';
-	textarea.style.left = '30px';
-	textarea.style.right = '30px';
-	textarea.style.top = '30px';
-	textarea.style.bottom = '100px';
+	textarea.style.flex = '1';
+	textarea.style.minHeight = '0';
+	textarea.style.width = '100%';
+	textarea.style.boxSizing = 'border-box';
 	textarea.style.resize = 'none';
 	textarea.setAttribute('wrap', 'off');
 	textarea.setAttribute('spellcheck', 'false');
@@ -1490,12 +1996,11 @@ var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
 	div.appendChild(textarea);
 
 	var buttons = document.createElement('div');
-	buttons.style.position = 'absolute';
-	buttons.style.bottom = '46px';
-	buttons.style.right = '30px';
-	buttons.style.left = '30px';
-	buttons.style.justifyContent = 'end';
 	buttons.style.display = 'flex';
+	buttons.style.justifyContent = 'end';
+	buttons.style.alignItems = 'center';
+	buttons.style.marginTop = '14px';
+	buttons.style.flexShrink = '0';
 
 	if (helpLink != null && !editorUi.isOffline())
 	{
@@ -1509,19 +2014,19 @@ var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
 
 	cancelBtn.setAttribute('title', 'Escape');
 	cancelBtn.className = 'geBtn';
-	
+
 	if (editorUi.editor.cancelFirst)
 	{
 		buttons.appendChild(cancelBtn);
 	}
-	
+
 	var okBtn = mxUtils.button((buttonLabel != null) ?
 		buttonLabel : mxResources.get('apply'), function()
 	{
 		editorUi.hideDialog();
 		fn(textarea.value);
 	});
-	
+
 	okBtn.setAttribute('title', 'Ctrl+Enter');
 	okBtn.className = 'geBtn gePrimaryBtn';
 	buttons.appendChild(okBtn);
@@ -1533,7 +2038,7 @@ var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
 			okBtn.click();
 		}
 	});
-	
+
 	if (!editorUi.editor.cancelFirst)
 	{
 		buttons.appendChild(cancelBtn);
@@ -1560,49 +2065,31 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 	noHide = (noHide != null) ? noHide : false;
 
 	var div = document.createElement('div');
-	div.style.position = 'absolute';
-	div.style.top = '20px';
-	div.style.bottom = '20px';
-	div.style.left = '20px';
-	div.style.right = '20px';
+	div.style.display = 'flex';
+	div.style.flexDirection = 'column';
+	div.style.height = '100%';
+	div.style.boxSizing = 'border-box';
 
 	var top = document.createElement('div');
+	top.style.display = 'flex';
+	top.style.alignItems = 'center';
+	top.style.marginBottom = '8px';
+	top.style.flexShrink = '0';
 
-	top.style.position = 'absolute';
-	top.style.left = '0px';
-	top.style.right = '0px';
-
-	var main = top.cloneNode(false);
-	var buttons = top.cloneNode(false);
-
-	top.style.top = '0px';
-	top.style.height = '20px';
-	main.style.top = '20px';
-	main.style.bottom = '64px';
-
-	buttons.style.display = 'flex';
-	buttons.style.whiteSpace = 'nowrap';
-	buttons.style.alignItems = 'center';
-	buttons.style.justifyContent = 'end';
-	buttons.style.bottom = '10px';
-	buttons.style.height = '50px';
-	buttons.style.textAlign = 'right';
-	buttons.style.paddingTop = '14px';
-	buttons.style.boxSizing = 'border-box';
-
-	mxUtils.write(top, title);
-
-	div.appendChild(top);
-	div.appendChild(main);
-	div.appendChild(buttons);
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, title);
+	hd.style.cssText = 'width:100%;text-align:center;margin:0';
+	top.appendChild(hd);
 
 	if (header != null)
 	{
 		top.appendChild(header);
 	}
-	
+
+	div.appendChild(top);
+
 	var nameInput = document.createElement('textarea');
-	
+
 	if (noWrap)
 	{
 		nameInput.setAttribute('wrap', 'off');
@@ -1611,22 +2098,19 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 	{
 		nameInput.style.wordBreak = 'break-all';
 	}
-	
+
 	nameInput.setAttribute('spellcheck', 'false');
 	nameInput.setAttribute('autocorrect', 'off');
 	nameInput.setAttribute('autocomplete', 'off');
 	nameInput.setAttribute('autocapitalize', 'off');
-	
+
 	mxUtils.write(nameInput, url || '');
 	nameInput.style.resize = 'none';
-	nameInput.style.outline = 'none';
-	nameInput.style.position = 'absolute';
-	nameInput.style.boxSizing = 'border-box';
-	nameInput.style.top = '0px';
-	nameInput.style.left = '0px';
-	nameInput.style.height = '100%';
+	nameInput.style.flex = '1';
+	nameInput.style.minHeight = '0';
 	nameInput.style.width = '100%';
-	
+	nameInput.style.boxSizing = 'border-box';
+
 	this.textarea = nameInput;
 
 	this.init = function()
@@ -1635,7 +2119,15 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 		nameInput.scrollTop = 0;
 	};
 
-	main.appendChild(nameInput);
+	div.appendChild(nameInput);
+
+	var buttons = document.createElement('div');
+	buttons.style.display = 'flex';
+	buttons.style.whiteSpace = 'nowrap';
+	buttons.style.alignItems = 'center';
+	buttons.style.justifyContent = 'end';
+	buttons.style.marginTop = '14px';
+	buttons.style.flexShrink = '0';
 
 	if (helpLink != null && !editorUi.isOffline())
 	{
@@ -1659,16 +2151,16 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 				}
 
 				customBtn.className = 'geBtn';
-				
+
 				buttons.appendChild(customBtn);
 			})(customButtons[i][0], customButtons[i][1], customButtons[i][2]);
 		}
 	}
-	
+
 	var cancelBtn = mxUtils.button(cancelTitle || mxResources.get('cancel'), function()
 	{
 		editorUi.hideDialog();
-		
+
 		if (cancelFn != null)
 		{
 			cancelFn();
@@ -1677,17 +2169,17 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 
 	cancelBtn.setAttribute('title', 'Escape');
 	cancelBtn.className = 'geBtn';
-	
+
 	if (editorUi.editor.cancelFirst)
 	{
 		buttons.appendChild(cancelBtn);
 	}
-	
+
 	if (addButtons != null)
 	{
 		addButtons(buttons, nameInput);
 	}
-	
+
 	if (fn != null)
 	{
 		var genericBtn = mxUtils.button(applyTitle || mxResources.get('apply'), function()
@@ -1696,10 +2188,10 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 			{
 				editorUi.hideDialog();
 			}
-			
+
 			fn(nameInput.value);
 		});
-		
+
 		genericBtn.setAttribute('title', 'Ctrl+Enter');
 		genericBtn.className = 'geBtn gePrimaryBtn';
 		buttons.appendChild(genericBtn);
@@ -1712,12 +2204,13 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 			}
 		});
 	}
-	
+
 	if (!editorUi.editor.cancelFirst)
 	{
 		buttons.appendChild(cancelBtn);
 	}
 
+	div.appendChild(buttons);
 	this.container = div;
 };
 
@@ -1727,8 +2220,15 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 var EditDiagramDialog = function(editorUi)
 {
 	var div = document.createElement('div');
-	div.style.position = 'absolute';
-	div.style.inset = '10px';
+	div.style.display = 'flex';
+	div.style.flexDirection = 'column';
+	div.style.height = '100%';
+	div.style.boxSizing = 'border-box';
+
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, mxResources.get('editDiagram'));
+	hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px;flex-shrink:0';
+	div.appendChild(hd);
 
 	var textarea = document.createElement('textarea');
 	textarea.setAttribute('wrap', 'off');
@@ -1738,47 +2238,46 @@ var EditDiagramDialog = function(editorUi)
 	textarea.setAttribute('autocapitalize', 'off');
 	textarea.style.overflow = 'auto';
 	textarea.style.resize = 'none';
-	textarea.style.position = 'absolute';
-	textarea.style.top = '20px';
-	textarea.style.bottom = '76px';
-	textarea.style.left = '20px';
-	textarea.style.right = '20px';
+	textarea.style.flex = '1';
+	textarea.style.minHeight = '0';
+	textarea.style.width = '100%';
+	textarea.style.boxSizing = 'border-box';
 
 	var snapshot = editorUi.getDiagramSnapshot();
 	textarea.value = mxUtils.getPrettyXml(snapshot.node);
 	div.appendChild(textarea);
-	
+
 	this.init = function()
 	{
 		textarea.focus();
 	};
-	
+
 	// Enables dropping files
 	if (Graph.fileSupport)
 	{
 		function handleDrop(evt)
 		{
-		    evt.stopPropagation();
-		    evt.preventDefault();
-		    
-		    if (evt.dataTransfer.files.length > 0)
-		    {
-    			var file = evt.dataTransfer.files[0];
-    			var reader = new FileReader();
-				
+			evt.stopPropagation();
+			evt.preventDefault();
+
+			if (evt.dataTransfer.files.length > 0)
+			{
+				var file = evt.dataTransfer.files[0];
+				var reader = new FileReader();
+
 				reader.onload = function(e)
 				{
 					textarea.value = e.target.result;
 				};
-				
+
 				reader.readAsText(file);
-    		}
-		    else
-		    {
-		    	textarea.value = editorUi.extractGraphModelFromEvent(evt);
-		    }
+			}
+			else
+			{
+				textarea.value = editorUi.extractGraphModelFromEvent(evt);
+			}
 		};
-		
+
 		function handleDragOver(evt)
 		{
 			evt.stopPropagation();
@@ -1789,17 +2288,21 @@ var EditDiagramDialog = function(editorUi)
 		textarea.addEventListener('dragover', handleDragOver, false);
 		textarea.addEventListener('drop', handleDrop, false);
 	}
-	
+
 	var buttons = document.createElement('div');
 	buttons.style.display = 'flex';
 	buttons.style.whiteSpace = 'nowrap';
 	buttons.style.alignItems = 'center';
 	buttons.style.justifyContent = 'end';
-	buttons.style.position = 'absolute';
-	buttons.style.height = '36px';
-	buttons.style.bottom = '24px';
-	buttons.style.left = '20px';
-	buttons.style.right = '20px';
+	buttons.style.marginTop = '14px';
+	buttons.style.flexShrink = '0';
+
+	if (!editorUi.isOffline())
+	{
+		var helpIcon = editorUi.createHelpIcon(EditDiagramDialog.helpLink);
+		helpIcon.style.marginRight = 'auto';
+		buttons.appendChild(helpIcon);
+	}
 
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
@@ -1807,58 +2310,115 @@ var EditDiagramDialog = function(editorUi)
 	});
 
 	cancelBtn.className = 'geBtn';
-	
+
 	if (editorUi.editor.cancelFirst)
 	{
 		buttons.appendChild(cancelBtn);
 	}
-	
+
 	var select = document.createElement('select');
 	select.style.textOverflow = 'ellipsis';
+	select.style.marginLeft = '8px';
+	select.style.height = '30px';
 	select.style.width = '196px';
-	select.className = 'geBtn';
 
-	if (editorUi.editor.graph.isEnabled())
-	{
-		var applyOption = document.createElement('option');
-		applyOption.setAttribute('value', 'apply');
-		mxUtils.write(applyOption, mxResources.get('apply',
-			null, 'Update Existing Drawing'));
-		select.appendChild(applyOption);
-	}
+	var placeholderOption = document.createElement('option');
+	placeholderOption.setAttribute('value', '');
+	placeholderOption.setAttribute('disabled', 'disabled');
+	placeholderOption.setAttribute('selected', 'selected');
+	mxUtils.write(placeholderOption, mxResources.get('select') + '...');
+	select.appendChild(placeholderOption);
 
-	if (editorUi.editor.graph.isEnabled())
-	{
-		var insertOption = document.createElement('option');
-		insertOption.setAttribute('value', 'insert');
-		mxUtils.write(insertOption, mxResources.get('insert'));
-		select.appendChild(insertOption);
-	}
+	var copyOption = document.createElement('option');
+	copyOption.setAttribute('value', 'copy');
+	mxUtils.write(copyOption, mxResources.get('copyDiagramToClipboard'));
+	select.appendChild(copyOption);
 
 	var newOption = document.createElement('option');
 	newOption.setAttribute('value', 'new');
 	mxUtils.write(newOption, mxResources.get('openInNewWindow'));
-	
+
 	if (EditDiagramDialog.showNewWindowOption && !navigator.standalone)
 	{
 		select.appendChild(newOption);
 	}
-	
-	buttons.appendChild(select);
 
-	var okBtn = mxUtils.button(mxResources.get('ok'), function()
+	var extractTextAction = editorUi.actions.get('extractText');
+	var hasExtractText = extractTextAction != null;
+	var hasAnonymize = typeof editorUi.anonymizeXml == 'function';
+
+	if (hasExtractText)
 	{
+		var extractOption = document.createElement('option');
+		extractOption.setAttribute('value', 'extractText');
+		mxUtils.write(extractOption, mxResources.get('extractText'));
+		select.appendChild(extractOption);
+	}
+
+	if (hasAnonymize)
+	{
+		var anonymizeOption = document.createElement('option');
+		anonymizeOption.setAttribute('value', 'anonymize');
+		mxUtils.write(anonymizeOption, mxResources.get('anonymize'));
+		select.appendChild(anonymizeOption);
+	}
+
+	mxEvent.addListener(select, 'change', function()
+	{
+		var value = select.value;
 		// Removes all illegal control characters before parsing
 		var data = Graph.zapGremlins(mxUtils.trim(textarea.value));
 		var error = null;
-		
-		if (select.value == 'new')
+
+		if (value == 'new')
 		{
 			editorUi.hideDialog();
 			editorUi.editor.editAsNew(data);
 		}
-		else if (select.value == 'apply')
+		else if (value == 'copy')
 		{
+			editorUi.writeTextToClipboard(data, function(e)
+			{
+				editorUi.handleError(e);
+			}, function()
+			{
+				editorUi.alert(mxResources.get('copiedToClipboard'));
+			});
+		}
+		else if (value == 'extractText')
+		{
+			extractTextAction.funct(true);
+		}
+		else if (value == 'anonymize')
+		{
+			try
+			{
+				textarea.value = editorUi.anonymizeXml(data);
+			}
+			catch (e)
+			{
+				error = e;
+			}
+		}
+
+		select.value = '';
+
+		if (error != null)
+		{
+			editorUi.handleError(error);
+		}
+	});
+
+	buttons.appendChild(select);
+
+	if (editorUi.editor.graph.isEnabled())
+	{
+		var applyBtn = mxUtils.button(mxResources.get('apply'), function()
+		{
+			// Removes all illegal control characters before parsing
+			var data = Graph.zapGremlins(mxUtils.trim(textarea.value));
+			var error = null;
+
 			try
 			{
 				var node = mxUtils.parseXml(data).documentElement;
@@ -1880,7 +2440,7 @@ var EditDiagramDialog = function(editorUi)
 					{
 						editorUi.updateDiagramData(snapshot, node);
 					}
-					
+
 					editorUi.hideDialog();
 				}
 			}
@@ -1888,41 +2448,16 @@ var EditDiagramDialog = function(editorUi)
 			{
 				error = e;
 			}
-		}
-		else if (select.value == 'insert')
-		{
-			editorUi.editor.graph.model.beginUpdate();
-			try
+
+			if (error != null)
 			{
-				var doc = mxUtils.parseXml(data);
-				var model = new mxGraphModel();
-				var codec = new mxCodec(doc);
-				codec.decode(doc.documentElement, model);
-				
-				var children = model.getChildren(model.getChildAt(model.getRoot(), 0));
-				editorUi.editor.graph.setSelectionCells(editorUi.editor.graph.importCells(children));
-				
-				// LATER: Why is hideDialog between begin-/endUpdate faster?
-				editorUi.hideDialog();
+				editorUi.handleError(error);
 			}
-			catch (e)
-			{
-				error = e;
-			}
-			finally
-			{
-				editorUi.editor.graph.model.endUpdate();				
-			}
-		}
-			
-		if (error != null)
-		{
-			editorUi.handleError(error);
-		}
-	});
-	okBtn.className = 'geBtn gePrimaryBtn';
-	buttons.appendChild(okBtn);
-	
+		});
+		applyBtn.className = 'geBtn gePrimaryBtn';
+		buttons.appendChild(applyBtn);
+	}
+
 	if (!editorUi.editor.cancelFirst)
 	{
 		buttons.appendChild(cancelBtn);
@@ -1936,6 +2471,11 @@ var EditDiagramDialog = function(editorUi)
  * 
  */
 EditDiagramDialog.showNewWindowOption = true;
+
+/**
+ * URL for the user-facing documentation of this dialog.
+ */
+EditDiagramDialog.helpLink = 'https://github.com/jgraph/drawio/discussions/5592';
 
 /**
  * Constructs a new export dialog.
@@ -2477,11 +3017,14 @@ ExportDialog.saveLocalFile = function(editorUi, data, filename, format)
  */
 var EditDataDialog = function(ui, cell, optionalGraph)
 {
-	var div = document.createElement('div');
+	var container = document.createElement('div');
+	container.style.display = 'flex';
+	container.style.flexDirection = 'column';
+	container.style.height = '100%';
 	var graph = optionalGraph || ui.editor.graph;
-	
+
 	var value = graph.getModel().getValue(cell);
-	
+
 	// Converts the value to an XML node
 	if (!mxUtils.isNode(value))
 	{
@@ -2490,13 +3033,13 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 		obj.setAttribute('label', value || '');
 		value = obj;
 	}
-	
+
 	var meta = {};
-	
+
 	try
 	{
 		var temp = mxUtils.getValue(ui.editor.graph.getCurrentCellStyle(cell), 'metaData', null);
-		
+
 		if (temp != null)
 		{
 			meta = JSON.parse(temp);
@@ -2506,90 +3049,87 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 	{
 		// ignore
 	}
-	
-	// Creates the dialog contents
-	var form = new mxForm('properties');
-	form.table.style.width = '100%';
 
 	var attrs = value.attributes;
 	var names = [];
 	var texts = [];
+	var rows = [];
 	var count = 0;
 
 	var id = (EditDataDialog.getDisplayIdForCell != null) ?
 		EditDataDialog.getDisplayIdForCell(ui, cell, optionalGraph) : null;
-	
-	var addRemoveButton = function(text, name)
+
+	// Properties container for dynamic rows
+	var propertiesContainer = document.createElement('div');
+
+	var addRemoveButton = function(row, name)
 	{
-		var wrapper = document.createElement('div');
-		wrapper.style.position = 'relative';
-		wrapper.style.display = 'flex';
-		wrapper.style.alignItems = 'center';
-		wrapper.style.boxSizing = 'border-box';
-		wrapper.style.width = '100%';
-		
 		var removeAttr = document.createElement('a');
 		var img = mxUtils.createImage(Dialog.prototype.closeImage);
 		img.style.height = '9px';
 		img.style.fontSize = '9px';
-		
+
 		removeAttr.className = 'geButton';
 		removeAttr.setAttribute('title', mxResources.get('delete'));
 		removeAttr.style.marginLeft = '8px';
 		removeAttr.style.cursor = 'pointer';
+		removeAttr.style.flexShrink = '0';
 		removeAttr.appendChild(img);
-		
+
 		var removeAttrFn = (function(name)
 		{
 			return function()
 			{
-				var count = 0;
-				
 				for (var j = 0; j < names.length; j++)
 				{
-					if (names[j] == name)
+					if (names[j] == name && texts[j] != null)
 					{
 						texts[j] = null;
-						form.table.deleteRow(count + ((id != null) ? 1 : 0));
-						
+						rows[j] = null;
+						row.parentNode.removeChild(row);
+
 						break;
-					}
-					
-					if (texts[j] != null)
-					{
-						count++;
 					}
 				}
 			};
 		})(name);
-		
+
 		mxEvent.addListener(removeAttr, 'click', removeAttrFn);
-		
-		var parent = text.parentNode;
-		wrapper.appendChild(text);
-		wrapper.appendChild(removeAttr);
-		parent.appendChild(wrapper);
+		row.appendChild(removeAttr);
 	};
-	
+
 	var addTextArea = function(index, name, value)
 	{
 		names[index] = name;
-		texts[index] = form.addTextarea(names[count] + ':', value, 2);
-		texts[index].style.width = '100%';
-		
-		if (value.indexOf('\n') > 0)
-		{
-			texts[index].setAttribute('rows', '2');
-		}
-		
-		addRemoveButton(texts[index], name);
-		
+
+		var row = document.createElement('div');
+		row.className = 'geDialogFormRow';
+		row.style.alignItems = 'flex-start';
+
+		var lbl = document.createElement('span');
+		lbl.className = 'geDialogFormLabel';
+		lbl.style.paddingTop = '4px';
+		mxUtils.write(lbl, name + ':');
+		row.appendChild(lbl);
+
+		var textarea = document.createElement('textarea');
+		textarea.setAttribute('rows', (value.indexOf('\n') > 0) ? '3' : '2');
+		textarea.value = value;
+		textarea.style.resize = 'vertical';
+		row.appendChild(textarea);
+
+		texts[index] = textarea;
+		rows[index] = row;
+
+		addRemoveButton(row, name);
+		propertiesContainer.appendChild(row);
+
 		if (meta[name] != null && meta[name].editable == false)
 		{
-			texts[index].setAttribute('disabled', 'disabled');
+			textarea.setAttribute('disabled', 'disabled');
 		}
 	};
-	
+
 	var temp = [];
 	var isLayer = graph.getModel().getParent(cell) == graph.getModel().getRoot();
 	var style = graph.getCellStyle(cell);
@@ -2603,7 +3143,7 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 			temp.push({name: attrs[i].nodeName, value: attrs[i].nodeValue});
 		}
 	}
-	
+
 	// Sorts by name
 	temp.sort(function(a, b)
 	{
@@ -2629,17 +3169,29 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 	    }
 	});
 
+	// --- ID section ---
 	if (id != null)
-	{	
-		var text = document.createElement('div');
-		text.style.width = '100%';
-		text.style.fontSize = '11px';
-		text.style.textAlign = 'center';
-		mxUtils.write(text, id);
-		
-		var idInput = form.addField(mxResources.get('id') + ':', text);
-		
-		mxEvent.addListener(text, 'dblclick', function(evt)
+	{
+		var idSection = document.createElement('div');
+		idSection.className = 'geDialogSection';
+
+		var idRow = document.createElement('div');
+		idRow.className = 'geDialogFormRow';
+
+		var idLabel = document.createElement('span');
+		idLabel.className = 'geDialogFormLabel';
+		mxUtils.write(idLabel, mxResources.get('id') + ':');
+		idRow.appendChild(idLabel);
+
+		var idText = document.createElement('span');
+		idText.style.fontSize = '12px';
+		idText.style.cursor = 'pointer';
+		idText.style.opacity = '0.6';
+		idText.setAttribute('title', mxResources.get('doubleClickToEdit'));
+		mxUtils.write(idText, id);
+		idRow.appendChild(idText);
+
+		mxEvent.addListener(idText, 'dblclick', function(evt)
 		{
 			var dlg = new FilenameDialog(ui, id, mxResources.get('apply'),
 				mxUtils.bind(this, function(value)
@@ -2661,7 +3213,7 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 									ui.removePage(page);
 									page.node.setAttribute('id', value);
 									id = value;
-									idInput.innerHTML = mxUtils.htmlEntities(value);
+									idText.innerHTML = mxUtils.htmlEntities(value);
 									ui.insertPage(page, index);
 								}
 							}
@@ -2679,7 +3231,7 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 							graph.getModel().cellRemoved(cell);
 							cell.setId(value);
 							id = value;
-							idInput.innerHTML = mxUtils.htmlEntities(value);
+							idText.innerHTML = mxUtils.htmlEntities(value);
 							graph.getModel().cellAdded(cell);
 						}
 						else
@@ -2692,48 +3244,38 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 			ui.showDialog(dlg.container, 300, 80, true, true);
 			dlg.init();
 		});
+
+		idSection.appendChild(idRow);
+		container.appendChild(idSection);
 	}
-	
+
 	for (var i = 0; i < temp.length; i++)
 	{
 		addTextArea(count, temp[i].name, temp[i].value);
 		count++;
 	}
-	
-	var top = document.createElement('div');
-	top.style.position = 'absolute';
-	top.style.top = '30px';
-	top.style.left = '30px';
-	top.style.right = '30px';
-	top.style.bottom = '80px';
-	top.style.overflowY = 'auto';
-	
-	top.appendChild(form.table);
 
-	var newProp = document.createElement('div');
-	newProp.style.display = 'flex';
-	newProp.style.alignItems = 'center';
-	newProp.style.boxSizing = 'border-box';
-	newProp.style.paddingRight = '160px';
-	newProp.style.whiteSpace = 'nowrap';
-	newProp.style.marginTop = '6px';
-	newProp.style.width = '100%';
-	
+	// --- Properties section ---
+	var propsSection = document.createElement('div');
+	propsSection.className = 'geDialogSection';
+	propsSection.style.flex = '1';
+	propsSection.style.minHeight = '0';
+	propsSection.style.overflowY = 'auto';
+	propsSection.appendChild(propertiesContainer);
+	container.appendChild(propsSection);
+
+	// --- Add Property section ---
+	var addSection = document.createElement('div');
+	addSection.className = 'geDialogSection';
+
+	var addRow = document.createElement('div');
+	addRow.className = 'geDialogFormRow';
+
 	var nameInput = document.createElement('input');
 	nameInput.setAttribute('placeholder', mxResources.get('enterPropertyName'));
 	nameInput.setAttribute('type', 'text');
-	nameInput.setAttribute('size', '40');
-	nameInput.style.boxSizing = 'border-box';
-	nameInput.style.borderWidth = '1px';
-	nameInput.style.borderStyle = 'solid';
-	nameInput.style.marginLeft = '2px';
-	nameInput.style.padding = '4px';
-	nameInput.style.width = '100%';
-	
-	newProp.appendChild(nameInput);
-	top.appendChild(newProp);
-	div.appendChild(top);
-	
+	addRow.appendChild(nameInput);
+
 	var addBtn = mxUtils.button(mxResources.get('addProperty'), function()
 	{
 		var name = nameInput.value;
@@ -2745,7 +3287,7 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 			try
 			{
 				var idx = mxUtils.indexOf(names, name);
-				
+
 				if (idx >= 0 && texts[idx] != null)
 				{
 					texts[idx].focus();
@@ -2755,20 +3297,18 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 					// Checks if the name is valid
 					var clone = value.cloneNode(false);
 					clone.setAttribute(name, '');
-					
+
 					if (idx >= 0)
 					{
 						names.splice(idx, 1);
 						texts.splice(idx, 1);
+						rows.splice(idx, 1);
 					}
 
-					names.push(name);
-					var text = form.addTextarea(name + ':', '', 2);
-					text.style.width = '100%';
-					texts.push(text);
-					addRemoveButton(text, name);
-
-					text.focus();
+					var newIndex = names.length;
+					addTextArea(newIndex, name, '');
+					texts[newIndex].focus();
+					propsSection.scrollTop = propsSection.scrollHeight;
 				}
 
 				addBtn.setAttribute('disabled', 'disabled');
@@ -2785,6 +3325,16 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 		}
 	});
 
+	addBtn.setAttribute('title', mxResources.get('addProperty'));
+	addBtn.setAttribute('disabled', 'disabled');
+	addBtn.style.flexShrink = '0';
+	addBtn.style.marginLeft = '8px';
+	addBtn.className = 'geBtn';
+	addRow.appendChild(addBtn);
+
+	addSection.appendChild(addRow);
+	container.appendChild(addSection);
+
 	mxEvent.addListener(nameInput, 'keypress', function(e)
 	{
 		if (e.keyCode == 13)
@@ -2792,34 +3342,75 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 			addBtn.click();
 		}
 	});
-	
-	this.init = function()
+
+	function updateAddBtn()
 	{
-		if (texts.length > 0)
+		if (nameInput.value.length > 0)
 		{
-			texts[0].focus();
+			addBtn.removeAttribute('disabled');
 		}
 		else
 		{
-			nameInput.focus();
+			addBtn.setAttribute('disabled', 'disabled');
 		}
 	};
-	
-	addBtn.setAttribute('title', mxResources.get('addProperty'));
-	addBtn.setAttribute('disabled', 'disabled');
-	addBtn.style.textOverflow = 'ellipsis';
-	addBtn.style.position = 'absolute';
-	addBtn.style.overflow = 'hidden';
-	addBtn.style.width = '144px';
-	addBtn.style.right = '0px';
-	addBtn.className = 'geBtn';
-	newProp.appendChild(addBtn);
 
+	mxEvent.addListener(nameInput, 'keyup', updateAddBtn);
+
+	// Catches all changes that don't fire a keyup (such as paste via mouse)
+	mxEvent.addListener(nameInput, 'change', updateAddBtn);
+
+	// --- Options section ---
+	if (ui.editor.graph.getModel().isVertex(cell) || ui.editor.graph.getModel().isEdge(cell))
+	{
+		var optSection = document.createElement('div');
+		optSection.className = 'geDialogSection';
+
+		var checkRow = document.createElement('div');
+		checkRow.className = 'geDialogCheckRow';
+
+		var input = document.createElement('input');
+		input.setAttribute('type', 'checkbox');
+
+		if (value.getAttribute('placeholders') == '1')
+		{
+			input.setAttribute('checked', 'checked');
+			input.defaultChecked = true;
+		}
+
+		mxEvent.addListener(input, 'click', function()
+		{
+			if (value.getAttribute('placeholders') == '1')
+			{
+				value.removeAttribute('placeholders');
+			}
+			else
+			{
+				value.setAttribute('placeholders', '1');
+			}
+		});
+
+		checkRow.appendChild(input);
+		var lbl = document.createElement('label');
+		mxUtils.write(lbl, mxResources.get('placeholders'));
+		checkRow.appendChild(lbl);
+
+		if (EditDataDialog.placeholderHelpLink != null)
+		{
+			checkRow.appendChild(ui.createHelpIcon(
+				EditDataDialog.placeholderHelpLink));
+		}
+
+		optSection.appendChild(checkRow);
+		container.appendChild(optSection);
+	}
+
+	// --- Button bar ---
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
 		ui.hideDialog.apply(ui, arguments);
 	});
-	
+
 	cancelBtn.setAttribute('title', 'Escape');
 	cancelBtn.className = 'geBtn';
 
@@ -2836,20 +3427,20 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 			false, null, new mxRectangle(0, 0, 400, 250));
 		dlg.init();
 	}));
-	
+
 	exportBtn.setAttribute('title', mxResources.get('export'));
 	exportBtn.className = 'geBtn';
-	
+
 	var applyBtn = mxUtils.button(mxResources.get('apply'), function()
 	{
 		try
 		{
 			ui.hideDialog.apply(ui, arguments);
-			
+
 			// Clones and updates the value
 			value = value.cloneNode(true);
 			var removeLabel = false;
-			
+
 			for (var i = 0; i < names.length; i++)
 			{
 				if (texts[i] == null)
@@ -2863,13 +3454,13 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 						value.getAttribute('placeholders') == '1');
 				}
 			}
-			
+
 			// Removes label if placeholder is assigned
 			if (removeLabel)
 			{
 				value.removeAttribute('label');
 			}
-			
+
 			// Updates the value of the cell (undoable)
 			graph.getModel().setValue(cell, value);
 		}
@@ -2882,99 +3473,47 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 	applyBtn.setAttribute('title', 'Ctrl+Enter');
 	applyBtn.className = 'geBtn gePrimaryBtn';
 
-	mxEvent.addListener(div, 'keydown', function(e)
+	var btnRow = document.createElement('div');
+	btnRow.style.textAlign = 'right';
+	btnRow.style.paddingTop = '16px';
+
+	if (ui.editor.cancelFirst)
+	{
+		btnRow.appendChild(cancelBtn);
+	}
+
+	btnRow.appendChild(exportBtn);
+	btnRow.appendChild(applyBtn);
+
+	if (!ui.editor.cancelFirst)
+	{
+		btnRow.appendChild(cancelBtn);
+	}
+
+	container.appendChild(btnRow);
+
+	// --- Keyboard shortcuts ---
+	mxEvent.addListener(container, 'keydown', function(e)
 	{
 		if (e.keyCode == 13 && mxEvent.isControlDown(e))
 		{
 			applyBtn.click();
 		}
 	});
-	
-	function updateAddBtn()
+
+	this.init = function()
 	{
-		if (nameInput.value.length > 0)
+		if (texts.length > 0)
 		{
-			addBtn.removeAttribute('disabled');
+			texts[0].focus();
 		}
 		else
 		{
-			addBtn.setAttribute('disabled', 'disabled');
+			nameInput.focus();
 		}
 	};
 
-	mxEvent.addListener(nameInput, 'keyup', updateAddBtn);
-	
-	// Catches all changes that don't fire a keyup (such as paste via mouse)
-	mxEvent.addListener(nameInput, 'change', updateAddBtn);
-	
-	var buttons = document.createElement('div');
-	buttons.style.display = 'flex';
-	buttons.style.justifyContent = 'flex-end';
-	buttons.style.alignItems = 'center';
-	buttons.style.position = 'absolute';
-	buttons.style.left = '30px';
-	buttons.style.right = '30px';
-	buttons.style.bottom = '30px';
-	buttons.style.height = '40px';
-	
-	if (ui.editor.graph.getModel().isVertex(cell) || ui.editor.graph.getModel().isEdge(cell))
-	{
-		var replace = document.createElement('span');
-		replace.style.marginRight = '10px';
-		replace.style.justifyContent = 'flex-end';
-		replace.style.alignItems = 'center';
-		replace.style.display = 'flex';
-		replace.style.whiteSpace = 'nowrap';
-
-		var input = document.createElement('input');
-		input.setAttribute('type', 'checkbox');
-		input.style.marginRight = '6px';
-		
-		if (value.getAttribute('placeholders') == '1')
-		{
-			input.setAttribute('checked', 'checked');
-			input.defaultChecked = true;
-		}
-	
-		mxEvent.addListener(input, 'click', function()
-		{
-			if (value.getAttribute('placeholders') == '1')
-			{
-				value.removeAttribute('placeholders');
-			}
-			else
-			{
-				value.setAttribute('placeholders', '1');
-			}
-		});
-		
-		replace.appendChild(input);
-		mxUtils.write(replace, mxResources.get('placeholders'));
-		
-		if (EditDataDialog.placeholderHelpLink != null)
-		{
-			replace.appendChild(ui.createHelpIcon(
-				EditDataDialog.placeholderHelpLink));
-		}
-		
-		buttons.appendChild(replace);
-	}
-	
-	if (ui.editor.cancelFirst)
-	{
-		buttons.appendChild(cancelBtn);
-	}
-	
-	buttons.appendChild(exportBtn);
-	buttons.appendChild(applyBtn);
-
-	if (!ui.editor.cancelFirst)
-	{
-		buttons.appendChild(cancelBtn);
-	}
-
-	div.appendChild(buttons);
-	this.container = div;
+	this.container = container;
 };
 
 /**
@@ -3740,7 +4279,7 @@ var LayersWindow = function(editorUi, x, y, w, h)
 			menuLink.classList.add('mxDisabled');
 			addLink.classList.add('mxDisabled');
 		}
-		
+
 		layerCount = model.getChildCount(model.root)
 		listDiv.innerText = '';
 		var newLayerDivs = new mxDictionary();

@@ -1839,9 +1839,16 @@ mxEdgeHandler.prototype.reset = function()
 	
 	if (this.customHandles != null)
 	{
-		for (var i = 0; i < this.customHandles.length; i++)
+		// Caches handles to avoid NPE if a handle reset causes this handler
+		// to be destroyed (eg. via cellRenderer.redraw triggering selection changes)
+		var handles = this.customHandles;
+
+		for (var i = 0; i < handles.length; i++)
 		{
-			this.customHandles[i].reset();
+			if (handles[i] != null)
+			{
+				handles[i].reset();
+			}
 		}
 	}
 
@@ -2261,7 +2268,7 @@ mxEdgeHandler.prototype.redrawHandles = function()
 			this.isHandlesVisible();
 	}
 	
-	if (this.bends != null && this.bends.length > 0)
+	if (this.abspoints != null && this.bends != null && this.bends.length > 0)
 	{
 		var n = this.abspoints.length - 1;
 		

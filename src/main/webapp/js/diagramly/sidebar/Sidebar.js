@@ -46,6 +46,8 @@
 	Sidebar.prototype.gcp = ['Cards', 'Big Data', 'Compute', 'Developer Tools', 'Extras', 'Identity and Security', 'Machine Learning', 'Management Tools', 'Networking', 'Storage Databases'];
 	
 	Sidebar.prototype.gcp2 = ['Paths', 'Zones', 'Service Cards', 'Compute', 'API Management', 'Security', 'Data Analytics', 'Data Transfer', 'Cloud AI', 'Internet of Things', 'Databases', 'Storage', 'Management Tools', 'Networking', 'Developer Tools', 'Expanded Product Cards', 'User Device Cards', 'Product Cards', 'General Icons', 'Icons AI and Machine Learning', 'Icons Compute', 'Icons Serverless', 'Icons Data Analytics', 'Icons Operations', 'Icons Networking', 'Icons CI CD', 'Icons Integration Services', 'Icons API Management', 'Icons Internet of Things', 'Icons Databases', 'Icons Storage', 'Icons Security', 'Icons Migration', 'Icons Hybrid and Multi Cloud', 'Icons Open Source Icons'];
+
+	Sidebar.prototype.gcp3 = ['Categories', 'Core Products'];
 	
 	Sidebar.prototype.gcpicons = ['AI and Machine Learning', 'API Management', 'Compute', 'Data Analytics', 'Databases', 'Developer Tools', 'Expanded Product Card Icons', 'Generic', 'Hybrid and Multi Cloud', 'Security', 'Internet of Things', 'Management Tools', 'Migration', 'Networking', 'Open Source Icons', 'Storage'];
 	
@@ -152,6 +154,7 @@
            	                           {id: 'signs', prefix: 'signs', libs: Sidebar.prototype.signs},
            	                           {id: 'gcp', prefix: 'gcp', libs: Sidebar.prototype.gcp},
            	                           {id: 'gcp2', prefix: 'gcp2', libs: Sidebar.prototype.gcp2},
+           	                           {id: 'gcp3', prefix: 'gcp3', libs: Sidebar.prototype.gcp3},
            	                           {id: 'gcpicons', prefix: 'gcpicons', libs: Sidebar.prototype.gcpicons},
            	                           {id: 'rack', prefix: 'rack', libs: Sidebar.prototype.rack},
            	                           {id: 'electrical', prefix: 'electrical', libs: Sidebar.prototype.electrical},
@@ -455,7 +458,7 @@
 
 		// Uses search.xml index file instead (faster load times)
 		this.addStencilsToIndex = false;
-		
+
 		// Contains additional tags for shapes
 		this.shapetags = {};
 
@@ -463,10 +466,15 @@
 		if (this.tagIndex != null)
 		{
 			this.addTagIndex(Graph.decompress(this.tagIndex));
-			this.tagIndex = null;	
+			this.tagIndex = null;
 		}
-		
+
 		this.initPalettes();
+
+		// Records default palette order after all palettes are positioned
+		this.defaultPaletteOrder = this.getCurrentPaletteOrder();
+
+		this.applyPaletteOrder();
 	};
 	 
 	/**
@@ -526,6 +534,7 @@
 								{title: 'Citrix (legacy)', id: 'citrix', image: IMAGE_PATH + '/sidebar-citrix.png'},
 								{title: 'Dynamics365', id: 'dynamics365', image: IMAGE_PATH + '/sidebar-dynamics365.png'},
 								{title: 'Google Cloud Platform', id: 'gcp2', image: IMAGE_PATH + '/sidebar-gcp2.png'},
+								{title: 'Google Cloud Platform 2026', id: 'gcp3', image: IMAGE_PATH + '/sidebar-gcp3.png'},
 								{title: 'GCP Icons', id: 'gcpicons', image: IMAGE_PATH + '/sidebar-gcpicons.png'},
 								{title: 'IBM', id: 'ibm', image: IMAGE_PATH + '/sidebar-ibm.png'},
 								{title: 'IBM Cloud', id: 'ibm_cloud', image: IMAGE_PATH + '/sidebar-ibmcloud.png'},
@@ -691,7 +700,414 @@
 			}));
 		};
 	};
-	
+
+	// Overrides addPalette to persist expanded/collapsed library state
+	var sidebarAddPalette = Sidebar.prototype.addPalette;
+
+	Sidebar.prototype.addPalette = function(id, title, expanded, onInit)
+	{
+		expanded = this.editorUi.getLibraryExpanded(id, expanded);
+
+		var result = sidebarAddPalette.call(this, id, title, expanded, onInit);
+
+		// Tags title and content divs with palette id
+		if (id != null && this.palettes[id] != null)
+		{
+			this.palettes[id][0]._paletteId = id;
+
+			var contentDiv = this.palettes[id][1].firstChild;
+
+			if (contentDiv != null)
+			{
+				contentDiv._paletteId = id;
+			}
+
+			// Installs drag reorder on non-search palettes
+			if (id != 'search')
+			{
+				this.installPaletteDragReorder(
+					this.palettes[id][0],
+					this.palettes[id][1], id);
+			}
+
+			// Debounced re-apply of saved order for late-loaded palettes
+			if (this._applyOrderTimer != null)
+			{
+				window.clearTimeout(this._applyOrderTimer);
+			}
+
+			this._applyOrderTimer = window.setTimeout(mxUtils.bind(this, function()
+			{
+				this._applyOrderTimer = null;
+				this.applyPaletteOrder();
+			}), 0);
+		}
+
+		return result;
+	};
+
+	// Overrides setContentVisible to persist state on toggle
+	var sidebarSetContentVisible = Sidebar.prototype.setContentVisible;
+
+	Sidebar.prototype.setContentVisible = function(content, visible)
+	{
+		sidebarSetContentVisible.apply(this, arguments);
+
+		if (content._paletteId != null)
+		{
+			this.editorUi.setLibraryExpanded(content._paletteId, visible);
+		}
+	};
+
+	/**
+	 * Installs drag-to-reorder on a palette title element. A click still
+	 * expands/collapses; the drag only activates after significant movement.
+	 * The preview moves the actual title and content in-place in the DOM.
+	 */
+	Sidebar.prototype.installPaletteDragReorder = function(title, outer, id)
+	{
+		var sidebar = this;
+		var dragThreshold = 20;
+
+		// Use pointer events when available (required because addFoldingHandler
+		// calls mxEvent.preventDefault which suppresses mousedown via pointerdown)
+		var downEvt = (mxClient.IS_POINTER) ? 'pointerdown' : 'mousedown';
+		var moveEvt = (mxClient.IS_POINTER) ? 'pointermove' : 'mousemove';
+		var upEvt = (mxClient.IS_POINTER) ? 'pointerup' : 'mouseup';
+
+		mxEvent.addListener(title, downEvt, mxUtils.bind(this, function(evt)
+		{
+			if (evt.button != 0)
+			{
+				return;
+			}
+
+			var startY = evt.clientY;
+			var dragging = false;
+			var moved = false;
+			var dragPreview = null;
+
+			var moveHandler = mxUtils.bind(this, function(e)
+			{
+				var dy = e.clientY - startY;
+
+				if (!dragging)
+				{
+					if (Math.abs(dy) > dragThreshold)
+					{
+						dragging = true;
+						sidebar._paletteDragging = true;
+						sidebar.container.classList.add('gePaletteDragging');
+
+						// Create floating preview clone of the title
+						var titleRect = title.getBoundingClientRect();
+						dragPreview = title.cloneNode(true);
+						dragPreview.style.position = 'fixed';
+						dragPreview.style.zIndex = '10001';
+						dragPreview.style.width = titleRect.width + 'px';
+						dragPreview.style.left = titleRect.left + 'px';
+						dragPreview.style.top = (e.clientY - titleRect.height / 2) + 'px';
+						dragPreview.style.pointerEvents = 'none';
+						dragPreview.style.opacity = '0.8';
+						dragPreview.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+						document.body.appendChild(dragPreview);
+
+						// Show placeholder at source position and hide content
+						title.classList.add('gePaletteDragPlaceholder');
+						outer.style.display = 'none';
+					}
+
+					return;
+				}
+
+				// Update preview position
+				if (dragPreview != null)
+				{
+					var titleRect = title.getBoundingClientRect();
+					dragPreview.style.top = (e.clientY - dragPreview.offsetHeight / 2) + 'px';
+				}
+
+				// Move the actual title+outer in the DOM to the target position
+				var wrapper = sidebar.getEntryContainer();
+				var children = wrapper.childNodes;
+				var targetBefore = null;
+
+				for (var i = 0; i < children.length; i++)
+				{
+					var child = children[i];
+
+					if (child._paletteId == null || child.className == null ||
+						child.className.indexOf('geTitle') < 0 ||
+						child._paletteId == 'search' ||
+						child.style.display == 'none' ||
+						child._paletteId == id)
+					{
+						continue;
+					}
+
+					var rect = child.getBoundingClientRect();
+					var nextSib = child.nextSibling;
+					var pairBottom = (nextSib != null &&
+						nextSib.firstChild != null &&
+						nextSib.firstChild.style.display != 'none') ?
+						nextSib.getBoundingClientRect().bottom : rect.bottom;
+
+					if (e.clientY < (rect.top + pairBottom) / 2)
+					{
+						targetBefore = child;
+						break;
+					}
+				}
+
+				// Move title+outer before the target (or to end)
+				if (targetBefore != null)
+				{
+					if (outer.nextSibling != targetBefore)
+					{
+						wrapper.insertBefore(title, targetBefore);
+						wrapper.insertBefore(outer, targetBefore);
+						moved = true;
+					}
+				}
+				else if (wrapper.lastChild != outer)
+				{
+					wrapper.appendChild(title);
+					wrapper.appendChild(outer);
+					moved = true;
+				}
+
+				// Auto-scroll near edges
+				var wrapperRect = wrapper.getBoundingClientRect();
+
+				if (e.clientY - wrapperRect.top < 30)
+				{
+					wrapper.scrollTop -= 10;
+				}
+				else if (wrapperRect.bottom - e.clientY < 30)
+				{
+					wrapper.scrollTop += 10;
+				}
+
+				e.preventDefault();
+			});
+
+			var upHandler = mxUtils.bind(this, function(e)
+			{
+				if (dragging && moved)
+				{
+					sidebar.savePaletteOrder();
+				}
+
+				if (dragging)
+				{
+					sidebar.container.classList.remove('gePaletteDragging');
+					title.classList.remove('gePaletteDragPlaceholder');
+					outer.style.display = '';
+
+					if (dragPreview != null && dragPreview.parentNode != null)
+					{
+						dragPreview.parentNode.removeChild(dragPreview);
+						dragPreview = null;
+					}
+
+					// Suppress the click that follows mouseup
+					window.setTimeout(function()
+					{
+						sidebar._paletteDragging = false;
+					}, 100);
+				}
+
+				document.removeEventListener(moveEvt, moveHandler);
+				document.removeEventListener(upEvt, upHandler);
+			});
+
+			document.addEventListener(moveEvt, moveHandler);
+			document.addEventListener(upEvt, upHandler);
+		}));
+
+		// Right-click context menu for reset
+		mxEvent.addListener(title, 'contextmenu', mxUtils.bind(this, function(evt)
+		{
+			mxEvent.consume(evt);
+
+			if (mxSettings.getLibraryOrder() != null)
+			{
+				var menuDiv = document.createElement('div');
+				menuDiv.className = 'mxPopupMenu geMenubarMenu';
+				menuDiv.style.position = 'absolute';
+				menuDiv.style.zIndex = '10001';
+				menuDiv.style.left = evt.clientX + 'px';
+				menuDiv.style.top = evt.clientY + 'px';
+
+				var table = document.createElement('table');
+				table.className = 'mxPopupMenu';
+				var tbody = document.createElement('tbody');
+				var tr = document.createElement('tr');
+				tr.className = 'mxPopupMenuItem';
+				var td = document.createElement('td');
+				td.className = 'mxPopupMenuItem';
+				td.style.padding = '6px 10px';
+				td.style.cursor = 'pointer';
+				mxUtils.write(td, mxResources.get('reset'));
+				tr.appendChild(td);
+				tbody.appendChild(tr);
+				table.appendChild(tbody);
+				menuDiv.appendChild(table);
+
+				document.body.appendChild(menuDiv);
+				mxUtils.fit(menuDiv);
+
+				mxEvent.addListener(tr, 'mouseup', mxUtils.bind(this, function()
+				{
+					sidebar.resetPaletteOrder();
+					document.body.removeChild(menuDiv);
+				}));
+
+				mxEvent.addListener(tr, 'mouseenter', function()
+				{
+					tr.className = 'mxPopupMenuItem mxPopupMenuItemHover';
+				});
+
+				mxEvent.addListener(tr, 'mouseleave', function()
+				{
+					tr.className = 'mxPopupMenuItem';
+				});
+
+				var hideMenu = function(e)
+				{
+					if (!menuDiv.contains(e.target))
+					{
+						if (menuDiv.parentNode != null)
+						{
+							menuDiv.parentNode.removeChild(menuDiv);
+						}
+
+						document.removeEventListener('mousedown', hideMenu);
+					}
+				};
+
+				document.addEventListener('mousedown', hideMenu);
+			}
+		}));
+	};
+
+	/**
+	 * Moves a palette before another palette in the DOM and saves the order.
+	 */
+	Sidebar.prototype.movePalette = function(paletteId, beforePaletteId)
+	{
+		var elts = this.palettes[paletteId];
+
+		if (elts == null)
+		{
+			return;
+		}
+
+		var titleEl = elts[0];
+		var outerEl = elts[1];
+		var wrapper = this.getEntryContainer();
+
+		if (beforePaletteId != null)
+		{
+			var beforeElts = this.palettes[beforePaletteId];
+
+			if (beforeElts != null)
+			{
+				wrapper.insertBefore(titleEl, beforeElts[0]);
+				wrapper.insertBefore(outerEl, beforeElts[0]);
+			}
+		}
+		else
+		{
+			wrapper.appendChild(titleEl);
+			wrapper.appendChild(outerEl);
+		}
+
+		this.savePaletteOrder();
+	};
+
+	/**
+	 * Returns the current palette order from the DOM.
+	 */
+	Sidebar.prototype.getCurrentPaletteOrder = function()
+	{
+		var order = [];
+		var wrapper = this.getEntryContainer();
+		var children = wrapper.childNodes;
+
+		for (var i = 0; i < children.length; i++)
+		{
+			if (children[i]._paletteId != null && children[i].className != null &&
+				children[i].className.indexOf('geTitle') >= 0)
+			{
+				order.push(children[i]._paletteId);
+			}
+		}
+
+		return order;
+	};
+
+	/**
+	 * Saves the current palette order to settings.
+	 */
+	Sidebar.prototype.savePaletteOrder = function()
+	{
+		var order = this.getCurrentPaletteOrder();
+		mxSettings.setLibraryOrder(order);
+		mxSettings.save();
+	};
+
+	/**
+	 * Applies saved palette order from settings after init.
+	 */
+	Sidebar.prototype.applyPaletteOrder = function()
+	{
+		var order = mxSettings.getLibraryOrder();
+
+		if (order == null || order.length == 0)
+		{
+			return;
+		}
+
+		var wrapper = this.getEntryContainer();
+
+		for (var i = 0; i < order.length; i++)
+		{
+			var elts = this.palettes[order[i]];
+
+			if (elts != null && elts[0].parentNode == wrapper)
+			{
+				wrapper.appendChild(elts[0]);
+				wrapper.appendChild(elts[1]);
+			}
+		}
+	};
+
+	/**
+	 * Resets palette order to the default.
+	 */
+	Sidebar.prototype.resetPaletteOrder = function()
+	{
+		mxSettings.setLibraryOrder(null);
+		mxSettings.save();
+
+		if (this.defaultPaletteOrder != null)
+		{
+			var wrapper = this.getEntryContainer();
+
+			for (var i = 0; i < this.defaultPaletteOrder.length; i++)
+			{
+				var elts = this.palettes[this.defaultPaletteOrder[i]];
+
+				if (elts != null && elts[0].parentNode == wrapper)
+				{
+					wrapper.appendChild(elts[0]);
+					wrapper.appendChild(elts[1]);
+				}
+			}
+		}
+	};
+
 	/**
 	 * Overridden to use shapetags to improve search results.
 	 */
@@ -1082,6 +1498,7 @@
 		this.addCitrix2Palette();
 		this.addCitrixPalette();
 		this.addDynamics365Palette();
+		this.addGCP3Palette();
 		this.addGCP2Palette();
 		this.addGCPIconsPalette();
 		this.addIBMPalette();
@@ -1142,9 +1559,9 @@
 				
 				for (var j = 0; section.entries != null && j < section.entries.length; j++)
 				{
-					var entry = section.entries[j];
-					
-					for (var k = 0; k < entry.libs.length; k++)
+					var entry = section.entries[j] || {};
+
+					for (var k = 0; entry.libs != null && k < entry.libs.length; k++)
 					{
 						(mxUtils.bind(this, function(lib)
 						{

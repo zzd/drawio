@@ -557,11 +557,15 @@ EditorUi.initMinimalTheme = function()
 		
 		// Hides popup menus
 		var uiHideCurrentMenu = ui.hideCurrentMenu;
-		
+
 		ui.hideCurrentMenu = function()
 		{
 			uiHideCurrentMenu.apply(this, arguments);
-			this.editor.graph.popupMenuHandler.hideMenu();
+
+			if (this.editor != null)
+			{
+				this.editor.graph.popupMenuHandler.hideMenu();
+			}
 		};
 
 		// Connects the status bar to the editor status

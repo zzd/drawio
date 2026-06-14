@@ -242,8 +242,8 @@ DriveFile.prototype.saveFile = function(title, revision, success, error, unloadi
 									this.fileSaved(savedData, lastDesc, mxUtils.bind(this, function()
 									{
 										this.contentChanged();
-										
-										if (success != null)
+
+										if (typeof success === 'function')
 										{
 											success(resp);
 										}

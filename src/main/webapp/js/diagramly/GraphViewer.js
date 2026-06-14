@@ -178,6 +178,8 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 		this.graphConfig['responsive'] : this.responsive) &&
 		!this.zoomEnabled && !mxClient.NO_FO && !mxClient.IS_SF;
 	this.pageId = this.graphConfig.pageId;
+	this.browserTranslate = mxClient.IS_GC && ((this.graphConfig['browser-translate'] != null) ?
+		this.graphConfig['browser-translate'] : true);
 	this.editor = null;
 	var self = this;
 	
@@ -197,6 +199,12 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 			var render = mxUtils.bind(this, function()
 			{
 				this.graph = new Graph(container);
+
+				if (this.browserTranslate)
+				{
+					this.graph.waitForBrowserTranslate();
+				}
+
 				this.graph.enableFlowAnimation = true;
 				this.installDarkModeListener();
 				
@@ -2208,11 +2216,16 @@ GraphViewer.prototype.showLightbox = function(editable, closable, target)
 		    	param.tags = this.graphConfig.hiddenTags;
 			}
 
+			if (this.browserTranslate)
+			{
+				param['browser-translate'] = 1;
+			}
+
 			if (this.graphConfig != null && this.graphConfig.nav != false)
 			{
 				param.nav = 1;
 			}
-			
+
 			if (this.graphConfig != null && this.graphConfig.highlight != null)
 			{
 				param.highlight = this.graphConfig.highlight.substring(1);
@@ -2263,6 +2276,11 @@ GraphViewer.prototype.showLightbox = function(editable, closable, target)
  */
 GraphViewer.prototype.showLocalLightbox = function(container)
 {
+	// Capture translation cache from the viewer's graph before
+	// creating the lightbox so it can be seeded after content loads
+	var btCache = (this.browserTranslate && this.graph != null) ?
+		this.graph.getBrowserTranslationCache() : null;
+
 	var backdrop = document.createElement('div');
 	backdrop.style.position = 'fixed';
 	backdrop.style.top = '0';
@@ -2342,7 +2360,7 @@ GraphViewer.prototype.showLocalLightbox = function(container)
 	EditorUi.prototype.updateActionStates = function() {};
 	EditorUi.prototype.addBeforeUnloadListener = function() {};
 	EditorUi.prototype.addChromelessClickHandler = function() {};
-	
+
 	var ui = new EditorUi(new Editor(true), document.createElement('div'), true);
 	this.addListener('darkModeChanged', updateDarkMode);
 	ui.editor.editBlankUrl = this.editBlankUrl;
@@ -2377,6 +2395,12 @@ GraphViewer.prototype.showLocalLightbox = function(container)
 	};
 	
 	var graph = ui.editor.graph;
+
+	if (this.browserTranslate)
+	{
+		graph.waitForBrowserTranslate();
+	}
+
 	var lightbox = graph.container;
 	lightbox.style.overflow = 'hidden';
 	lightbox.style.inset = '0';
@@ -2487,6 +2511,12 @@ GraphViewer.prototype.showLocalLightbox = function(container)
 			this.showLayers(graph, this.graph);
 			ui.lightboxFit();
 			ui.chromelessResize();
+
+			// Applies cached translations from the viewer's graph
+			if (btCache != null)
+			{
+				graph.applyBrowserTranslationCache(btCache);
+			}
 		}
 		catch (e)
 		{

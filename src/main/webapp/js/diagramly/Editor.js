@@ -287,9 +287,22 @@
 	Editor.addSvgMetadata = false;
 
 	/**
+	 * If true, label autosize, view bounds and the post-load fit-to-window use
+	 * the MathJax-rendered math size rather than the raw formula text size,
+	 * and the canvas is hidden during typesetting to avoid showing the source.
+	 * Default is true. See [jgraph/drawio#3311].
+	 */
+	Editor.mathOutputSize = true;
+
+	/**
 	 * Specifies animations should be enabled. Default is true.
 	 */
 	Editor.enableAnimations = true;
+
+	/**
+	 * Specifies if insert animations should be shown. Default is true.
+	 */
+	Editor.insertAnimations = true;
 
 	/**
 	 * Specifies if window docking should be enabled. Default is true.
@@ -320,6 +333,16 @@
 	 * Specifies if tooltip icons should be shown on shapes. Default is false.
 	 */
 	Editor.showTooltipIcons = false;
+
+	/**
+	 * Specifies the tooltip font size in pixels. Default is null (uses CSS default of 11px).
+	 */
+	Editor.tooltipFontSize = null;
+
+	/**
+	 * Specifies the tooltip max-width in pixels. Default is 360. 0 means no limit.
+	 */
+	Editor.tooltipMaxWidth = 360;
 
 	/**
 	 * Specifies if fill patterns should be expanded to inline geometry for
@@ -881,6 +904,19 @@
         	return (state.vertices.length > 0) ? model.isVertex(model.getParent(state.vertices[0])) : false;
         }},
         {name: 'editable', dispName: 'Editable', type: 'bool', defVal: true},
+        {name: 'editIcon', dispName: 'Edit Icon', type: 'bool', defVal: false},
+        {name: 'lockedGroup', dispName: 'Locked Group', type: 'enum', defVal: null,
+        	enumList: [{val: null, dispName: 'Default'}, {val: '0', dispName: 'Unlocked'}, {val: '1', dispName: 'Locked'}], isVisible: function(state, format)
+			{
+				return state.vertices.length > 0 && state.edges.length == 0;
+			}
+        },
+        {name: 'lockedGroupIcon', dispName: 'Lock Icon', type: 'enum', defVal: null,
+        	enumList: [{val: null, dispName: 'Default'}, {val: '0', dispName: 'Disabled'}, {val: '1', dispName: 'Visible'}], isVisible: function(state, format)
+			{
+				return state.vertices.length > 0 && state.edges.length == 0;
+			}
+        },
         {name: 'metaEdit', dispName: 'Edit Dialog', type: 'bool', defVal: false},
         {name: 'backgroundOutline', dispName: 'Background Outline', type: 'bool', defVal: false},
         {name: 'movable', dispName: 'Movable', type: 'bool', defVal: true},
@@ -2518,6 +2554,11 @@
 				Editor.enableLocalFonts = config.enableLocalFonts;
 			}
 
+			if (config.enableCustomGitLabUrl != null)
+			{
+				Editor.enableCustomGitLabUrl = config.enableCustomGitLabUrl;
+			}
+
 			if (config.defaultFonts != null)
 			{
 				Menus.prototype.defaultFonts = config.defaultFonts
@@ -2611,6 +2652,11 @@
 				Editor.optimizeHtmlLabels = config.optimizeHtmlLabels;
 			}
 
+			if (config.mathOutputSize != null)
+			{
+				Editor.mathOutputSize = config.mathOutputSize;
+			}
+
 			if (config.pasteAtMousePointer != null)
 			{
 				Editor.pasteAtMousePointer = config.pasteAtMousePointer;
@@ -2634,6 +2680,34 @@
 			if (config.showTooltipIcons != null)
 			{
 				Editor.showTooltipIcons = config.showTooltipIcons;
+			}
+
+			if (config.tooltipFontSize != null)
+			{
+				var val = parseInt(config.tooltipFontSize);
+
+				if (!isNaN(val) && val > 0)
+				{
+					Editor.tooltipFontSize = val;
+				}
+				else
+				{
+					EditorUi.debug('Configuration Error: Int > 0 expected for tooltipFontSize');
+				}
+			}
+
+			if (config.tooltipMaxWidth != null)
+			{
+				var val = parseInt(config.tooltipMaxWidth);
+
+				if (!isNaN(val) && val >= 0)
+				{
+					Editor.tooltipMaxWidth = val;
+				}
+				else
+				{
+					EditorUi.debug('Configuration Error: Int >= 0 expected for tooltipMaxWidth');
+				}
 			}
 
 			if (config.expandPatternsForPrint != null)
@@ -2829,10 +2903,22 @@
 				Graph.prototype.defaultFoldingEnabled = config.defaultFoldingEnabled;
 			}
 
+			// Overrides folding icon size
+			if (config.foldingIconSize != null)
+			{
+				Graph.updateFoldingImages(config.foldingIconSize);
+			}
+
 			// Overrides mouse wheel function
 			if (config.zoomWheel != null)
 			{
 				Graph.zoomWheel = config.zoomWheel;
+			}
+
+			// Enables browser translation mirror
+			if (config.browserTranslate != null)
+			{
+				Graph.browserTranslate = config.browserTranslate;
 			}
 
 			// Overrides zoom factor
@@ -3046,6 +3132,11 @@
 				Editor.enableAnimations = config.enableAnimations;
 			}
 
+			if (config.insertAnimations != null)
+			{
+				Editor.insertAnimations = config.insertAnimations;
+			}
+
 			if (config.enableWindowDocking != null)
 			{
 				Editor.enableWindowDocking = config.enableWindowDocking;
@@ -3245,30 +3336,6 @@
 		};
 
 		/**
-		 * Returns the accumulated transform from an element up to the SVG root
-		 * as a transform attribute string, or null if no transforms exist.
-		 */
-		function getAccumulatedTransform(el, svgRoot)
-		{
-			var transforms = [];
-			var current = el;
-
-			while (current != null && current !== svgRoot && current.nodeType === 1)
-			{
-				var t = current.getAttribute('transform');
-
-				if (t != null && t.length > 0)
-				{
-					transforms.unshift(t);
-				}
-
-				current = current.parentNode;
-			}
-
-			return (transforms.length > 0) ? transforms.join(' ') : null;
-		};
-
-		/**
 		 * Resolves a fill URL reference to a pattern element.
 		 */
 		function resolvePattern(el, svgRoot)
@@ -3334,42 +3401,18 @@
 
 			var t = parsePatternTransform(pattern.getAttribute('patternTransform'));
 
-			// Get the element's accumulated transform for the clip path
-			var elemTransform = getAccumulatedTransform(el, svgRoot);
-
-			// Compute bbox corners in user space (relative to element's local coords)
+			// Bbox is already in the element's user coordinate system, which is
+			// the space the pattern's userSpaceOnUse references. Do not apply the
+			// element's CTM — that would shift coordinates into SVG viewport space
+			// and miscompute the tile range whenever an ancestor group has a
+			// transform (notably the print preview's CSS-transform scale+translate
+			// when crop or fit is enabled).
 			var corners = [
 				{x: bbox.x, y: bbox.y},
 				{x: bbox.x + bbox.width, y: bbox.y},
 				{x: bbox.x + bbox.width, y: bbox.y + bbox.height},
 				{x: bbox.x, y: bbox.y + bbox.height}
 			];
-
-			// If the element has a transform, apply it to get coordinates in
-			// the same space as the pattern (user/diagram space)
-			if (elemTransform != null)
-			{
-				try
-				{
-					var ctm = el.getCTM();
-					var svgCtm = svgRoot.getCTM() || svgRoot.createSVGMatrix();
-					// Transform from element space to SVG space
-					var m = svgCtm.inverse().multiply(ctm);
-
-					for (var i = 0; i < corners.length; i++)
-					{
-						var pt = svgRoot.createSVGPoint();
-						pt.x = corners[i].x;
-						pt.y = corners[i].y;
-						pt = pt.matrixTransform(m);
-						corners[i] = {x: pt.x, y: pt.y};
-					}
-				}
-				catch (e)
-				{
-					// Fall back to untransformed corners
-				}
-			}
 
 			// Transform corners to pattern space (inverse of patternTransform)
 			var minX = Infinity, minY = Infinity;
@@ -3902,10 +3945,12 @@
 			// Blocks concurrent rendering while
 			// async rendering is in progress
 			var rendering = null;
+			Editor.mathJaxRendering = false;
 
 			function mathJaxDone()
 			{
 				rendering = null;
+				Editor.mathJaxRendering = false;
 
 				if (Editor.mathJaxQueue.length > 0)
 				{
@@ -3948,6 +3993,7 @@
 					if (e.retry != null)
 					{
 						rendering = container;
+						Editor.mathJaxRendering = true;
 
 						e.retry.then(function()
 						{
@@ -4031,12 +4077,44 @@
 					if (this.graph.container != null &&
 						this.graph.mathEnabled)
 					{
+						// Hides container until typeset completes to avoid
+						// showing the raw formula source. For a synchronous
+						// typeset, hide and show happen in the same tick.
+						if (Editor.mathOutputSize)
+						{
+							this.graph.container.style.visibility = 'hidden';
+						}
+
 						Editor.MathJaxRender(this.graph.container);
 					}
 				});
-				
+
 				this.graph.model.addListener(mxEvent.CHANGE, renderMath);
 				this.graph.addListener(mxEvent.REFRESH, renderMath);
+
+				// Refreshes cached label bounds after MathJax has typeset, so
+				// view bounds (used for export/scrollbars) reflect the rendered
+				// math size rather than the raw formula text size.
+				var graph = this.graph;
+				var prevOnMathJaxDone = Editor.onMathJaxDone;
+
+				Editor.onMathJaxDone = function()
+				{
+					if (prevOnMathJaxDone != null)
+					{
+						prevOnMathJaxDone.apply(this, arguments);
+					}
+
+					if (Editor.mathOutputSize && graph != null && graph.mathEnabled)
+					{
+						graph.refreshMathBounds();
+
+						if (graph.container != null)
+						{
+							graph.container.style.visibility = '';
+						}
+					}
+				};
 			};
 			
 			var tags = document.getElementsByTagName('script');
@@ -4050,6 +4128,218 @@
 			}
 		}
 	};
+
+	/**
+	 * Returns true if the given label contains TeX or AsciiMath delimiters
+	 * that MathJax would typeset.
+	 */
+	Editor.containsMath = function(text)
+	{
+		return text != null && (text.indexOf('$') >= 0 ||
+			text.indexOf('\\(') >= 0 || text.indexOf('\\[') >= 0 ||
+			text.indexOf('\\begin{') >= 0);
+	};
+
+	// Overrides autosize so that labels with math are measured after MathJax
+	// has typeset them, rather than measuring the raw formula source.
+	(function()
+	{
+		var graphGetPreferredSizeForCell = Graph.prototype.getPreferredSizeForCell;
+		var measureDiv = null;
+
+		Graph.prototype.getPreferredSizeForCell = function(cell, w, gridEnabled)
+		{
+			if (!Editor.mathOutputSize || !this.mathEnabled ||
+				typeof MathJax === 'undefined' ||
+				typeof MathJax.typeset !== 'function' || this.model.isEdge(cell))
+			{
+				return graphGetPreferredSizeForCell.apply(this, arguments);
+			}
+
+			var state = this.view.createState(cell);
+			var label = (state != null) ? this.cellRenderer.getLabelValue(state) : null;
+
+			if (label == null || label.length === 0 || !Editor.containsMath(label))
+			{
+				return graphGetPreferredSizeForCell.apply(this, arguments);
+			}
+
+			var origGetSizeForString = mxUtils.getSizeForString;
+
+			mxUtils.getSizeForString = function(text, fontSize, fontFamily, textWidth)
+			{
+				if (measureDiv == null)
+				{
+					measureDiv = document.createElement('div');
+					measureDiv.style.cssText = 'position:absolute;visibility:hidden;' +
+						'left:-10000px;top:-10000px;display:inline-block;';
+					document.body.appendChild(measureDiv);
+				}
+
+				measureDiv.style.fontSize = fontSize + 'px';
+				measureDiv.style.fontFamily = fontFamily;
+
+				if (textWidth != null && textWidth > 0)
+				{
+					measureDiv.style.width = textWidth + 'px';
+					measureDiv.style.whiteSpace = 'normal';
+				}
+				else
+				{
+					measureDiv.style.width = '';
+					measureDiv.style.whiteSpace = 'nowrap';
+				}
+
+				// Clears MathJax state attached by previous typeset
+				MathJax.typesetClear([measureDiv]);
+				measureDiv.innerHTML = Graph.sanitizeHtml(text);
+
+				try
+				{
+					MathJax.typeset([measureDiv]);
+					var rect = measureDiv.getBoundingClientRect();
+					return new mxRectangle(0, 0, rect.width, rect.height);
+				}
+				catch (e)
+				{
+					// Fonts may not be loaded yet; fall back to text measurement
+					return origGetSizeForString.apply(this, arguments);
+				}
+			};
+
+			try
+			{
+				return graphGetPreferredSizeForCell.apply(this, arguments);
+			}
+			finally
+			{
+				mxUtils.getSizeForString = origGetSizeForString;
+			}
+		};
+	})();
+
+	/**
+	 * Re-reads the rendered DOM size of every label that contains math so the
+	 * view's bounding box reflects MathJax's rendered output instead of the raw
+	 * formula source. Cell geometry is not modified. No-op when nothing math-y
+	 * is in the diagram.
+	 */
+	Graph.prototype.refreshMathBounds = function()
+	{
+		if (!Editor.mathOutputSize || !this.mathEnabled)
+		{
+			return;
+		}
+
+		var view = this.view;
+		var hasMath = false;
+
+		view.states.visit(mxUtils.bind(this, function(key, state)
+		{
+			if (state == null || state.text == null)
+			{
+				return;
+			}
+
+			var label = this.cellRenderer.getLabelValue(state);
+
+			if (typeof label === 'string' && Editor.containsMath(label))
+			{
+				state.text.updateBoundingBox();
+				hasMath = true;
+			}
+		}));
+
+		if (!hasMath)
+		{
+			return;
+		}
+
+		var rootCell = (view.currentRoot != null) ? view.currentRoot : this.model.getRoot();
+		var rootState = view.getState(rootCell);
+
+		if (rootState != null)
+		{
+			var bounds = view.getBoundingBox(rootState, true, false);
+			view.setGraphBounds((bounds != null) ? bounds : view.getEmptyBounds());
+			this.sizeDidChange();
+		}
+
+		this.fireEvent(new mxEventObject('mathRefreshed'));
+	};
+
+	// Re-runs initial fit-to-window after MathJax has typeset, so the fit uses
+	// the rendered math bounds rather than the (still wrong) raw-text bounds
+	// that were available at file-load time.
+	(function()
+	{
+		var editorUiInitialFitDiagram = EditorUi.prototype.initialFitDiagram;
+
+		EditorUi.prototype.initialFitDiagram = function(maxScale)
+		{
+			editorUiInitialFitDiagram.apply(this, arguments);
+
+			var graph = this.editor.graph;
+
+			if (!Editor.mathOutputSize || graph == null || !graph.mathEnabled)
+			{
+				return;
+			}
+
+			var args = arguments;
+			var ui = this;
+			var fired = false;
+
+			// Registers the mathRefreshed listener synchronously so it captures
+			// the typeset that follows. On page switch with fonts already loaded
+			// MathJax typesets synchronously inside the same dispatch as
+			// initialFitDiagram (pageSelected fires from change.execute, then
+			// edit.notify fires CHANGE → renderMath → typeset → mathRefreshed),
+			// so a deferred registration would miss the event.
+			var listener = function()
+			{
+				if (fired)
+				{
+					return;
+				}
+
+				fired = true;
+				graph.removeListener(listener);
+
+				// Reset to "fresh-load" defaults (scale=1, default scroll)
+				// so that re-running initialFitDiagram with zoomOutOnly=true
+				// either no-ops cleanly (matching a no-math page's fresh
+				// state) or zooms out as needed for oversized content.
+				graph.zoomTo(1);
+				ui.resetScrollbars();
+
+				editorUiInitialFitDiagram.apply(ui, args);
+			};
+
+			graph.addListener('mathRefreshed', listener);
+
+			// Defers a cleanup check to a microtask so the listener doesn't
+			// leak when MathJax is unavailable or the diagram contains no math
+			// to typeset (mathRefreshed never fires in that case).
+			Promise.resolve().then(function()
+			{
+				if (fired)
+				{
+					return;
+				}
+
+				var pending = (typeof MathJax === 'undefined') ||
+					(typeof MathJax.typeset !== 'function') ||
+					(Editor.mathJaxQueue != null && Editor.mathJaxQueue.length > 0) ||
+					Editor.mathJaxRendering;
+
+				if (!pending)
+				{
+					graph.removeListener(listener);
+				}
+			});
+		};
+	})();
 
 	/**
 	 * Parses line of CSV values according to RFC 4180.
@@ -6021,7 +6311,6 @@
 			var sstate = this.editorUi.getSelectionState();
 
 			if (this.defaultColorSchemes != null && this.defaultColorSchemes.length > 0 &&
-				sstate.style.shape != 'image' && !sstate.containsLabel &&
 				sstate.cells.length > 0)
 			{
 				this.container.appendChild(this.addStyles(this.createPanel()));
@@ -6073,6 +6362,18 @@
 			var that = this;
 			var graph = this.editorUi.editor.graph;
 			var secondLevel = [];
+
+			function safeDecodeURIComponent(value)
+			{
+				try
+				{
+					return decodeURIComponent(value);
+				}
+				catch (e)
+				{
+					return value;
+				}
+			};
 			
 			function insertAfter(newElem, curElem)
 			{
@@ -6366,7 +6667,7 @@
 				td = document.createElement('td');
 				td.className = 'gePropRowCell';
 				td.setAttribute('title', (pValue != null) ?
-					decodeURIComponent(pValue) : mxResources.get('none'));
+					safeDecodeURIComponent(pValue) : mxResources.get('none'));
 
 				mxEvent.addListener(td, 'click', mxUtils.bind(that, function(e)
 				{
@@ -6424,6 +6725,11 @@
 						var nullValue = 'null';
 						var nullOption = null;
 						setElementPos(td, select);
+						select.style.boxSizing = 'border-box';
+						select.style.height = '100%';
+						select.style.padding = '0';
+						select.style.margin = '0';
+						select.style.border = '0';
 
 						for (var i = 0; i < pEnumList.length; i++)
 						{
@@ -6465,11 +6771,15 @@
 						{
 							valueDiv.innerHTML = '';
 
+							// Map the null sentinel back to actual null so op.val == ... matches.
+							var effectiveVal = (select[select.selectedIndex] == nullOption ||
+								select.value == nullValue) ? null : select.value;
+
 							for (let i = 0; i < pEnumList.length; i++)
 							{
 								let op = pEnumList[i];
 
-								if (op.val == select.value)
+								if (op.val == effectiveVal)
 								{
 									mxUtils.write(valueDiv, mxResources.get(op.dispName, null, op.dispName));
 									break;
@@ -6525,7 +6835,7 @@
 					let valueDiv = document.createElement('div');
 					valueDiv.className = 'gePropValue';
 					td.appendChild(valueDiv);
-					valueDiv.innerHTML = mxUtils.htmlEntities(decodeURIComponent(pValue));
+					valueDiv.innerHTML = mxUtils.htmlEntities(safeDecodeURIComponent(pValue));
 
 					mxEvent.addListener(td, 'click', mxUtils.bind(that, function(e)
 					{
@@ -6541,7 +6851,7 @@
 						valueDiv.innerHTML = '';
 						var input = document.createElement('input');
 						setElementPos(valueDiv, input);
-						input.value = decodeURIComponent(pValue);
+						input.value = safeDecodeURIComponent(pValue);
 						input.className = 'gePropEditor';
 						
 						if ((pType == 'int' || pType == 'float') && !prop.allowAuto)
@@ -6885,35 +7195,72 @@
 							try
 							{
 								var cells = ui.getSelectionState().cells;
-								
+								var model = graph.getModel();
+								var cellMeta = [];
+								var labelOnly = cells.length > 0;
+
 								for (var i = 0; i < cells.length; i++)
 								{
-									var style = graph.getModel().getStyle(cells[i]);
-									
+									var isEdgeLabel = model.isVertex(cells[i]) &&
+										model.isEdge(model.getParent(cells[i]));
+									var cellStyle = graph.getCellStyle(cells[i]);
+									var isImage = cellStyle != null && cellStyle.shape == 'image';
+									cellMeta.push({isEdgeLabel: isEdgeLabel, isImage: isImage});
+
+									if (!isEdgeLabel && !isImage)
+									{
+										labelOnly = false;
+									}
+								}
+
+								var fillKey = labelOnly ? mxConstants.STYLE_LABEL_BACKGROUNDCOLOR :
+									mxConstants.STYLE_FILLCOLOR;
+								var strokeKey = labelOnly ? mxConstants.STYLE_LABEL_BORDERCOLOR :
+									mxConstants.STYLE_STROKECOLOR;
+
+								for (var i = 0; i < cells.length; i++)
+								{
+									var meta = cellMeta[i];
+
+									if (!labelOnly && (meta.isEdgeLabel || meta.isImage))
+									{
+										continue;
+									}
+
+									var style = model.getStyle(cells[i]);
+
+									if (style != null && typeof style !== 'string')
+									{
+										style = String(style);
+									}
+
 									if (colorset != null)
 									{
 										if (!mxEvent.isShiftDown(evt))
 										{
 											if (colorset['fill'] == '' || colorset['fill'] == null)
 											{
-												style = mxUtils.setStyle(style, mxConstants.STYLE_FILLCOLOR, null);
+												style = mxUtils.setStyle(style, fillKey, null);
 											}
 											else
 											{
-												style = mxUtils.setStyle(style, mxConstants.STYLE_FILLCOLOR, colorset['fill']);
+												style = mxUtils.setStyle(style, fillKey, colorset['fill']);
 											}
 
-											if (colorset['gradient'] == '' || colorset['gradient'] == null)
+											if (!labelOnly)
 											{
-												style = mxUtils.setStyle(style, mxConstants.STYLE_GRADIENTCOLOR, null);
-											}
-											else
-											{
-												style = mxUtils.setStyle(style, mxConstants.STYLE_GRADIENTCOLOR, colorset['gradient']);
+												if (colorset['gradient'] == '' || colorset['gradient'] == null)
+												{
+													style = mxUtils.setStyle(style, mxConstants.STYLE_GRADIENTCOLOR, null);
+												}
+												else
+												{
+													style = mxUtils.setStyle(style, mxConstants.STYLE_GRADIENTCOLOR, colorset['gradient']);
+												}
 											}
 
 											if (!mxEvent.isControlDown(evt) && (!mxClient.IS_MAC || !mxEvent.isMetaDown(evt)) &&
-												graph.getModel().isVertex(cells[i]))
+												model.isVertex(cells[i]))
 											{
 												if (colorset['font'] == '' || colorset['font'] == null)
 												{
@@ -6925,32 +7272,36 @@
 												}
 											}
 										}
-										
+
 										if (!mxEvent.isAltDown(evt))
 										{
-											if (colorset['stroke'] == '' || colorset['fill'] == null)
+											if (colorset['stroke'] == '' || colorset['stroke'] == null)
 											{
-												style = mxUtils.setStyle(style, mxConstants.STYLE_STROKECOLOR, null);
+												style = mxUtils.setStyle(style, strokeKey, null);
 											}
 											else
 											{
-												style = mxUtils.setStyle(style, mxConstants.STYLE_STROKECOLOR, colorset['stroke']);
+												style = mxUtils.setStyle(style, strokeKey, colorset['stroke']);
 											}
 										}
 									}
 									else
 									{
-										style = mxUtils.setStyle(style, mxConstants.STYLE_FILLCOLOR, null);
-										style = mxUtils.setStyle(style, mxConstants.STYLE_STROKECOLOR, null);
-										style = mxUtils.setStyle(style, mxConstants.STYLE_GRADIENTCOLOR, null);
-										
-										if (graph.getModel().isVertex(cells[i]))
+										style = mxUtils.setStyle(style, fillKey, null);
+										style = mxUtils.setStyle(style, strokeKey, null);
+
+										if (!labelOnly)
+										{
+											style = mxUtils.setStyle(style, mxConstants.STYLE_GRADIENTCOLOR, null);
+										}
+
+										if (model.isVertex(cells[i]))
 										{
 											style = mxUtils.setStyle(style, mxConstants.STYLE_FONTCOLOR, null);
 										}
 									}
 
-									graph.getModel().setStyle(cells[i], style);
+									model.setStyle(cells[i], style);
 								}
 							}
 							finally
@@ -7636,7 +7987,8 @@
 
 							var img = document.createElement('img');
 							img.setAttribute('src', visible ? Editor.visibleImage : Editor.hiddenImage);
-							img.setAttribute('title', mxResources.get(visible ? 'hideIt' : 'show', [tag]));
+							img.setAttribute('title', mxResources.get(visible ? 'hideIt' : 'show', [tag]) +
+								'\n' + mxResources.get('shiftClickShowOnly', [tag]));
 							mxUtils.setOpacity(img, visible ? 75 : 25);
 							img.className = 'geAdaptiveAsset';
 							img.style.verticalAlign = 'middle';
@@ -7654,7 +8006,39 @@
 							{
 								if (mxEvent.isShiftDown(evt))
 								{
-									setAllVisible(mxUtils.indexOf(graph.hiddenTags, tag) >= 0);
+									var otherTags = [];
+
+									for (var j = 0; j < allTags.length; j++)
+									{
+										if (allTags[j] !== tag)
+										{
+											otherTags.push(allTags[j]);
+										}
+									}
+
+									// If already showing only this tag, show all
+									var allOthersHidden = otherTags.length > 0;
+
+									for (var j = 0; j < otherTags.length; j++)
+									{
+										if (mxUtils.indexOf(graph.hiddenTags, otherTags[j]) < 0)
+										{
+											allOthersHidden = false;
+											break;
+										}
+									}
+
+									if (allOthersHidden && mxUtils.indexOf(graph.hiddenTags, tag) < 0)
+									{
+										graph.setHiddenTags([]);
+									}
+									else
+									{
+										graph.setHiddenTags(otherTags);
+									}
+
+									removeInvisibleSelectionCells();
+									graph.refresh();
 								}
 								else
 								{
@@ -9520,16 +9904,14 @@
 		allPagesRadio.style.marginRight = '8px';
 		allPagesRadio.setAttribute('type', 'radio');
 		allPagesRadio.setAttribute('name', 'pages-printdialog');
+		allPagesRadio.setAttribute('id', 'gePrintDlgAllPages');
 
 		var allPagesRow = document.createElement('div');
 		allPagesRow.className = 'geDialogCheckRow';
 		allPagesRow.appendChild(allPagesRadio);
-		var span = document.createElement('span');
+		var span = document.createElement('label');
+		span.setAttribute('for', 'gePrintDlgAllPages');
 		mxUtils.write(span, mxResources.get('allPages'));
-		mxEvent.addListener(span, 'click', function()
-		{
-			allPagesRadio.checked = true;
-		});
 		allPagesRow.appendChild(span);
 		pagesSection.appendChild(allPagesRow);
 
@@ -9538,18 +9920,16 @@
 		pagesRadio.style.marginRight = '8px';
 		pagesRadio.setAttribute('type', 'radio');
 		pagesRadio.setAttribute('name', 'pages-printdialog');
+		pagesRadio.setAttribute('id', 'gePrintDlgPages');
 
 		var pagesRow = document.createElement('div');
 		pagesRow.className = 'geDialogCheckRow';
 		pagesRow.appendChild(pagesRadio);
 
-		var span = document.createElement('span');
+		var span = document.createElement('label');
+		span.setAttribute('for', 'gePrintDlgPages');
 		mxUtils.write(span, mxResources.get('pages') + ':');
 		pagesRow.appendChild(span);
-		mxEvent.addListener(span, 'click', function()
-		{
-			pagesRadio.checked = true;
-		});
 
 		var pagesFromInput = document.createElement('input');
 		pagesFromInput.style.margin = '0 4px';
@@ -9650,6 +10030,7 @@
 		var selectionOnlyRadio = document.createElement('input');
 		selectionOnlyRadio.setAttribute('name', 'pages-printdialog');
 		selectionOnlyRadio.setAttribute('type', (pageCount == 1) ? 'checkbox' : 'radio');
+		selectionOnlyRadio.setAttribute('id', 'gePrintDlgSelectionOnly');
 		selectionOnlyRadio.style.marginRight = '8px';
 
 		if (graph.isSelectionEmpty())
@@ -9661,7 +10042,8 @@
 		{
 			selectionSection.appendChild(selectionOnlyRadio);
 
-			var span = document.createElement('span');
+			var span = document.createElement('label');
+			span.setAttribute('for', 'gePrintDlgSelectionOnly');
 			mxUtils.write(span, mxResources.get('selectionOnly'));
 			selectionSection.appendChild(span);
 		}
@@ -9694,14 +10076,6 @@
 			allPagesRadio.checked = true;
 		}
 
-		if (!graph.isSelectionEmpty())
-		{
-			mxEvent.addListener(span, 'click', function()
-			{
-				selectionOnlyRadio.checked = !selectionOnlyRadio.checked;
-			});
-		}
-		
 		// --- Size section ---
 		var sizeSection = document.createElement('div');
 		sizeSection.className = 'geDialogSection';
@@ -9714,9 +10088,11 @@
 		pageViewRadio.style.marginRight = '8px';
 		pageViewRadio.setAttribute('type', 'radio');
 		pageViewRadio.setAttribute('name', 'printSize');
+		pageViewRadio.setAttribute('id', 'gePrintDlgPageView');
 		pageViewSection.appendChild(pageViewRadio);
 
-		var span = document.createElement('span');
+		var span = document.createElement('label');
+		span.setAttribute('for', 'gePrintDlgPageView');
 		mxUtils.write(span, mxResources.get('pageView'));
 		pageViewSection.appendChild(span);
 		mxEvent.addListener(pageViewSection, 'click', function()
@@ -9734,9 +10110,11 @@
 		cropRadio.style.marginRight = '8px';
 		cropRadio.setAttribute('type', 'radio');
 		cropRadio.setAttribute('name', 'printSize');
+		cropRadio.setAttribute('id', 'gePrintDlgCrop');
 		cropSection.appendChild(cropRadio);
 
-		var span = document.createElement('span');
+		var span = document.createElement('label');
+		span.setAttribute('for', 'gePrintDlgCrop');
 		mxUtils.write(span, mxResources.get('crop'));
 		cropSection.appendChild(span);
 		mxEvent.addListener(cropSection, 'click', function()
@@ -9858,24 +10236,28 @@
 
 		var borderLabel = document.createElement('label');
 		borderLabel.className = 'geDialogFormLabel';
+		borderLabel.setAttribute('for', 'gePrintDlgBorder');
 		mxUtils.write(borderLabel, mxResources.get('borderWidth'));
 		borderZoomRow.appendChild(borderLabel);
 
 		var borderInput = document.createElement('input');
 		borderInput.setAttribute('type', 'number');
 		borderInput.setAttribute('min', '0');
+		borderInput.setAttribute('id', 'gePrintDlgBorder');
 		borderInput.style.width = '40px';
 		borderInput.value = (editorUi.lastPrintBorder != null) ?
 			editorUi.lastPrintBorder : mxPrintPreview.prototype.pageMargin;
 		borderZoomRow.appendChild(borderInput);
 
 		var zoomLabel = document.createElement('label');
+		zoomLabel.setAttribute('for', 'gePrintDlgZoom');
 		zoomLabel.style.marginLeft = '12px';
 		zoomLabel.style.marginRight = '4px';
 		mxUtils.write(zoomLabel, mxResources.get('zoom'));
 		borderZoomRow.appendChild(zoomLabel);
 
 		var zoomInput = document.createElement('input');
+		zoomInput.setAttribute('id', 'gePrintDlgZoom');
 		zoomInput.style.width = '60px';
 		zoomInput.value = (editorUi.lastPrintZoom != null) ?
 			editorUi.lastPrintZoom : '100%';
@@ -9889,20 +10271,16 @@
 
 		var gridInput = document.createElement('input');
 		gridInput.setAttribute('type', 'checkbox');
+		gridInput.setAttribute('id', 'gePrintDlgGrid');
 		gridInput.style.marginRight = '8px';
 		gridInput.checked = (editorUi.lastPrintGrid != null) ?
 			editorUi.lastPrintGrid : false;
 		gridRow.appendChild(gridInput);
 
-		var span = document.createElement('span');
+		var span = document.createElement('label');
+		span.setAttribute('for', 'gePrintDlgGrid');
 		mxUtils.write(span, mxResources.get('grid'));
 		gridRow.appendChild(span);
-
-		mxEvent.addListener(span, 'click', function(e)
-		{
-			gridInput.checked = true;
-			mxEvent.consume(e);
-		});
 
 		optionsSection.appendChild(gridRow);
 
@@ -9912,29 +10290,22 @@
 
 		var shadowsInput = document.createElement('input');
 		shadowsInput.setAttribute('type', 'checkbox');
+		shadowsInput.setAttribute('id', 'gePrintDlgShadows');
 		shadowsInput.style.marginRight = '8px';
 		shadowsInput.checked = (editorUi.lastPrintShadow != null) ?
 			editorUi.lastPrintShadow : false;
 		shadowsRow.appendChild(shadowsInput);
 
-		var span = document.createElement('span');
+		var span = document.createElement('label');
+		span.setAttribute('for', 'gePrintDlgShadows');
 		mxUtils.write(span, mxResources.get('shadows'));
 		shadowsRow.appendChild(span);
 
 		if (!editorUi.isOffline() || mxClient.IS_CHROMEAPP)
 		{
-			span.appendChild(editorUi.createHelpIcon(
+			shadowsRow.appendChild(editorUi.createHelpIcon(
 				'https://github.com/jgraph/drawio/discussions/5136'));
 		}
-
-		mxEvent.addListener(span, 'click', function(e)
-		{
-			if (mxEvent.getSource(e).nodeName != 'IMG')
-			{
-				shadowsInput.checked = true;
-				mxEvent.consume(e);
-			}
-		});
 
 		// Hides shadows option if not supported
 		if (!Editor.enableShadowOption)
@@ -9947,6 +10318,7 @@
 		// Transparent background
 		var transparentInput = document.createElement('input');
 		transparentInput.setAttribute('type', 'checkbox');
+		transparentInput.setAttribute('id', 'gePrintDlgTransparent');
 		transparentInput.style.marginRight = '8px';
 		transparentInput.checked = (editorUi.lastPrintTransparent != null) ?
 			editorUi.lastPrintTransparent : false;
@@ -9958,15 +10330,10 @@
 			transparentRow.className = 'geDialogCheckRow';
 			transparentRow.appendChild(transparentInput);
 
-			var span = document.createElement('span');
+			var span = document.createElement('label');
+			span.setAttribute('for', 'gePrintDlgTransparent');
 			mxUtils.write(span, mxResources.get('transparentBackground'));
 			transparentRow.appendChild(span);
-
-			mxEvent.addListener(span, 'click', function(e)
-			{
-				transparentInput.checked = true;
-				mxEvent.consume(e);
-			});
 
 			optionsSection.appendChild(transparentRow);
 		}
@@ -9974,6 +10341,7 @@
 		// Include diagram
 		var includeInput = document.createElement('input');
 		includeInput.setAttribute('type', 'checkbox');
+		includeInput.setAttribute('id', 'gePrintDlgInclude');
 		includeInput.style.marginRight = '8px';
 		includeInput.checked = (editorUi.lastPrintInclude != null) ?
 			editorUi.lastPrintInclude : Editor.defaultIncludeDiagram;
@@ -9985,15 +10353,10 @@
 			includeRow.className = 'geDialogCheckRow';
 			includeRow.appendChild(includeInput);
 
-			var span = document.createElement('span');
+			var span = document.createElement('label');
+			span.setAttribute('for', 'gePrintDlgInclude');
 			mxUtils.write(span, mxResources.get('includeCopyOfMyDiagram'));
 			includeRow.appendChild(span);
-
-			mxEvent.addListener(span, 'click', function(e)
-			{
-				includeInput.checked = true;
-				mxEvent.consume(e);
-			});
 
 			optionsSection.appendChild(includeRow);
 		}

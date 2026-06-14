@@ -176,7 +176,8 @@
 					message != EditorUi.lastErrorMessage && message.indexOf('extension:') < 0 &&
 					message.indexOf('ResizeObserver loop completed with undelivered notifications') < 0 &&
 					err.stack.indexOf('extension:') < 0 && err.stack.indexOf('<anonymous>:') < 0 &&
-					err.stack.indexOf('/math4/es5/') < 0)
+					err.stack.indexOf('/math4/es5/') < 0 && err.stack.indexOf('blob:') < 0 &&
+					(message.indexOf('strict mode') < 0 || err.stack.indexOf('extensions.min.js') < 0))
 				{
 					EditorUi.lastErrorMessage = message;
 
@@ -472,9 +473,85 @@
 	EditorUi.prototype.emptyDiagramXml = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>';
 
 	/**
-	 * 
+	 *
 	 */
 	EditorUi.prototype.emptyLibraryXml = '<mxlibrary>[]</mxlibrary>';
+
+	/**
+	 * Returns true if the given file data contains no user-added cells —
+	 * i.e. every page has just the root cell (id=0) and the default layer
+	 * (id=1) with no children. Used to suppress storing empty drafts.
+	 */
+	EditorUi.prototype.isDiagramDataEmpty = function(data)
+	{
+		if (data == null || data.length == 0 || data == this.emptyDiagramXml)
+		{
+			return true;
+		}
+
+		try
+		{
+			var doc = mxUtils.parseXml(data);
+			var root = doc.documentElement;
+
+			var checkModel = function(modelNode)
+			{
+				return modelNode == null ||
+					modelNode.getElementsByTagName('mxCell').length <= 2;
+			};
+
+			if (root.nodeName == 'mxGraphModel')
+			{
+				return checkModel(root);
+			}
+
+			if (root.nodeName == 'mxfile')
+			{
+				var diagrams = root.getElementsByTagName('diagram');
+
+				if (diagrams.length == 0)
+				{
+					return true;
+				}
+
+				for (var i = 0; i < diagrams.length; i++)
+				{
+					var models = diagrams[i].getElementsByTagName('mxGraphModel');
+
+					if (models.length > 0)
+					{
+						if (!checkModel(models[0])) return false;
+					}
+					else
+					{
+						// Compressed diagram payload — decompress and re-check
+						var text = mxUtils.getNodeValue(diagrams[i]);
+
+						if (text != null && text.length > 0)
+						{
+							var decompressed = Graph.decompress(text);
+
+							if (decompressed != null && decompressed.length > 0)
+							{
+								var modelDoc = mxUtils.parseXml(decompressed);
+
+								if (!checkModel(modelDoc.documentElement)) return false;
+							}
+						}
+					}
+				}
+
+				return true;
+			}
+		}
+		catch (e)
+		{
+			// Unparseable data — treat as non-empty so we don't drop a
+			// draft the user might still recover by hand.
+		}
+
+		return false;
+	};
 
 	/**
 	 * Sets the delay for autosave in milliseconds. Default is 2000.
@@ -1648,6 +1725,105 @@
 		return result.join('');
 	};
 	
+	/**
+	 * Returns an anonymized copy of the given diagram XML string. Walks the
+	 * parsed DOM and anonymizes cell labels (including HTML labels), user
+	 * object attributes and page names via {@link #anonymizeString}.
+	 */
+	EditorUi.prototype.anonymizeXml = function(xml)
+	{
+		var ui = this;
+		var sanitizer = document.createElement('div');
+
+		function anonymizeAttr(elt, name, htmlAware)
+		{
+			if (elt.hasAttribute(name))
+			{
+				var value = elt.getAttribute(name);
+
+				if (value != null && value.length > 0)
+				{
+					if (htmlAware && value.indexOf('<') >= 0)
+					{
+						sanitizer.innerHTML = Graph.sanitizeHtml(value);
+						anonymizeText(sanitizer);
+						value = sanitizer.innerHTML;
+					}
+					else
+					{
+						value = ui.anonymizeString(value);
+					}
+
+					elt.setAttribute(name, value);
+				}
+			}
+		};
+
+		function anonymizeText(node)
+		{
+			if (node.nodeValue != null)
+			{
+				node.nodeValue = ui.anonymizeString(node.nodeValue);
+			}
+
+			if (node.nodeType == mxConstants.NODETYPE_ELEMENT)
+			{
+				var tmp = node.firstChild;
+
+				while (tmp != null)
+				{
+					anonymizeText(tmp);
+					tmp = tmp.nextSibling;
+				}
+			}
+		};
+
+		function anonymizeNode(node)
+		{
+			if (node.nodeType == mxConstants.NODETYPE_ELEMENT)
+			{
+				if (node.nodeName == 'mxCell')
+				{
+					anonymizeAttr(node, 'value', true);
+				}
+				else if (node.nodeName == 'object' || node.nodeName == 'UserObject')
+				{
+					for (var i = 0; i < node.attributes.length; i++)
+					{
+						var attr = node.attributes[i];
+
+						if (attr.name != 'id' && attr.name != 'style' &&
+							attr.name != 'placeholders' && attr.name != 'vertex' &&
+							attr.name != 'edge' && attr.name != 'parent' &&
+							attr.name != 'connectable' && attr.name != 'visible' &&
+							attr.name != 'collapsed' && attr.name != 'source' &&
+							attr.name != 'target')
+						{
+							attr.value = ui.anonymizeString(attr.value);
+						}
+					}
+				}
+				else if (node.nodeName == 'diagram')
+				{
+					anonymizeAttr(node, 'name', false);
+				}
+
+				var tmp = node.firstChild;
+
+				while (tmp != null)
+				{
+					anonymizeNode(tmp);
+					tmp = tmp.nextSibling;
+				}
+			}
+		};
+
+		var doc = mxUtils.parseXml(xml);
+		anonymizeNode(doc.documentElement);
+
+		return mxUtils.getPrettyXml(doc.documentElement);
+	};
+
 	/**
 	 * Removes any values, styles and geometries from the given XML node.
 	 */
@@ -3386,9 +3562,16 @@
 				}
 				else
 				{
-					this.createFile(this.defaultFilename,
-						this.getFileData(), null, null, null,
-						null, null, true);
+					try
+					{
+						this.createFile(this.defaultFilename,
+							this.getFileData(), null, null, null,
+							null, null, true);
+					}
+					catch (e)
+					{
+						this.handleError(e);
+					}
 				}
 			}
 		});
@@ -3438,6 +3621,14 @@
 				{
 					this.editor.graph.selectUnlockedLayer();
 					this.showLayersDialog();
+
+					// Refreshes layers window after file load since
+					// graph was disabled during model changes
+					if (this.actions.layersWindow != null)
+					{
+						this.actions.layersWindow.refreshLayers();
+					}
+
 					this.restoreLibraries();
 					
 					// Workaround for no initial focus in FF
@@ -3617,12 +3808,18 @@
 		
 		for (var i = 0; i < pages.length; i++)
 		{
+			// Skips null entries from pages with corrupt data
+			if (pages[i] == null)
+			{
+				continue;
+			}
+
 			this.updatePageRoot(pages[i]);
-			var diagram = pages[i].node.cloneNode(false);
-			
-			// FIXME: Check why names can be null in newer files
-			// ignore in hash and do not diff null names for now
-			diagram.removeAttribute('name');
+
+			// Only hashes known diagram attributes to avoid checksum
+			// errors from external tools adding extra attributes
+			var diagram = pages[i].node.ownerDocument.createElement('diagram');
+			diagram.setAttribute('id', pages[i].getId());
 			
 			// Model is only a holder for the root
 			model.root = pages[i].root;
@@ -3953,17 +4150,23 @@
 	{
 		var evtName = (findReplace) ? 'findReplace' : 'find';
 		var name = evtName + 'Window';
-		
+
 		if (this[name] == null)
 		{
 			var modern = (Editor.currentTheme == 'min' ||
-				Editor.currentTheme == 'simple' ||	
+				Editor.currentTheme == 'simple' ||
 				Editor.currentTheme == 'sketch');
-			var w = (findReplace) ? ((modern) ? 330 : 300) : 240;
-			var h = (findReplace) ? ((modern) ? 304 : 288) : 180;
-			this[name] = new FindWindow(this,
-				document.body.offsetWidth - (w + 20),
-				100, w, h, findReplace);
+			var saved = mxSettings.getWindowState(evtName);
+
+			var w = (saved != null && saved.w != null) ? saved.w :
+				((findReplace) ? ((modern) ? 330 : 300) : 240);
+			var h = (saved != null && saved.h != null) ? saved.h :
+				((findReplace) ? ((modern) ? 304 : 288) : 180);
+			var x = (saved != null && saved.x != null) ? saved.x :
+				document.body.offsetWidth - (w + 20);
+			var y = (saved != null && saved.y != null) ? saved.y : 100;
+
+			this[name] = new FindWindow(this, x, y, w, h, findReplace);
 			this[name].window.addListener('show', function()
 			{
 				this.fireEvent(new mxEventObject(evtName));
@@ -3972,6 +4175,14 @@
 			{
 				this.fireEvent(new mxEventObject(evtName));
 			});
+
+			this.installWindowPersistence(evtName, this[name]);
+
+			if (saved != null && searchTerms == null)
+			{
+				this.restoreWindowState(evtName, this[name]);
+			}
+
 			this[name].window.setVisible(true);
 		}
 		else if (searchTerms == null)
@@ -4283,7 +4494,7 @@
 					graph.getRubberband().execute(evt);
 					graph.getRubberband().reset();
 				}
-				else if (evt != null && mxEvent.getSource(evt).classList.contains('geLibraryButton'))
+				else if (evt != null && mxEvent.getSource(evt) != null && mxEvent.getSource(evt).classList.contains('geLibraryButton'))
 				{
 					this.showError(mxResources.get('error'), mxResources.get('nothingIsSelected'), mxResources.get('ok'));
 				}
@@ -4723,8 +4934,29 @@
 		}
 		catch (e) {}
 
-		var latestIframeConfig = configObj;
+		var latestEditorConfig = configObj;
 		var activeTab = 'editor';
+		var modified = false;
+		var allowClose = false;
+
+		function confirmDiscard(onConfirm)
+		{
+			if (!modified)
+			{
+				onConfirm();
+			}
+			else
+			{
+				editorUi.confirm(mxResources.get('allChangesLost'), null, onConfirm,
+					mxResources.get('cancel'), mxResources.get('discardChanges'));
+			}
+		}
+
+		function closeDialog()
+		{
+			allowClose = true;
+			editorUi.hideDialog();
+		}
 
 		// Main container
 		var div = document.createElement('div');
@@ -4780,7 +5012,7 @@
 
 		div.appendChild(tabBar);
 
-		// Editor content (iframe)
+		// Visual editor content
 		var editorContent = document.createElement('div');
 		editorContent.style.position = 'absolute';
 		editorContent.style.left = '0';
@@ -4788,20 +5020,7 @@
 		editorContent.style.top = '30px';
 		editorContent.style.bottom = '50px';
 
-		var iframe = document.createElement('iframe');
-		iframe.style.width = '100%';
-		iframe.style.height = '100%';
-		iframe.style.border = 'none';
-		iframe.style.borderRadius = '4px';
-
-		var baseUrl = window.DRAWIO_BASE_URL || '';
-
-		if (baseUrl.length > 0 && baseUrl.charAt(baseUrl.length - 1) === '/')
-		{
-			baseUrl = baseUrl.substring(0, baseUrl.length - 1);
-		}
-
-		var hashData = {};
+		var editorContext = {};
 
 		try
 		{
@@ -4809,12 +5028,12 @@
 
 			if (graph.currentVertexStyle != null)
 			{
-				hashData.currentVertexStyle = graph.currentVertexStyle;
+				editorContext.currentVertexStyle = graph.currentVertexStyle;
 			}
 
 			if (graph.currentEdgeStyle != null)
 			{
-				hashData.currentEdgeStyle = graph.currentEdgeStyle;
+				editorContext.currentEdgeStyle = graph.currentEdgeStyle;
 			}
 		}
 		catch (e)
@@ -4822,9 +5041,17 @@
 			// ignore
 		}
 
-		iframe.src = baseUrl + '/config-editor.html#' +
-			encodeURIComponent(JSON.stringify(hashData));
-		editorContent.appendChild(iframe);
+		var configEditor = DrawioConfigEditor.install(editorContent, {
+			initialConfig: configObj,
+			editorContext: editorContext,
+			darkMode: Editor.isDarkMode != null && Editor.isDarkMode(),
+			highContrast: editorUi.isHighContrast(),
+			onConfigChanged: function(obj)
+			{
+				latestEditorConfig = obj;
+				modified = true;
+			}
+		});
 
 		// JSON content (textarea)
 		var jsonContent = document.createElement('div');
@@ -4856,6 +5083,8 @@
 			textarea.value = value || '';
 		}
 
+		mxEvent.addListener(textarea, 'input', function() { modified = true; });
+
 		jsonContent.appendChild(textarea);
 
 		div.appendChild(editorContent);
@@ -4868,9 +5097,9 @@
 
 			if (tab === 'json')
 			{
-				if (latestIframeConfig != null)
+				if (latestEditorConfig != null)
 				{
-					textarea.value = JSON.stringify(latestIframeConfig, null, 2);
+					textarea.value = JSON.stringify(latestEditorConfig, null, 2);
 				}
 
 				editorContent.style.display = 'none';
@@ -4888,12 +5117,8 @@
 				try
 				{
 					var obj = JSON.parse(textarea.value);
-					latestIframeConfig = obj;
-
-					if (iframe.contentWindow != null)
-					{
-						iframe.contentWindow.postMessage({type: 'setConfig', config: obj}, '*');
-					}
+					latestEditorConfig = obj;
+					configEditor.setConfig(obj);
 				}
 				catch (e) {}
 
@@ -4912,39 +5137,6 @@
 
 		mxEvent.addListener(editorTabBtn, 'click', function() { setActiveTab('editor'); });
 		mxEvent.addListener(jsonTabBtn, 'click', function() { setActiveTab('json'); });
-
-		// Handle messages from iframe
-		var messageHandler = function(event)
-		{
-			if (iframe.contentWindow != null && event.source === iframe.contentWindow)
-			{
-				if (event.data != null)
-				{
-					if (event.data.type === 'configChanged')
-					{
-						latestIframeConfig = event.data.config;
-					}
-					else if (event.data.type === 'ready')
-					{
-						iframe.contentWindow.postMessage({type: 'setConfig', config: configObj}, '*');
-
-						// Send dark mode state
-						if (Editor.isDarkMode != null && Editor.isDarkMode())
-						{
-							iframe.contentWindow.postMessage({type: 'setDarkMode', dark: true}, '*');
-						}
-
-						// Send high contrast state
-						if (editorUi.isHighContrast())
-						{
-							iframe.contentWindow.postMessage({type: 'setHighContrast', highContrast: true}, '*');
-						}
-					}
-				}
-			}
-		};
-
-		window.addEventListener('message', messageHandler);
 
 		// Buttons
 		var buttons = document.createElement('div');
@@ -4975,9 +5167,9 @@
 					var btn = mxUtils.button(label, function(e)
 					{
 						// Sync textarea from editor before calling button handler
-						if (activeTab === 'editor' && latestIframeConfig != null)
+						if (activeTab === 'editor' && latestEditorConfig != null)
 						{
-							textarea.value = JSON.stringify(latestIframeConfig, null, 2);
+							textarea.value = JSON.stringify(latestEditorConfig, null, 2);
 						}
 
 						origFn(e, textarea);
@@ -4996,7 +5188,7 @@
 
 		var closeBtn = mxUtils.button(mxResources.get('close'), function()
 		{
-			editorUi.hideDialog();
+			confirmDiscard(closeDialog);
 		});
 
 		closeBtn.setAttribute('title', 'Escape');
@@ -5008,8 +5200,8 @@
 
 			if (activeTab === 'editor')
 			{
-				newValue = (latestIframeConfig != null && Object.keys(latestIframeConfig).length > 0) ?
-					JSON.stringify(latestIframeConfig, null, 2) : '';
+				newValue = (latestEditorConfig != null && Object.keys(latestEditorConfig).length > 0) ?
+					JSON.stringify(latestEditorConfig, null, 2) : '';
 			}
 			else
 			{
@@ -5025,7 +5217,8 @@
 
 				if (newValue == value)
 				{
-					editorUi.hideDialog();
+					modified = false;
+					closeDialog();
 				}
 				else
 				{
@@ -5039,7 +5232,8 @@
 						localStorage.removeItem(key);
 					}
 
-					editorUi.hideDialog();
+					modified = false;
+					closeDialog();
 					editorUi.alert(mxResources.get('restartForChangeRequired'));
 				}
 			}
@@ -5075,9 +5269,15 @@
 
 		var w = (customButtons != null && customButtons.length > 2) ? 500 : 440;
 		editorUi.showDialog(div, 800, 600, true, false,
-			function()
+			function(cancel, isEsc)
 			{
-				window.removeEventListener('message', messageHandler);
+				if (allowClose || !modified)
+				{
+					return;
+				}
+
+				confirmDiscard(closeDialog);
+				return false;
 			}, null, null, new mxRectangle(0, 0, w, 400));
 
 		textarea.scrollTop = 0;
@@ -5105,7 +5305,7 @@
 		});
 
 		var dlg = new BackgroundImageDialog(this, apply, img, color, showColor);
-		this.showDialog(dlg.container, 400, (showColor) ? 240 : 220, true, true);
+		this.showDialog(dlg.container, 400, null, true, true);
 		dlg.init();
 	};
 
@@ -5122,9 +5322,32 @@
 			{
 				this.showSplash();
 			}
-		}));
+		}), false, false, new mxRectangle(0, 0, 480, 320));
 		
 		dlg.init();
+	};
+
+	EditorUi.prototype.getCollapsedSections = function()
+	{
+		return mxSettings.getCollapsedSections();
+	};
+
+	EditorUi.prototype.getLibraryExpanded = function(id, defaultExpanded)
+	{
+		var state = mxSettings.getCollapsedLibraries();
+
+		return (state[id] != null) ? !state[id] : defaultExpanded;
+	};
+
+	EditorUi.prototype.setLibraryExpanded = function(id, expanded)
+	{
+		if (id != null)
+		{
+			var state = mxSettings.getCollapsedLibraries();
+			state[id] = !expanded;
+			mxSettings.setCollapsedLibraries(state);
+			mxSettings.save();
+		}
 	};
 
 	/**
@@ -5158,17 +5381,18 @@
 		var resume = (this.spinner != null && this.spinner.pause != null) ? this.spinner.pause() : function() {};
 		var e = (resp != null && resp.error != null) ? resp.error : resp;
 
-		// Logs errors and writes stack to console
+		// Handled errors are shown in the UI and logged to the console
+		// but no longer sent to the server log (only uncaught errors are logged)
 		if (resp != null && (urlParams['test'] == '1' || resp.stack != null) && resp.message != null)
 		{
 			try
 			{
-				if (!disableLogging)
-				{
-					EditorUi.logError('Caught: ' +
-						(resp.message == '' && resp.name != null) ? resp.name : resp.message,
-						resp.filename, resp.lineNumber, resp.columnNumber, resp, 'INFO');
-				}
+				//if (!disableLogging)
+				//{
+				//	EditorUi.logError('Caught: ' +
+				//		((resp.message == '' && resp.name != null) ? resp.name : resp.message),
+				//		resp.filename, resp.lineNumber, resp.columnNumber, resp, 'INFO');
+				//}
 
 				if ((urlParams['test'] == '1' || disableLogging) &&
 					window.console != null)
@@ -5879,7 +6103,8 @@
 	EditorUi.prototype.showTextDialog = function(title, text)
 	{
     	var dlg = new TextareaDialog(this, title, text, null, null, mxResources.get('close'));
-		this.showDialog(dlg.container, 620, 460, true, true, null, null, null, null, true);
+		this.showDialog(dlg.container, 620, 460, true, true, null, null, null,
+			new mxRectangle(0, 0, 440, 280), true);
 		dlg.init();
 		document.execCommand('selectall', false, null);
 	};
@@ -8105,7 +8330,8 @@
 		var optSection = document.createElement('div');
 		optSection.className = 'geDialogSection';
 
-		var selection = this.addCheckbox(optSection, mxResources.get('selectionOnly'), false,
+		var selection = this.addCheckbox(optSection, mxResources.get('selectionOnly'),
+			this.lastExportSelectionOnly && !this.editor.graph.isSelectionEmpty(),
 			this.editor.graph.isSelectionEmpty());
 		var include = (hideInclude) ? null :
 			this.addCheckbox(optSection, mxResources.get('includeCopyOfMyDiagram'),
@@ -8120,6 +8346,7 @@
 
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
 		{
+			this.lastExportSelectionOnly = selection.checked;
 			var scale = parseInt(zoomInput.value) / 100 || 1;
 			var border = parseInt(borderInput.value) || 0;
 
@@ -8181,7 +8408,8 @@
 		optSection.className = 'geDialogSection';
 
 		var selection = this.addCheckbox(optSection, mxResources.get('selectionOnly'),
-			false, graph.isSelectionEmpty());
+			this.lastExportSelectionOnly && !graph.isSelectionEmpty(),
+			graph.isSelectionEmpty());
 
 		var cb6 = document.createElement('input');
 		cb6.setAttribute('disabled', 'disabled');
@@ -8260,7 +8488,7 @@
 		}
 		else
 		{
-			exportSelect.value = 'diagram';
+			exportSelect.value = (this.lastExportSelectionOnly) ? 'selectionOnly' : 'diagram';
 			cb6.setAttribute('checked', 'checked');
 			cb6.defaultChecked = true;
 
@@ -8470,18 +8698,22 @@
 
 		var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
 		{
+			this.lastExportSelectionOnly = selection.checked;
 			this.lastExportBorder = borderInput.value;
 			this.lastExportZoom = zoomInput.value;
 			this.lastEmbedImages = cb5.checked;
 			this.lastEmbedFonts = cb7.checked;
 			this.lastEmbedInclude = includeSelect.value;
 
-			callback(zoomInput.value, transparent.checked, !selection.checked, shadow.checked,
-				include.checked, cb5.checked && embedOption, borderInput.value, cb6.checked,
-				(format == 'png' || format == 'svg') && includeSelect.value == 'currentPage',
-				linkSelect.value, (grid != null) ? grid.checked : null,
-				(themeSelect != null) ? themeSelect.value : null,
-				exportSelect.value, cb7.checked);
+			if (callback != null)
+			{
+				callback(zoomInput.value, transparent.checked, !selection.checked, shadow.checked,
+					include.checked, cb5.checked && embedOption, borderInput.value, cb6.checked,
+					(format == 'png' || format == 'svg') && includeSelect.value == 'currentPage',
+					linkSelect.value, (grid != null) ? grid.checked : null,
+					(themeSelect != null) ? themeSelect.value : null,
+					exportSelect.value, cb7.checked);
+			}
 		}), null, btnLabel, helpLink);
 		this.showDialog(dlg.container, 360, null, true, true, null, null, null, null, true);
 		zoomInput.focus();
@@ -10069,6 +10301,133 @@
 		var node = codec.encode(graph.getModel());
 
 		return mxUtils.getXml(node);
+	};
+
+	/**
+	 * Replaces the children of a locked-group Mermaid cell with the result of
+	 * a fresh parse. The parsed XML is expected to carry a single wrapper
+	 * vertex; its children become the new children of `cell`. The cell is
+	 * resized to the new content bounds (preserving top-left) and the
+	 * mermaidData attribute is updated to match the new source.
+	 */
+	EditorUi.prototype.replaceLockedGroupChildren = function(cell, xml, text, config)
+	{
+		var graph = this.editor.graph;
+		var doc = mxUtils.parseXml(xml);
+		var codec = new mxCodec(doc);
+		var tempModel = new mxGraphModel();
+		codec.decode(doc.documentElement, tempModel);
+
+		// Locate wrapper: first vertex under a layer that has children.
+		var tempRoot = tempModel.getRoot();
+		var wrapper = null;
+
+		if (tempRoot != null)
+		{
+			for (var i = 0; i < tempModel.getChildCount(tempRoot) && wrapper == null; i++)
+			{
+				var layer = tempModel.getChildAt(tempRoot, i);
+
+				for (var j = 0; j < tempModel.getChildCount(layer); j++)
+				{
+					var c = tempModel.getChildAt(layer, j);
+
+					if (tempModel.isVertex(c) && tempModel.getChildCount(c) > 0)
+					{
+						wrapper = c;
+						break;
+					}
+				}
+			}
+		}
+
+		if (wrapper == null)
+		{
+			return;
+		}
+
+		// Collect wrapper's children and compute content bounds.
+		var tempChildren = [];
+		var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+		for (var i = 0; i < tempModel.getChildCount(wrapper); i++)
+		{
+			var c = tempModel.getChildAt(wrapper, i);
+			tempChildren.push(c);
+
+			if (tempModel.isVertex(c))
+			{
+				var g = c.getGeometry();
+
+				if (g != null)
+				{
+					minX = Math.min(minX, g.x);
+					minY = Math.min(minY, g.y);
+					maxX = Math.max(maxX, g.x + g.width);
+					maxY = Math.max(maxY, g.y + g.height);
+				}
+			}
+		}
+
+		if (tempChildren.length == 0)
+		{
+			return;
+		}
+
+		// Clone for the live graph (fresh IDs, edges remapped to clones).
+		var liveChildren = graph.cloneCells(tempChildren, true);
+
+		graph.getModel().beginUpdate();
+		try
+		{
+			// Remove existing children of the locked group.
+			var childCount = graph.model.getChildCount(cell);
+
+			for (var j = childCount - 1; j >= 0; j--)
+			{
+				graph.model.remove(graph.model.getChildAt(cell, j));
+			}
+
+			// Shift child geometries so the content origin sits at (0, 0)
+			// inside the group, then add them.
+			var dx = isFinite(minX) ? minX : 0;
+			var dy = isFinite(minY) ? minY : 0;
+
+			for (var i = 0; i < liveChildren.length; i++)
+			{
+				var lc = liveChildren[i];
+
+				if (graph.model.isVertex(lc) && lc.geometry != null)
+				{
+					lc.geometry = lc.geometry.clone();
+					lc.geometry.x -= dx;
+					lc.geometry.y -= dy;
+				}
+
+				graph.model.add(cell, lc);
+			}
+
+			// Resize the group to the new content bounds, preserving top-left.
+			if (isFinite(maxX - minX) && isFinite(maxY - minY))
+			{
+				var geo = graph.model.getGeometry(cell);
+
+				if (geo != null)
+				{
+					geo = geo.clone();
+					geo.width = maxX - minX;
+					geo.height = maxY - minY;
+					graph.model.setGeometry(cell, geo);
+				}
+			}
+
+			graph.setAttributeForCell(cell, 'mermaidData',
+				JSON.stringify({data: text, config: config}, null, 2));
+		}
+		finally
+		{
+			graph.getModel().endUpdate();
+		}
 	};
 
 	/**
@@ -12173,6 +12532,13 @@
 			}
 
 			this.formatWidth = mxSettings.getFormatWidth();
+
+			var sw = mxSettings.getSidebarWidth();
+
+			if (sw != null)
+			{
+				this.hsplitPosition = parseInt(sw);
+			}
 		}
 
 		if (!this.formatEnabled)
@@ -12228,7 +12594,6 @@
 		};
 
 		// Resolves page links to page names for link overlay tooltips
-
 		graph.getLinkOverlayTooltip = function(link)
 		{
 			if (Graph.isPageLink(link) && editorUi.pages != null)
@@ -12316,48 +12681,79 @@
 			dlg.init();
 		};
 		
-		// Starts editing Mermaid data
+		// Starts editing Mermaid data. Branches on the current cell's shape:
+		// - shape=image: legacy image path (regenerate SVG via generateMermaidImage)
+		// - otherwise:   native subgraph path (re-parse and replace children)
 		graph.cellEditor.editMermaidData = function(cell, trigger, data)
 		{
 			var obj = JSON.parse(data);
-			
+			var style = graph.getCurrentCellStyle(cell);
+			var isImage = mxUtils.getValue(style, mxConstants.STYLE_SHAPE, '') ==
+				mxConstants.SHAPE_IMAGE;
+
 	    	var dlg = new SimpleTextareaDialog(ui, obj.data, function(text)
 			{
-	    		if (text != null)
+	    		if (text == null)
 				{
-	    			if (ui.spinner.spin(document.body, mxResources.get('inserting')))
-	    			{
-	    				ui.generateMermaidImage(text, obj.config, function(data, w, h)
-	    				{
-	    					ui.spinner.stop();
+	    			return;
+				}
 
-	    					graph.getModel().beginUpdate();
-	    					try
+	    		if (!ui.spinner.spin(document.body, mxResources.get('inserting')))
+	    		{
+	    			return;
+				}
+
+	    		var onError = function(e)
+	    		{
+	    			ui.spinner.stop();
+	    			ui.handleError(e);
+	    		};
+
+	    		if (isImage)
+				{
+	    			ui.generateMermaidImage(text, obj.config, function(imageData, w, h)
+	    			{
+	    				ui.spinner.stop();
+
+	    				graph.getModel().beginUpdate();
+	    				try
+	    				{
+	    					graph.setCellStyles('image', imageData, [cell]);
+	    					var geo = graph.model.getGeometry(cell);
+
+	    					if (geo != null)
 	    					{
-	    						graph.setCellStyles('image', data, [cell]);
-    							var geo = graph.model.getGeometry(cell);
-    							
-    							if (geo != null)
-    							{
-    								geo = geo.clone();
-    								geo.width = Math.max(geo.width, w);
-    								geo.height = Math.max(geo.height, h);
-    								graph.cellsResized([cell], [geo], false);
-    							}
-	    						
-	    						graph.setAttributeForCell(cell, 'mermaidData',
-		    						JSON.stringify({data: text, config:
-		    						obj.config}, null, 2));
+	    						geo = geo.clone();
+	    						geo.width = Math.max(geo.width, w);
+	    						geo.height = Math.max(geo.height, h);
+	    						graph.cellsResized([cell], [geo], false);
 	    					}
-	    					finally
-	    					{
-	    						graph.getModel().endUpdate();
-	    					}
-	    				}, function(e)
+
+	    					graph.setAttributeForCell(cell, 'mermaidData',
+	    						JSON.stringify({data: text, config:
+	    						obj.config}, null, 2));
+	    				}
+	    				finally
+	    				{
+	    					graph.getModel().endUpdate();
+	    				}
+	    			}, onError);
+				}
+	    		else
+				{
+	    			ui.parseMermaidDiagram(text, obj.config, function(xml)
+	    			{
+	    				ui.spinner.stop();
+
+	    				try
+	    				{
+	    					ui.replaceLockedGroupChildren(cell, xml, text, obj.config);
+	    				}
+	    				catch (e)
 	    				{
 	    					ui.handleError(e);
-	    				});
-	    			}
+	    				}
+	    			}, onError, null, true);
 				}
 			});
 			ui.showDialog(dlg.container, 640, 420, true, true, null,
@@ -12367,12 +12763,22 @@
 		
 		// Overrides function to add editing for Plant UML.
 		var cellEditorStartEditing = graph.cellEditor.startEditing;
-		graph.cellEditor.startEditing = function(cell, trigger)
+		graph.cellEditor.startEditing = function(cell, trigger, initialText)
 		{
 			try
 			{
+				// When the enclosing group is actively locked, double-click
+				// on any item in the group (or the group itself) edits the
+				// group. Unlocked groups let children be edited individually.
+				var lockedAncestor = this.graph.getLockedGroupAncestor(cell);
+
+				if (lockedAncestor != null)
+				{
+					cell = lockedAncestor;
+				}
+
 				var data = this.graph.getAttributeForCell(cell, 'plantUmlData');
-				
+
 				if (data != null)
 				{
 					this.editPlantUmlData(cell, trigger, data);
@@ -12380,7 +12786,7 @@
 				else
 				{
 					data = this.graph.getAttributeForCell(cell, 'mermaidData');
-				
+
 					if (data != null && window.isMermaidEnabled)
 					{
 						this.editMermaidData(cell, trigger, data);
@@ -12388,14 +12794,14 @@
 					else
 					{
 						var style = graph.getCellStyle(cell);
-						
+
 						if (mxUtils.getValue(style, 'metaEdit', '0') == '1')
 						{
 							ui.showDataDialog(cell);
 						}
 						else
 						{
-							cellEditorStartEditing.apply(this, arguments);
+							cellEditorStartEditing.call(this, cell, trigger, initialText);
 						}
 					}
 				}
@@ -12603,6 +13009,15 @@
 		};
 
 		editorUiInit.apply(this, arguments);
+
+		// Deferred browser translation: only initialise the mirror
+		// on the main editor graph, and only once the browser has
+		// actually started translating the page.
+		if (Graph.browserTranslate)
+		{
+			graph.waitForBrowserTranslate();
+		}
+
 		this.editor.graph.addSvgShadow(graph.view.canvas.ownerSVGElement, null, true);
 		
 		if (this.menus != null)
@@ -12680,11 +13095,12 @@
 					{
 						if (graph.getSelectionCount() == 1)
 						{
-							this.addMenuItems(menu, ['-', 'copyStyle', 'pasteStyle'], null, evt);
+							this.addMenuItems(menu, ['-', 'copyStyle', 'pasteStyle',
+								'copyTextStyle', 'pasteTextStyle'], null, evt);
 						}
 						else
 						{
-							this.addMenuItems(menu, ['-', 'pasteStyle'], null, evt);
+							this.addMenuItems(menu, ['-', 'pasteStyle', 'pasteTextStyle'], null, evt);
 						}
 					}
 
@@ -13538,6 +13954,9 @@
 
 				this.fireEvent(new mxEventObject('themeInitialized'));
 			}
+
+			// Restore windows that were visible in the previous session
+			this.restoreVisibleWindows();
 
 			// Initial state of format panel and sidebar for kennedy
 			if (theme == 'kennedy')
@@ -14427,6 +14846,155 @@
 	};
 
 	/**
+	 * Restores windows that were visible when the page was last closed.
+	 * Called during initialization after theme setup.
+	 */
+	EditorUi.prototype.restoreVisibleWindows = function()
+	{
+		if (!Editor.isSettingsEnabled())
+		{
+			return;
+		}
+
+		// Lazily-created windows: trigger their creation if they were visible
+		var windowActions =
+		{
+			'layers': 'layers',
+			'outline': 'outline',
+			'tags': 'tags'
+		};
+
+		for (var name in windowActions)
+		{
+			var state = mxSettings.getWindowState(name);
+
+			if (state != null && state.visible)
+			{
+				var action = this.actions.get(windowActions[name]);
+
+				if (action != null)
+				{
+					action.funct();
+				}
+			}
+		}
+	};
+
+	/**
+	 * Saves the current state of the given window to mxSettings.
+	 */
+	EditorUi.prototype.saveWindowState = function(name, wrapperWindow)
+	{
+		var wnd = wrapperWindow.window;
+
+		// When minimized, div height reflects the title bar; mxWindow stores
+		// the pre-minimize height in wnd.height for use on normalize.
+		var h = (wnd.minimized && wnd.height != null) ?
+			parseInt(wnd.height) : parseInt(wnd.div.style.height);
+
+		mxSettings.setWindowState(name,
+		{
+			x: wnd.getX(),
+			y: wnd.getY(),
+			w: parseInt(wnd.div.style.width),
+			h: h,
+			visible: wnd.isVisible(),
+			minimized: wnd.minimized || false,
+			dockState: wnd.dockState || null,
+			dockAnchorRight: wnd._dockAnchorRight || null,
+			dockAnchorBottom: wnd._dockAnchorBottom || null,
+			dockOffsetX: wnd._dockOffsetX || null,
+			dockOffsetY: wnd._dockOffsetY || null
+		});
+
+		mxSettings.save();
+	};
+
+	/**
+	 * Restores the saved state of the given window from mxSettings.
+	 * Returns the saved state if found, null otherwise.
+	 */
+	EditorUi.prototype.restoreWindowState = function(name, wrapperWindow)
+	{
+		var state = mxSettings.getWindowState(name);
+
+		if (state == null)
+		{
+			return null;
+		}
+
+		var wnd = wrapperWindow.window;
+
+		// Restore size first so position clamping uses correct dimensions
+		if (state.w != null && state.h != null)
+		{
+			mxWindow.prototype.setSize.call(wnd, state.w, state.h);
+		}
+
+		// Restore position
+		if (state.x != null && state.y != null)
+		{
+			mxWindow.prototype.setLocation.call(wnd, state.x, state.y);
+		}
+
+		// Restore dock state
+		if (state.dockState != null && this.dockManager != null &&
+			Editor.enableWindowDocking)
+		{
+			wnd._dockAnchorRight = state.dockAnchorRight;
+			wnd._dockAnchorBottom = state.dockAnchorBottom;
+			wnd._dockOffsetX = state.dockOffsetX;
+			wnd._dockOffsetY = state.dockOffsetY;
+			wnd.dockState = state.dockState;
+			wnd.div.classList.add('mxWindowDocked');
+			this.dockManager.windows.push(wnd);
+			this.dockManager.pinToEdge(wnd);
+		}
+
+		// Ensure visible within current viewport
+		wnd.fit();
+
+		// Restore visibility
+		if (state.visible != null)
+		{
+			wnd.setVisible(state.visible);
+		}
+
+		// Restore minimized state after sizing so the saved full height
+		// is retained as the restore target on un-minimize.
+		if (state.minimized && !wnd.minimized)
+		{
+			wnd.toggleMinimized();
+		}
+
+		return state;
+	};
+
+	/**
+	 * Installs listeners on the given window to persist its state.
+	 */
+	EditorUi.prototype.installWindowPersistence = function(name, wrapperWindow)
+	{
+		var ui = this;
+		var wnd = wrapperWindow.window;
+
+		var save = function()
+		{
+			ui.saveWindowState(name, wrapperWindow);
+		};
+
+		wnd.addListener(mxEvent.MOVE_END, save);
+		wnd.addListener(mxEvent.RESIZE_END, save);
+		wnd.addListener(mxEvent.SHOW, save);
+		wnd.addListener(mxEvent.HIDE, save);
+		wnd.addListener(mxEvent.DOCK, save);
+		wnd.addListener(mxEvent.UNDOCK, save);
+		wnd.addListener(mxEvent.MAXIMIZE, save);
+		wnd.addListener(mxEvent.MINIMIZE, save);
+		wnd.addListener(mxEvent.NORMALIZE, save);
+	};
+
+	/**
 	 * Creates the dock manager for window docking to viewport edges.
 	 */
 	EditorUi.prototype.createDockManager = function()
@@ -15313,13 +15881,17 @@
 		if (this.formatWindow == null)
 		{
 			var ui = this;
-			var x = Math.max(10, this.diagramContainer.parentNode.clientWidth - 256);
-			var y = 60;
-			var h = (urlParams['embedInline'] == '1') ? 600 :
+			var saved = mxSettings.getWindowState('format');
+			var x = (saved != null && saved.x != null) ? saved.x :
+				Math.max(10, this.diagramContainer.parentNode.clientWidth - 256);
+			var y = (saved != null && saved.y != null) ? saved.y : 60;
+			var w = (saved != null && saved.w != null) ? saved.w : 240;
+			var h = (saved != null && saved.h != null) ? saved.h :
+				((urlParams['embedInline'] == '1') ? 600 :
 				((urlParams['sketch'] == '1') ? 600 : Math.min(600,
-					this.editor.graph.container.clientHeight - 10));
-			
-			this.formatWindow = new WrapperWindow(this, mxResources.get('format'), x, y, 240, h,
+					this.editor.graph.container.clientHeight - 10)));
+
+			this.formatWindow = new WrapperWindow(this, mxResources.get('format'), x, y, w, h,
 				mxUtils.bind(this, function(container)
 			{
 				container.appendChild(this.formatContainer);
@@ -15336,26 +15908,26 @@
 			}));
 
 			var toggleMinimized = this.formatWindow.window.toggleMinimized;
-			var w = 240;
-			
+			var mw = w;
+
 			this.formatWindow.window.toggleMinimized = function()
 			{
 				toggleMinimized.apply(this, arguments);
-				
+
 				if (this.minimized)
 				{
-					w = parseInt(this.div.style.width);
+					mw = parseInt(this.div.style.width);
 					this.div.style.width = '140px';
 					this.table.style.width = '140px';
-					this.div.style.left = (parseInt(this.div.style.left) + w - 140) + 'px';
+					this.div.style.left = (parseInt(this.div.style.left) + mw - 140) + 'px';
 				}
 				else
 				{
-					this.div.style.width = w + 'px';
+					this.div.style.width = mw + 'px';
 					this.table.style.width = this.div.style.width;
-					this.div.style.left = (Math.max(0, parseInt(this.div.style.left) - w + 140)) + 'px';
+					this.div.style.left = (Math.max(0, parseInt(this.div.style.left) - mw + 140)) + 'px';
 				}
-				
+
 				ui.format.refresh();
 				this.fit();
 			};
@@ -15367,11 +15939,17 @@
 					this.formatWindow.window.toggleMinimized();
 				}
 			}));
-			
+
 			this.formatWindow.window.minimumSize = new mxRectangle(0, 0, 240, 80);
 
+			this.installWindowPersistence('format', this.formatWindow);
+
+			if (saved != null)
+			{
+				this.restoreWindowState('format', this.formatWindow);
+			}
 			// Sets initial state for format window
-			if (Editor.currentTheme == 'sketch' && this.formatEnabled)
+			else if (Editor.currentTheme == 'sketch' && this.formatEnabled)
 			{
 				window.setTimeout(mxUtils.bind(this, mxUtils.bind(this, function()
 				{
@@ -15592,28 +16170,43 @@
 	{
 		if (this.sidebarWindow == null)
 		{
-			var w = Math.min(this.diagramContainer.parentNode.clientWidth - 10, 218);
-			var h = (urlParams['embedInline'] == '1') ? 650 :
-				Math.min(this.diagramContainer.parentNode.clientHeight, 650);
+			var saved = mxSettings.getWindowState('shapes');
+			var w = (saved != null && saved.w != null) ? saved.w :
+				Math.min(this.diagramContainer.parentNode.clientWidth - 10, 230) - 6;
+			var h = (saved != null && saved.h != null) ? saved.h :
+				((urlParams['embedInline'] == '1') ? 650 :
+				Math.min(this.diagramContainer.parentNode.clientHeight, 650)) - 6;
 			var simpleTheme = Editor.currentTheme == 'simple' ||
 				Editor.currentTheme == 'sketch';
-			
+			var x = (saved != null && saved.x != null) ? saved.x :
+				((simpleTheme && urlParams['embedInline'] != '1') ? 66 : 10);
+			var y = (saved != null && saved.y != null) ? saved.y :
+				((simpleTheme && urlParams['embedInline'] != '1') ?
+				Math.max(30, (this.diagramContainer.parentNode.clientHeight - h) / 2) : 56);
+
 			this.sidebarWindow = new WrapperWindow(this, mxResources.get('shapes'),
-				(simpleTheme && urlParams['embedInline'] != '1') ? 66 : 10,
-				(simpleTheme && urlParams['embedInline'] != '1') ?
-					Math.max(30, (this.diagramContainer.parentNode.clientHeight - h) / 2) : 56,
-				w - 6, h - 6, mxUtils.bind(this, function(container)
+				x, y, w, h, mxUtils.bind(this, function(container)
 			{
 				this.createShapesPanel(container);
 			}));
-			
+
 			this.sidebarWindow.window.addListener(mxEvent.SHOW, mxUtils.bind(this, function()
 			{
 				this.sidebarWindow.window.fit();
 			}));
 
 			this.sidebarWindow.window.minimumSize = new mxRectangle(0, 0, 90, 90);
-			this.sidebarWindow.window.setVisible(false);
+
+			this.installWindowPersistence('shapes', this.sidebarWindow);
+
+			if (saved != null)
+			{
+				this.restoreWindowState('shapes', this.sidebarWindow);
+			}
+			else
+			{
+				this.sidebarWindow.window.setVisible(false);
+			}
 		}
 	};
 
@@ -16370,6 +16963,21 @@
 			{
 				mxSettings.setFormatWidth(this.formatWidth);
 				mxSettings.save();
+			});
+
+			this.addListener('sidebarWidthChanged', function()
+			{
+				mxSettings.setSidebarWidth(this.hsplitPosition);
+				mxSettings.save();
+			});
+
+			this.addListener('collapsedSectionsChanged', function()
+			{
+				if (this.format != null)
+				{
+					mxSettings.setCollapsedSections(this.format.collapsedSections);
+					mxSettings.save();
+				}
 			});
 		}
 	};
@@ -18208,14 +18816,19 @@
 		var y = 0;
 		var w = 0;
 		var h = 0;
-		
+
 		if (elt == null)
 		{
 			var b = document.body;
 			var d = document.documentElement;
-		
-			w = (b.clientWidth || d.clientWidth) - 3;
-			h = Math.max(b.clientHeight || 0, d.clientHeight) - 3;
+
+			if (b == null && d == null)
+			{
+				return null;
+			}
+
+			w = (((b != null) ? b.clientWidth : 0) || d.clientWidth) - 3;
+			h = Math.max((b != null) ? b.clientHeight : 0, d.clientHeight) - 3;
 		}
 		else
 		{
@@ -18225,7 +18838,7 @@
 			w = rect.width;
 			h = rect.height;
 		}
-		
+
 		var hl = document.createElement('div');
 		hl.style.zIndex = mxPopupMenu.prototype.zIndex + 2;
 		hl.style.border = '3px dotted rgb(254, 137, 12)';
@@ -18235,16 +18848,20 @@
 		hl.style.left = y + 'px';
 		hl.style.width = Math.max(0, w - 3) + 'px';
 		hl.style.height = Math.max(0, h - 3) + 'px';
-		
+
 		if (elt != null && elt.parentNode == this.editor.graph.container)
 		{
 			this.editor.graph.container.appendChild(hl);
 		}
-		else
+		else if (document.body != null)
 		{
 			document.body.appendChild(hl);
 		}
-		
+		else
+		{
+			return null;
+		}
+
 		return hl;
 	};
 	
@@ -20504,7 +21121,7 @@
 				buttons.appendChild(copyBtn);
 			}), true, null, null, 'https://www.drawio.com/doc/faq/apply-layouts');
 
-			this.showDialog(dlg.container, 620, 460, true, true);
+			this.showDialog(dlg.container, 620, 460, true, true, null, null, null, new mxRectangle(0, 0, 440, 280));
 			dlg.init();
 		}));
 	};
@@ -21465,7 +22082,7 @@
 	EditorUi.prototype.showLinkDialog = function(value, btnLabel, fn, showNewWindowOption, linkTarget)
 	{
 		var dlg = new LinkDialog(this, value, btnLabel, fn, true, showNewWindowOption, linkTarget);
-		this.showDialog(dlg.container, 440, 120, true, true);
+		this.showDialog(dlg.container, 440, null, true, true);
 		dlg.init();
 	};
 	
@@ -21656,6 +22273,8 @@
 		this.actions.get('connectionPoints').setEnabled(active);
 		this.actions.get('copyStyle').setEnabled(active && !graph.isSelectionEmpty());
 		this.actions.get('pasteStyle').setEnabled(this.copiedStyle != null && active && ss.cells.length > 0);
+		this.actions.get('copyTextStyle').setEnabled(active && !graph.isSelectionEmpty());
+		this.actions.get('pasteTextStyle').setEnabled(this.copiedTextStyle != null && active && ss.cells.length > 0);
 		this.actions.get('editGeometry').setEnabled(ss.vertices.length > 0);
 		this.actions.get('addToScratchpad').setEnabled(ss.cells.length > 0);
 		this.actions.get('createShape').setEnabled(active);

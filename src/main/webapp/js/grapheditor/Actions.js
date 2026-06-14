@@ -139,7 +139,7 @@ Actions.prototype.init = function()
 			null, null, null, new mxRectangle(0, 0, 440, 280));
 		dlg.init();
 	}).isEnabled = isGraphEnabled;
-	this.addAction('pageSetup...', function() { ui.showDialog(new PageSetupDialog(ui).container, 320, 240, true, true); }).isEnabled = isGraphEnabled;
+	this.addAction('pageSetup...', function() { ui.showDialog(new PageSetupDialog(ui).container, 420, null, true, true); }).isEnabled = isGraphEnabled;
 	this.addAction('print...', function() { ui.showPrintDialog(); }, null, '', Editor.ctrlKey + '+P');
 	this.addAction('preview', function() { mxUtils.show(graph, null, 10, 10); });
 	
@@ -698,7 +698,8 @@ Actions.prototype.init = function()
 			{
 				graph.setTooltipForCell(cell, newValue);
 			});
-			ui.showDialog(dlg.container, 320, 200, true, true);
+			ui.showDialog(dlg.container, 320, 200, true, true, null, null, null,
+				new mxRectangle(0, 0, 240, 140), null, 'editTooltip');
 			dlg.init();
 		}
 	}, null, null,  Editor.altKey + '+' + Editor.shiftKey + '+T');
@@ -1287,32 +1288,38 @@ Actions.prototype.init = function()
 	{
 		ui.menus.pickColor(mxConstants.STYLE_FONTCOLOR,
 			'forecolor', '000000', 'default',
-			graph.shapeForegroundColor);
+			graph.shapeForegroundColor, undefined,
+			mxResources.get('fontColor'));
 	});
 	this.addAction('strokeColor...', function()
 	{
 		ui.menus.pickColor(mxConstants.STYLE_STROKECOLOR, null,
-			null, 'default', graph.shapeForegroundColor);
+			null, 'default', graph.shapeForegroundColor, undefined,
+			mxResources.get('strokeColor'));
 	});
 	this.addAction('fillColor...', function()
 	{
 		ui.menus.pickColor(mxConstants.STYLE_FILLCOLOR, null,
-			null, 'default', graph.shapeBackgroundColor);
+			null, 'default', graph.shapeBackgroundColor, undefined,
+			mxResources.get('fillColor'));
 	});
 	this.addAction('gradientColor...', function()
 	{
 		ui.menus.pickColor(mxConstants.STYLE_GRADIENTCOLOR, null,
-			null, 'default', graph.shapeForegroundColor);
+			null, 'default', graph.shapeForegroundColor, undefined,
+			mxResources.get('gradientColor'));
 	});
 	this.addAction('backgroundColor...', function()
 	{
 		ui.menus.pickColor(mxConstants.STYLE_LABEL_BACKGROUNDCOLOR,
-			'backcolor', null, 'default', graph.shapeBackgroundColor);
+			'backcolor', null, 'default', graph.shapeBackgroundColor, undefined,
+			mxResources.get('backgroundColor'));
 	});
 	this.addAction('borderColor...', function()
 	{
 		ui.menus.pickColor(mxConstants.STYLE_LABEL_BORDERCOLOR,
-			null, null, 'default', graph.shapeForegroundColor);
+			null, null, 'default', graph.shapeForegroundColor, undefined,
+			mxResources.get('borderColor'));
 	});
 	
 	// Format actions
@@ -1480,7 +1487,8 @@ Actions.prototype.init = function()
 					graph.setCellStyle(mxUtils.trim(newValue), cells);
 				}
 			}, null, null, 400, 220);
-			this.editorUi.showDialog(dlg.container, 420, 300, true, true);
+			this.editorUi.showDialog(dlg.container, 420, 300, true, true, null, null, null,
+				new mxRectangle(0, 0, 300, 200), null, 'editStyle');
 			dlg.init();
 		}
 	}), null, null, Editor.ctrlKey + '+E');
@@ -1818,8 +1826,15 @@ Actions.prototype.init = function()
 	{
 		if (this.layersWindow == null)
 		{
-			// LATER: Check outline window for initial placement
-			this.layersWindow = new LayersWindow(ui, document.body.offsetWidth - 280, 120, 212, 200);
+			var saved = (ui.installWindowPersistence != null) ?
+				mxSettings.getWindowState('layers') : null;
+			var lx = (saved != null && saved.x != null) ? saved.x :
+				document.body.offsetWidth - 280;
+			var ly = (saved != null && saved.y != null) ? saved.y : 120;
+			var lw = (saved != null && saved.w != null) ? saved.w : 212;
+			var lh = (saved != null && saved.h != null) ? saved.h : 200;
+
+			this.layersWindow = new LayersWindow(ui, lx, ly, lw, lh);
 			this.layersWindow.window.addListener('show', mxUtils.bind(this, function()
 			{
 				ui.fireEvent(new mxEventObject('layers'));
@@ -1828,9 +1843,21 @@ Actions.prototype.init = function()
 			{
 				ui.fireEvent(new mxEventObject('layers'));
 			});
+
+			if (ui.installWindowPersistence != null)
+			{
+				ui.installWindowPersistence('layers', this.layersWindow);
+
+				if (saved != null)
+				{
+					ui.restoreWindowState('layers', this.layersWindow);
+				}
+			}
+
 			this.layersWindow.window.setVisible(true);
+
 			ui.fireEvent(new mxEventObject('layers'));
-			
+
 			this.layersWindow.init();
 		}
 		else
@@ -1850,8 +1877,15 @@ Actions.prototype.init = function()
 	{
 		if (this.outlineWindow == null)
 		{
-			// LATER: Check layers window for initial placement
-			this.outlineWindow = new OutlineWindow(ui, document.body.offsetWidth - 260, 100, 180, 180);
+			var saved = (ui.installWindowPersistence != null) ?
+				mxSettings.getWindowState('outline') : null;
+			var ox = (saved != null && saved.x != null) ? saved.x :
+				document.body.offsetWidth - 260;
+			var oy = (saved != null && saved.y != null) ? saved.y : 100;
+			var ow = (saved != null && saved.w != null) ? saved.w : 180;
+			var oh = (saved != null && saved.h != null) ? saved.h : 180;
+
+			this.outlineWindow = new OutlineWindow(ui, ox, oy, ow, oh);
 			this.outlineWindow.window.addListener('show', mxUtils.bind(this, function()
 			{
 				ui.fireEvent(new mxEventObject('outline'));
@@ -1860,7 +1894,19 @@ Actions.prototype.init = function()
 			{
 				ui.fireEvent(new mxEventObject('outline'));
 			});
+
+			if (ui.installWindowPersistence != null)
+			{
+				ui.installWindowPersistence('outline', this.outlineWindow);
+
+				if (saved != null)
+				{
+					ui.restoreWindowState('outline', this.outlineWindow);
+				}
+			}
+
 			this.outlineWindow.window.setVisible(true);
+
 			ui.fireEvent(new mxEventObject('outline'));
 		}
 		else
@@ -1868,7 +1914,7 @@ Actions.prototype.init = function()
 			this.outlineWindow.window.setVisible(!this.outlineWindow.window.isVisible());
 		}
 	}), null, null, Editor.ctrlKey + '+' + Editor.shiftKey + '+O');
-	
+
 	action.setToggleAction(true);
 	action.setSelectedCallback(mxUtils.bind(this, function() { return this.outlineWindow != null && this.outlineWindow.window.isVisible(); }));
 
@@ -1903,7 +1949,8 @@ Actions.prototype.init = function()
 	    	ui.showDialog(dlg.container, 400, 450, true, false, function()
 			{
 				dlg.destroy();
-			}, null, null, new mxRectangle(0, 0, 400 + 50, 450 + 50));
+			}, null, null, new mxRectangle(0, 0, 400 + 50, 450 + 50),
+				null, 'editConnectionPoints');
 			dlg.init();
 		}
 	}, null, null,  Editor.altKey + '+' + Editor.shiftKey + '+Q').isEnabled = isGraphEnabled;

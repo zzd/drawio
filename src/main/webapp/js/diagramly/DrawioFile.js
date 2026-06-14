@@ -181,7 +181,7 @@ DrawioFile.prototype.getShadowPages = function()
 {
 	if (this.shadowPages == null)
 	{
-		this.shadowPages = this.ui.getPagesForXml(this.initialData);
+		this.shadowPages = this.ui.getPagesForXml(this.initialData, true);
 
 		if (this.shadowVars === undefined)
 		{
@@ -493,7 +493,7 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 					this.inConflictState = true;
 					this.invalidChecksum = true;
 					this.descriptorChanged();
-					
+
 					if (error != null)
 					{
 						error(e);
@@ -501,11 +501,14 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 
 					try
 					{
-						if (reportError)
+						// InvalidCharacterError from atob is corrupt patch data,
+						// not actionable (eg. external tools modifying files)
+						if (reportError && !(e instanceof DOMException &&
+							e.name == 'InvalidCharacterError'))
 						{
 							var user = this.getCurrentUser();
 							var uid = (user != null) ? user.id : 'unknown';
-							
+
 							EditorUi.logError('Error in mergeFile', null,
 								this.getMode() + '.' + this.getId(),
 								uid, e);
@@ -1928,6 +1931,17 @@ DrawioFile.prototype.saveDraft = function(data)
 {
 	try
 	{
+		data = (data != null) ? data : this.ui.getFileData();
+
+		// Empty diagrams are useless as drafts — drop any existing one
+		// instead of writing an empty record, so the post-restart prompt
+		// doesn't surface drafts that contain nothing to recover.
+		if (this.ui.isDiagramDataEmpty(data))
+		{
+			this.removeDraft();
+			return;
+		}
+
 		if (this.draftId == null)
 		{
 			if (this.usedDraftId != null)
@@ -1939,17 +1953,17 @@ DrawioFile.prototype.saveDraft = function(data)
 				this.draftId = Editor.guid();
 			}
 		}
-		
+
 		var draft = {type: 'draft',
 			created: this.created,
 			modified: new Date().getTime(),
-			data: (data != null) ? data : this.ui.getFileData(),
+			data: data,
 			title: this.getTitle(),
 			fileObject: this.fileObject,
 			aliveCheck: this.ui.draftAliveCheck};
 		this.ui.setDatabaseItem('.draft_' + this.draftId,
 			JSON.stringify(draft));
-		
+
 		EditorUi.debug('DrawioFile.saveDraft', [this],
 			'draftId', this.draftId, [draft]);
 	}
@@ -2657,7 +2671,8 @@ DrawioFile.prototype.fileSaved = function(savedData, lastDesc, success, error, t
 	{
 		this.inConflictState = false;
 		this.invalidChecksum = false;
-		pages = (pages != null) ? pages : this.ui.getPagesForXml(savedData);
+
+		pages = (pages != null) ? pages : this.ui.getPagesForXml(savedData, true);
 
 		try
 		{

@@ -657,6 +657,10 @@ html body.geDarkMode.geEditor div.mxPopupMenu {
 	background-color: var(--ge-dark-panel-color);
 }
 
+html body.geDarkMode.geEditor div.mxPopupMenu.geToolbarMenu {
+	box-shadow: 0px 0px 3px 1px #d1d1d1;
+}
+
 .geTabContainer {
 	border-left-color: var(--dark-border-color);
 	border-right-color: var(--dark-border-color);
@@ -1465,6 +1469,19 @@ table.mxPopupMenu tr.mxPopupMenuItemHover,
 	opacity: 1;
 }
 
+.gePaletteDragging .geTitle:hover {
+	opacity: inherit;
+	background-color: inherit;
+}
+
+.geTitle.gePaletteDragPlaceholder {
+	visibility: hidden;
+}
+
+.gePageTab.gePageTabDragPlaceholder {
+	visibility: hidden;
+}
+
 button:hover:not([disabled], .geBigButton, .geShareBtn),
 select:hover:not([disabled]),
 .geColorBtn:hover:not([disabled]),
@@ -1692,7 +1709,7 @@ a.geStatus>div {
 }
 
 .geFormatSection {
-	padding: 8px 0 10px 0;
+	padding: 6px 0;
 	position: relative;
 	white-space: nowrap;
 	border-top: 1px solid light-dark(#e0e0e0, #3a3a3a);
@@ -2098,7 +2115,6 @@ a.geStatus>div {
 }
 
 .geDialogFormLabel {
-	font-size: 13px;
 	color: light-dark(#1d1d1f, #e0e0e0);
 	min-width: 100px;
 	flex-shrink: 0;
@@ -2106,7 +2122,8 @@ a.geStatus>div {
 
 .geDialogFormRow input[type="text"],
 .geDialogFormRow input[type="number"],
-.geDialogFormRow select {
+.geDialogFormRow select,
+.geDialogFormRow textarea {
 	flex: 1;
 	min-width: 0;
 }
@@ -2132,7 +2149,6 @@ a.geStatus>div {
 }
 
 .geDialogCheckRow label {
-	font-size: 13px;
 	color: light-dark(#1d1d1f, #e0e0e0);
 	cursor: pointer;
 }
@@ -2350,6 +2366,25 @@ html div.mxRubberband {
 	border-width: 1px;
 	border-color: lightgray;
 	padding: 3px;
+}
+
+.geEditor div.mxPopupMenu.geToolbarMenu {
+	border-radius: 10px;
+	box-shadow: 0px 0px 3px 1px #d1d1d1;
+	padding: 10px 14px 12px 14px;
+	background-color: light-dark(var(--ge-panel-color), var(--ge-dark-panel-color));
+}
+
+.geToolbarMenu tr.mxPopupMenuItemHover {
+	background-color: transparent !important;
+}
+
+.geToolbarMenu input[type="checkbox"] {
+	margin: 0 6px 0 0;
+}
+
+.geToolbarMenu label {
+	font-size: 13px;
 }
 
 .geSearchSidebar input {

@@ -32,7 +32,8 @@ EditorUi.transientViewStateProperties = ['defaultParent', 'currentRoot', 'scroll
  * Contains all view state properties that should not be ignored in diff sync.
  */
 EditorUi.prototype.viewStateProperties = {background: true, backgroundImage: true, shadowVisible: true,
-	foldingEnabled: true, pageScale: true, mathEnabled: true, pageFormat: true, extFonts: true};
+	foldingEnabled: true, pageScale: true, mathEnabled: true, pageFormat: true, extFonts: true,
+	adaptiveColors: true};
 
 /**
  * Contains all known cell properties that should be ignored for a generic cell diff.
@@ -281,8 +282,15 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
  */
 EditorUi.prototype.patchViewState = function(page, diff)
 {
-	if (page.viewState != null && diff != null)
+	if (diff != null)
 	{
+		if (page.viewState == null)
+		{
+			var doc = mxUtils.createXmlDocument();
+			page.viewState = this.editor.graph.createViewState(
+				doc.createElement('mxGraphModel'));
+		}
+
 		if (page == this.currentPage)
 		{
 			page.viewState = this.editor.graph.getViewState();
@@ -296,7 +304,7 @@ EditorUi.prototype.patchViewState = function(page, diff)
 			}
 			catch(e) {} //Ignore TODO Is this correct, we encountered an undefined value for a key (extFonts)
 		}
-		
+
 		if (page == this.currentPage)
 		{
 			this.editor.graph.setViewState(page.viewState, true);
@@ -758,20 +766,22 @@ EditorUi.prototype.getNodeForPages = function(pages)
 /**
  * Returns the pages for the given XML string.
  */
-EditorUi.prototype.getPagesForXml = function(data)
+EditorUi.prototype.getPagesForXml = function(data, allowPartial)
 {
 	var doc = mxUtils.parseXml(data);
 
-	return this.getPagesForNode(doc.documentElement);
+	return this.getPagesForNode(doc.documentElement, null, allowPartial);
 };
 
 /**
- * Returns the pages for the given node.
+ * Returns the pages for the given node. If allowPartial is true,
+ * pages that fail to decode (eg. corrupt base64 data) are included
+ * as null entries so that the remaining pages are still available.
  */
-EditorUi.prototype.getPagesForNode = function(node, nodeName)
+EditorUi.prototype.getPagesForNode = function(node, nodeName, allowPartial)
 {
 	var tmp = this.editor.extractGraphModel(node, true, true);
-	
+
 	if (tmp != null)
 	{
 		node = tmp;
@@ -779,13 +789,27 @@ EditorUi.prototype.getPagesForNode = function(node, nodeName)
 
 	var diagrams = node.getElementsByTagName(nodeName || 'diagram');
 	var pages = [];
-	
+
 	if (diagrams.length > 0)
 	{
 		for (var i = 0; i < diagrams.length; i++)
 		{
 			var page = new DiagramPage(diagrams[i]);
-			this.updatePageRoot(page, true);
+
+			try
+			{
+				this.updatePageRoot(page, true);
+			}
+			catch (e)
+			{
+				if (!allowPartial)
+				{
+					throw e;
+				}
+
+				page = null;
+			}
+
 			pages.push(page);
 		}
 	}
@@ -796,7 +820,7 @@ EditorUi.prototype.getPagesForNode = function(node, nodeName)
 		page.node.appendChild(node.cloneNode(true));
 		pages.push(page);
 	}
-	
+
 	return pages;
 };
 
@@ -816,14 +840,22 @@ EditorUi.prototype.diffPages = function(oldPages, newPages)
 	{
 		for (var i = 0; i < newPages.length; i++)
 		{
-			lookup[newPages[i].getId()] = {page: newPages[i], prev: prev};
-			prev = newPages[i];
+			if (newPages[i] != null)
+			{
+				lookup[newPages[i].getId()] = {page: newPages[i], prev: prev};
+				prev = newPages[i];
+			}
 		}
 
 		prev = null;
-		
+
 		for (var i = 0; i < oldPages.length; i++)
 		{
+			if (oldPages[i] == null)
+			{
+				continue;
+			}
+
 			var id = oldPages[i].getId();
 			var newPage = lookup[id];
 			
@@ -1054,14 +1086,25 @@ EditorUi.prototype.diffViewState = function(oldPage, newPage)
 		target = this.editor.graph.getViewState();
 	}
 
-	if (source != null && target != null)
+	// Creates default view state for null sides to ensure
+	// diff/patch round-trip consistency with hash computation
+	if (source == null)
 	{
-		for (var key in this.viewStateProperties)
-		{
-			this.diffViewStateProperty(source, target, key, result);
-		}
+		source = this.editor.graph.createViewState(
+			mxUtils.createXmlDocument().createElement('mxGraphModel'));
 	}
-	
+
+	if (target == null)
+	{
+		target = this.editor.graph.createViewState(
+			mxUtils.createXmlDocument().createElement('mxGraphModel'));
+	}
+
+	for (var key in this.viewStateProperties)
+	{
+		this.diffViewStateProperty(source, target, key, result);
+	}
+
 	return result;
 };
 

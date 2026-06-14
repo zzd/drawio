@@ -107,6 +107,59 @@ var editSection = this.addEditButton(optSection, lightbox);
 var edit = editSection.getEditInput();
 ```
 
+## Alignment of Dialog Items
+
+Radio/checkbox rows (`geDialogCheckRow`) use flexbox with `align-items: center`.
+When a radio button is followed by an input or select, both elements sit after
+the radio's right margin (8px). The CSS rule `.geDialogCheckRow select` adds
+`margin-left: 8px` by default — this is intended for selects that follow a
+checkbox + label. When a select sits directly after a radio button (same position
+as a text input in another row), reset the margin so both align:
+
+```javascript
+pageSelect.style.marginLeft = '0';
+```
+
+For `geDialogFormRow`, the `geDialogFormLabel` span provides a fixed-width left
+column (`min-width: 100px`). All inputs and selects use `flex: 1` to fill the
+remaining space. If labels in a specific dialog are longer (e.g. German
+translations), increase the dialog width rather than overriding `min-width` on
+individual labels.
+
+## Non-Resizable Dialogs
+
+Most dialogs are non-resizable. Do **not** pass a `minSize` parameter to
+`showDialog()` — this avoids adding a resize handler. Use `null` for the height
+parameter so the dialog auto-sizes to its content:
+
+```javascript
+this.showDialog(dlg.container, 360, null, true, true);
+```
+
+Only pass `minSize` (a `mxRectangle`) when the dialog content is scrollable or
+has a variable-height area that benefits from user resizing.
+
+## Button Spacing (Manual Buttons)
+
+When using `CustomDialog`, button spacing is handled automatically (34px
+margin-top, 10px padding-bottom on the content wrapper). When building buttons
+manually (e.g., dialogs with custom button arrangements like Reset + Open),
+replicate the same values:
+
+```javascript
+// Content wrapper needs padding-bottom to prevent margin collapse
+div.style.paddingBottom = '10px';
+
+// Button row
+var btns = document.createElement('div');
+btns.style.marginTop = '34px';
+btns.style.textAlign = 'right';
+```
+
+This produces equal visual spacing above (34px) and below (34px = 10px + 24px
+dialog padding) the button row, matching `CustomDialog` exactly. Never use
+other margin values (16px, 20px, 30px) for button rows.
+
 ## Dark Mode
 
 All CSS uses `light-dark()` for color values. Never hardcode colors in JS — use

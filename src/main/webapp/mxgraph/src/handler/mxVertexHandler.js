@@ -689,11 +689,17 @@ mxVertexHandler.prototype.start = function(x, y, index)
 				
 				if (index == mxEvent.ROTATION_HANDLE)
 				{
-					this.rotationShape.node.style.display = '';
+					if (this.rotationShape != null)
+					{
+						this.rotationShape.node.style.display = '';
+					}
 				}
 				else if (index == mxEvent.LABEL_HANDLE)
 				{
-					this.labelShape.node.style.display = '';
+					if (this.labelShape != null)
+					{
+						this.labelShape.node.style.display = '';
+					}
 				}
 				else if (this.sizers != null && this.sizers[index] != null)
 				{
