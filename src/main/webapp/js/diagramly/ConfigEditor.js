@@ -50,7 +50,7 @@ DrawioConfigEditor.install = function(container, options)
 	var config = {};
 	var fontLists = { defaultFonts: [], customFonts: [] };
 	var colorLists = { presetColors: [], customPresetColors: [], defaultColors: [] };
-	var tagLists = { enabledLibraries: [], defaultCustomLibraries: [], hideMenuItems: [], hideMenus: [] };
+	var tagLists = { enabledLibraries: [], defaultCustomLibraries: [], hideMenuItems: [], hideMenus: [], enabledTemplateSections: [] };
 	var schemeData = { defaultColorSchemes: [], customColorSchemes: [] };
 	var editorContext = options.editorContext || {};
 	var isDesktop = (options.isDesktop != null) ? options.isDesktop :
@@ -71,6 +71,13 @@ DrawioConfigEditor.install = function(container, options)
 		return div.innerHTML;
 	}
 
+	// Text-node serialization leaves quotes intact, so double-quoted
+	// attribute values additionally need quote escaping
+	function escapeAttr(str)
+	{
+		return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+	}
+
 	function q(selector) { return container.querySelector(selector); }
 	function qAll(selector) { return container.querySelectorAll(selector); }
 
@@ -79,13 +86,12 @@ DrawioConfigEditor.install = function(container, options)
 	// ============================================
 	var toggleGroups = {
 		'general-toggles': [
-			{ key: 'override', name: 'Override', help: 'Ignore client-side settings' },
+			{ key: 'override', name: 'Override', help: 'Ignore user settings stored in the browser so the defaults in this configuration always apply' },
 			{ key: 'compact', name: 'Compact UI', help: 'Enable compact user interface mode' },
 			{ key: 'noAutoFocus', name: 'No Auto Focus', help: 'Disable auto-focus on startup' },
+			{ key: 'showSplashOnStart', name: 'Show Splash on Start', help: 'Show the splash screen with storage options on startup' },
 			{ key: 'updateDefaultStyle', name: 'Update Default Style', help: 'Update defaults when styles change' },
-			{ key: 'mathematicalTypesetting', name: 'Math Typesetting', help: 'Enable MathJax for mathematical typesetting' },
 			{ key: 'mathOutputSize', name: 'Math Output Size', help: 'Size labels, view bounds and initial fit to the rendered math output instead of the formula source' },
-			{ key: 'internationalization', name: 'Internationalization', help: 'Enable UI language translation' },
 			{ key: 'browserTranslate', name: 'Browser Translate', help: 'Mirror diagram text for browser translation engines (e.g. Chrome Translate)' }
 		],
 		'canvas-toggles': [
@@ -93,10 +99,12 @@ DrawioConfigEditor.install = function(container, options)
 			{ key: 'defaultGridEnabled', name: 'Grid Enabled', help: 'Show grid on canvas' },
 			{ key: 'defaultConnectable', name: 'Default Connectable', help: 'Shapes are connectable by default' },
 			{ key: 'defaultConnectionArrowsEnabled', name: 'Connection Arrows', help: 'Show arrows when hovering connections' },
+			{ key: 'copyOnConnect', name: 'Copy on Connect', help: 'Create a copy of the source shape for connections that end on the canvas' },
 			{ key: 'defaultFoldingEnabled', name: 'Folding Enabled', help: 'Enable shape folding (collapse/expand)' },
 			{ key: 'zoomWheel', name: 'Zoom with Mouse Wheel', help: 'Use mouse wheel for zoom without modifiers' },
 			{ key: 'simpleLabels', name: 'Simple Labels', help: 'Disable word wrap and HTML for labels' },
 			{ key: 'optimizeHtmlLabels', name: 'Optimize HTML Labels', help: 'Remove unnecessary spans from HTML labels when editing stops' },
+			{ key: 'stopEditingOnEnter', name: 'Stop Editing on Enter', help: 'Enter key stops label editing, Shift+Enter inserts a line break' },
 			{ key: 'pasteAtMousePointer', name: 'Paste at Mouse', help: 'Paste elements at mouse pointer location' },
 			{ key: 'fitDiagramOnLoad', name: 'Fit Diagram on Load', help: 'Fit diagram to window on load' },
 			{ key: 'fitDiagramOnPage', name: 'Fit Diagram on Page', help: 'Fit diagram to page size' },
@@ -105,8 +113,10 @@ DrawioConfigEditor.install = function(container, options)
 			{ key: 'enableWindowDocking', name: 'Window Docking', help: 'Enable window docking' },
 			{ key: 'showLinkIcons', name: 'Show Link Icons', help: 'Show link icons on shapes' },
 			{ key: 'showTooltipIcons', name: 'Show Tooltip Icons', help: 'Show tooltip icons on shapes' },
+			{ key: 'showNoteIcons', name: 'Show Note Icons', help: 'Show note icons on shapes' },
 			{ key: 'showConnectHandle', name: 'Show Connect Handle', help: 'Show connection handle on hover' },
-			{ key: 'intersectionSelect', name: 'Intersection Select', help: 'Select cells by intersection rather than containment' }
+			{ key: 'intersectionSelect', name: 'Intersection Select', help: 'Select cells by intersection rather than containment' },
+			{ key: 'swimlaneSelectionEnabled', name: 'Swimlane Body Selection', help: 'Click an empty swimlane body to select the swimlane (default on)' }
 		],
 		'appearance-toggles': [
 			{ key: 'enableCssDarkMode', name: 'CSS Dark Mode', help: 'Use CSS for dark mode rendering' },
@@ -120,10 +130,12 @@ DrawioConfigEditor.install = function(container, options)
 		],
 		'library-toggles': [
 			{ key: 'enableCustomLibraries', name: 'Enable Custom Libraries', help: 'Allow open and new library functions' },
+			{ key: 'inlineExtIcons', name: 'Inline Icon Search Results', help: 'Insert icon search results as embedded images instead of remote references' },
 			{ key: 'appendCustomLibraries', name: 'Append Custom Libraries', help: 'Custom libraries appear after built-in ones' }
 		],
 		'export-toggles': [
 			{ key: 'compressXml', name: 'Compress XML', help: 'Compress XML output in saved files' },
+			{ key: 'compressStyles', name: 'Compress Styles', help: 'Deduplicate repeated inline images and stencils into a shared lookup table. Only readable by draw.io 29.3.1 and later.', experimental: true, helpLink: 'https://www.drawio.com/docs/reference/style-compression/' },
 			{ key: 'includeDiagram', name: 'Include Diagram in Export', help: 'Include diagram data in export dialogs' },
 			{ key: 'enableExportUrl', name: 'Enable Export URL', help: 'Enable the export URL feature' },
 			{ key: 'lockdown', name: 'Lockdown', help: 'Disable data transmission apart from storage' },
@@ -131,6 +143,7 @@ DrawioConfigEditor.install = function(container, options)
 			{ key: 'enableNativeClipboard', name: 'Native Clipboard', help: 'Use native system clipboard' },
 			{ key: 'replaceSvgDataUris', name: 'Replace SVG Data URIs', help: 'Replace data URIs with SVG sub-trees in export' },
 			{ key: 'foreignObjectImages', name: 'Foreign Object Images', help: 'Replace foreignObject with images' },
+			{ key: 'embedSvgFonts', name: 'Embed SVG Fonts', help: 'Default for embedding fonts as data URIs in exported and saved SVG files, can be overridden per file in the file properties' },
 			{ key: 'removeImageMetadata', name: 'Remove Image Metadata', help: 'Strip metadata from images' },
 			{ key: 'expandPatternsForPrint', name: 'Expand Patterns for Print', help: 'Expand patterns to visible graphics during print/PDF export' }
 		],
@@ -188,13 +201,19 @@ DrawioConfigEditor.install = function(container, options)
 			var el = q('#' + containerId);
 			if (!el) return;
 
+			el.classList.add('toggle-list');
 			var html = '';
 			toggleGroups[containerId].forEach(function(toggle)
 			{
+				var badge = toggle.experimental ?
+					' <span class="toggle-field__experimental" title="Experimental feature">experimental</span>' : '';
+				var helpIcon = toggle.helpLink ?
+					' <a class="toggle-field__helplink" href="' + toggle.helpLink + '" target="_blank" rel="noopener" title="Learn more">?</a>' : '';
+
 				html += '<div class="toggle-field">' +
 					'<div class="toggle-field__label">' +
-						'<span class="toggle-field__name">' + toggle.name + '</span>' +
-						'<span class="toggle-field__help">' + toggle.help + ' <code>' + toggle.key + '</code></span>' +
+						'<span class="toggle-field__name">' + toggle.name + badge + '</span>' +
+						'<span class="toggle-field__help">' + toggle.help + ' <code>' + toggle.key + '</code>' + helpIcon + '</span>' +
 					'</div>' +
 					'<div class="tri-toggle" data-key="' + toggle.key + '">' +
 						'<button type="button" data-value="unset" class="active--unset" title="Not set (use default)">&#8212;</button>' +
@@ -368,9 +387,17 @@ DrawioConfigEditor.install = function(container, options)
 		var el = q('#' + listKey + '-tags');
 		var html = '';
 
+		// Entries are kept in their original form: plain font names or
+		// {fontFamily, fontUrl} objects for web fonts (e.g. Google Fonts)
 		fontLists[listKey].forEach(function(font, i)
 		{
-			html += '<span class="tag"><span>' + escapeHtml(font) + '</span>' +
+			var isObj = (font !== null && typeof font === 'object');
+			var name = isObj ? String(font.fontFamily || '') : String(font);
+			var url = (isObj && font.fontUrl) ? String(font.fontUrl) : null;
+
+			html += '<span class="tag"' + ((url != null) ? ' title="' + escapeAttr(url) + '"' : '') + '>' +
+				'<span>' + escapeHtml(name) + '</span>' +
+				((url != null) ? '<span class="tag__link">&#8599;</span>' : '') +
 				'<button type="button" class="tag__remove" data-list="' + listKey + '" data-index="' + i + '">&times;</button></span>';
 		});
 
@@ -397,16 +424,29 @@ DrawioConfigEditor.install = function(container, options)
 	function setupFontList(listKey)
 	{
 		var input = q('#' + listKey + '-input');
+		var urlInput = q('#' + listKey + '-url');
 		var addBtn = q('#' + listKey + '-add');
 
 		function addFont()
 		{
-			var val = input.value.trim();
-			if (val) { fontLists[listKey].push(val); input.value = ''; syncFontList(listKey); renderFontTags(listKey); }
+			var name = input.value.trim();
+			var url = urlInput.value.trim();
+
+			if (name)
+			{
+				fontLists[listKey].push((url) ? { fontFamily: name, fontUrl: url } : name);
+				input.value = '';
+				urlInput.value = '';
+				syncFontList(listKey);
+				renderFontTags(listKey);
+			}
 		}
 
+		function onEnter(e) { if (e.key === 'Enter') { e.preventDefault(); addFont(); } }
+
 		addBtn.addEventListener('click', addFont);
-		input.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); addFont(); } });
+		input.addEventListener('keydown', onEnter);
+		urlInput.addEventListener('keydown', onEnter);
 		renderFontTags(listKey);
 	}
 
@@ -790,7 +830,7 @@ DrawioConfigEditor.install = function(container, options)
 		config = {};
 		fontLists = { defaultFonts: [], customFonts: [] };
 		colorLists = { presetColors: [], customPresetColors: [], defaultColors: [] };
-		tagLists = { enabledLibraries: [], defaultCustomLibraries: [], hideMenuItems: [], hideMenus: [] };
+		tagLists = { enabledLibraries: [], defaultCustomLibraries: [], hideMenuItems: [], hideMenus: [], enabledTemplateSections: [] };
 		schemeData = { defaultColorSchemes: [], customColorSchemes: [] };
 
 		Object.keys(obj).forEach(function(key)
@@ -801,7 +841,9 @@ DrawioConfigEditor.install = function(container, options)
 			{
 				if (Array.isArray(val))
 				{
-					fontLists[key] = val.map(function(f) { return typeof f === 'object' ? f.fontFamily || '' : String(f); });
+					// Keep entries as-is so {fontFamily, fontUrl} objects
+					// survive chip editing (names derived in renderFontTags)
+					fontLists[key] = val.slice();
 					config[key] = val;
 				}
 				return;
@@ -819,7 +861,7 @@ DrawioConfigEditor.install = function(container, options)
 				return;
 			}
 
-			if (key === 'enabledLibraries' || key === 'defaultCustomLibraries' || key === 'hideMenuItems' || key === 'hideMenus')
+			if (key === 'enabledLibraries' || key === 'defaultCustomLibraries' || key === 'hideMenuItems' || key === 'hideMenus' || key === 'enabledTemplateSections')
 			{
 				if (Array.isArray(val)) { tagLists[key] = val.map(function(v) { return String(v); }); config[key] = val; }
 				return;
@@ -898,7 +940,7 @@ DrawioConfigEditor.install = function(container, options)
 
 		['defaultFonts', 'customFonts'].forEach(renderFontTags);
 		['presetColors', 'customPresetColors', 'defaultColors'].forEach(renderColorSwatches);
-		['enabledLibraries', 'defaultCustomLibraries', 'hideMenuItems', 'hideMenus'].forEach(renderTagList);
+		['enabledLibraries', 'defaultCustomLibraries', 'hideMenuItems', 'hideMenus', 'enabledTemplateSections'].forEach(renderTagList);
 		['defaultColorSchemes', 'customColorSchemes'].forEach(renderSchemeEditor);
 
 		if (config.defaultMacroParameters)
@@ -1088,6 +1130,7 @@ DrawioConfigEditor.install = function(container, options)
 	setupTagList('defaultCustomLibraries');
 	setupTagList('hideMenuItems');
 	setupTagList('hideMenus');
+	setupTagList('enabledTemplateSections');
 	setupSchemeEditor('defaultColorSchemes');
 	setupSchemeEditor('customColorSchemes');
 	setupMacroParams();
@@ -1223,9 +1266,21 @@ DrawioConfigEditor.css = [
 	'  padding: 4px 0; border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));',
 	'}',
 	'.geConfigEditor .toggle-field:last-child { border-bottom: none; }',
+	'.geConfigEditor .card__body > * + .toggle-list { border-top: 1px solid light-dark(var(--color-border), var(--color-border-dark)); }',
 	'.geConfigEditor .toggle-field__label { display: flex; flex-direction: column; gap: 1px; flex: 1; margin-bottom: 0; }',
 	'.geConfigEditor .toggle-field__name { font-weight: 500; font-size: var(--font-size-sm); }',
 	'.geConfigEditor .toggle-field__help { font-size: var(--font-size-xs); color: light-dark(var(--color-text-secondary), var(--color-text-secondary-dark)); }',
+	'.geConfigEditor .toggle-field__experimental {',
+	'  display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; vertical-align: middle;',
+	'  font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;',
+	'  color: light-dark(#8a5a00, #f0b429); background: light-dark(#fff3d6, rgba(240, 180, 41, 0.15));',
+	'}',
+	'.geConfigEditor .toggle-field__helplink {',
+	'  display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;',
+	'  margin-left: 4px; border-radius: 50%; vertical-align: middle; text-decoration: none;',
+	'  font-size: 9px; font-weight: 700; line-height: 1;',
+	'  color: light-dark(#fff, #1a1a1a); background: light-dark(var(--color-text-secondary), var(--color-text-secondary-dark));',
+	'}',
 	'.geConfigEditor .tri-toggle {',
 	'  display: inline-flex; border: 1px solid light-dark(var(--color-border), var(--color-border-dark));',
 	'  border-radius: var(--radius-md); overflow: hidden; flex-shrink: 0;',
@@ -1300,6 +1355,7 @@ DrawioConfigEditor.css = [
 	'  color: light-dark(var(--color-text-secondary), var(--color-text-secondary-dark)); font-size: 13px; padding: 0 1px; line-height: 1;',
 	'}',
 	'.geConfigEditor .tag__remove:hover { color: var(--color-error); }',
+	'.geConfigEditor .tag__link { color: light-dark(var(--color-text-secondary), var(--color-text-secondary-dark)); font-size: 9px; line-height: 1; }',
 	'.geConfigEditor .tag-input-wrap { display: flex; gap: 4px; margin-top: 4px; }',
 	'.geConfigEditor .tag-input-wrap input { flex: 1; }',
 	'.geConfigEditor .search-box { position: sticky; top: 0; z-index: 50; background: light-dark(var(--color-bg), var(--color-bg-dark)); padding: 6px 0 8px; }',
@@ -1342,6 +1398,7 @@ DrawioConfigEditor.css = [
 	'  .geConfigEditor .card { border: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
 	'  .geConfigEditor .card__header { border-bottom: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
 	'  .geConfigEditor .toggle-field { border-bottom: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
+	'  .geConfigEditor .card__body > * + .toggle-list { border-top: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
 	'}',
 	'.geConfigEditor.high-contrast {',
 	'  --color-bg: #ffffff;',
@@ -1374,6 +1431,7 @@ DrawioConfigEditor.css = [
 	'.geConfigEditor.high-contrast .card { border: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
 	'.geConfigEditor.high-contrast .card__header { border-bottom: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
 	'.geConfigEditor.high-contrast .toggle-field { border-bottom: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
+	'.geConfigEditor.high-contrast .card__body > * + .toggle-list { border-top: 2px solid light-dark(var(--color-border), var(--color-border-dark)); }',
 	'@media (forced-colors: active) {',
 	'  .geConfigEditor input[type="text"], .geConfigEditor input[type="url"], .geConfigEditor input[type="number"], .geConfigEditor textarea, .geConfigEditor select {',
 	'    border: 2px solid ButtonText;',
@@ -1389,6 +1447,7 @@ DrawioConfigEditor.css = [
 	'  .geConfigEditor .tri-toggle button.active--unset { background: ButtonFace; color: ButtonText; outline: 2px solid Highlight; outline-offset: -2px; }',
 	'  .geConfigEditor .btn--secondary { border: 1px solid ButtonText; }',
 	'  .geConfigEditor .toggle-field { border-bottom: 1px solid ButtonText; }',
+	'  .geConfigEditor .card__body > * + .toggle-list { border-top: 1px solid ButtonText; }',
 	'  .geConfigEditor .search-box { background: Canvas; }',
 	'  .geConfigEditor { background: Canvas; color: CanvasText; }',
 	'}'
@@ -1417,6 +1476,16 @@ DrawioConfigEditor.html = [
 	'          <input type="text" id="cfg-settingsName" data-key="settingsName" placeholder=".drawio-config">',
 	'          <p class="field__help">Key for storing user settings in local storage</p>',
 	'        </div>',
+	'      </div>',
+	'      <div class="field">',
+	'        <label for="cfg-keyboardShortcuts">Keyboard Shortcuts (JSON)</label>',
+	'        <textarea id="cfg-keyboardShortcuts" data-key="keyboardShortcuts" data-type="json" placeholder=\'[{"keyCode": "T", "control": true, "shift": true, "action": "tags"}]\' style="min-height: 60px;"></textarea>',
+	'        <p class="field__help">Custom keyboard shortcuts. Entries are {keyCode, control, shift, alt, action} where keyCode is a key code or single character and action is an action name, or null to remove a binding.</p>',
+	'      </div>',
+	'      <div class="field">',
+	'        <label for="cfg-resources">Language Resources (JSON)</label>',
+	'        <textarea id="cfg-resources" data-key="resources" data-type="json" placeholder=\'{"saveAs": {"main": "Save a Copy", "de": "Kopie speichern"}, "myKey": "My Text"}\' style="min-height: 60px;"></textarea>',
+	'        <p class="field__help">Overrides existing or adds new language resources for user interface text. Maps resource keys to strings, or to objects with one entry per language code and main as the fallback.</p>',
 	'      </div>',
 	'      <div id="general-toggles"></div>',
 	'    </div>',
@@ -1603,6 +1672,20 @@ DrawioConfigEditor.html = [
 	'        <input type="url" id="cfg-templateFile" data-key="templateFile" placeholder="https://app.diagrams.net/templates/index.xml">',
 	'      </div>',
 	'      <div class="field">',
+	'        <label>Template Sections</label>',
+	'        <div class="tag-list" id="enabledTemplateSections-tags"></div>',
+	'        <div class="tag-input-wrap">',
+	'          <input type="text" id="enabledTemplateSections-input" placeholder="Add section (e.g. business, charts)...">',
+	'          <button type="button" class="btn btn--secondary btn--sm" id="enabledTemplateSections-add">Add</button>',
+	'        </div>',
+	'        <p class="field__help">Sections shown in the template dialog. Leave empty for all.</p>',
+	'      </div>',
+	'      <div class="field">',
+	'        <label for="cfg-customTemplates">Custom Templates (JSON)</label>',
+	'        <textarea id="cfg-customTemplates" data-key="customTemplates" data-type="json" placeholder=\'[{"section": "basic", "url": "https://example.com/template.xml", "title": "My Template", "preview": "https://example.com/template.png"}]\' style="min-height: 60px;"></textarea>',
+	'        <p class="field__help">Templates added to the sections of the template dialog</p>',
+	'      </div>',
+	'      <div class="field">',
 	'        <label for="cfg-libraries">Libraries (JSON)</label>',
 	'        <textarea id="cfg-libraries" data-key="libraries" data-type="json" placeholder=\'[{"title": {"main": "Company"}, "entries": [...]}]\' style="min-height: 60px;"></textarea>',
 	'        <p class="field__help">Custom library sections for the left panel</p>',
@@ -1620,18 +1703,20 @@ DrawioConfigEditor.html = [
 	'        <div class="tag-list" id="defaultFonts-tags"></div>',
 	'        <div class="tag-input-wrap">',
 	'          <input type="text" id="defaultFonts-input" placeholder="Add font name...">',
+	'          <input type="text" id="defaultFonts-url" placeholder="Font URL (optional)">',
 	'          <button type="button" class="btn btn--secondary btn--sm" id="defaultFonts-add">Add</button>',
 	'        </div>',
-	'        <p class="field__help">Font names for the format panel font picker</p>',
+	'        <p class="field__help">Font names for the format panel font picker; add a URL for web fonts (e.g. a Google Fonts CSS link)</p>',
 	'      </div>',
 	'      <div class="field">',
 	'        <label>Custom Fonts</label>',
 	'        <div class="tag-list" id="customFonts-tags"></div>',
 	'        <div class="tag-input-wrap">',
 	'          <input type="text" id="customFonts-input" placeholder="Add font name...">',
+	'          <input type="text" id="customFonts-url" placeholder="Font URL (optional)">',
 	'          <button type="button" class="btn btn--secondary btn--sm" id="customFonts-add">Add</button>',
 	'        </div>',
-	'        <p class="field__help">Additional fonts added before default fonts</p>',
+	'        <p class="field__help">Additional fonts added before default fonts; add a URL for web fonts (e.g. a Google Fonts CSS link)</p>',
 	'      </div>',
 	'      <div class="field">',
 	'        <label for="cfg-fontCss">Font CSS (@font-face rules)</label>',

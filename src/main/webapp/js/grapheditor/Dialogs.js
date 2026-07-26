@@ -328,7 +328,7 @@ ColorPicker.prototype.arrowImage = 'data:image/gif;base64,R0lGODlhBwALAKECAAAAAP
 /**
  * Constructs a new color dialog.
  */
-var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defaultColorValue, singleColorMode, liveApply)
+var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defaultColorValue, singleColorMode, liveApply, allowInherit)
 {
 	var cssDefaultColor = (defaultColorValue != null) ?
 		mxUtils.getLightDarkColor(defaultColorValue,
@@ -1013,7 +1013,15 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 	});
 
 	var div = document.createElement('div');
-	div.style.padding = '12px 12px 18px 12px';
+
+	// The tool-window (liveApply) host is a borderless mxWindow with no
+	// padding of its own, so the content supplies it. The modal dialog host
+	// (.geDialog) already pads, so skip it there to avoid double padding and
+	// to keep the 230px picker from overflowing the padded content box.
+	if (liveApply)
+	{
+		div.style.padding = '12px 12px 18px 12px';
+	}
 
 	div.appendChild(picker.div);
 	picker.div.style.marginBottom = '10px';
@@ -1380,6 +1388,40 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 
 	div.appendChild(center);
 
+	// Offers an explicit "Inherit" choice so a color can be set to inherit from
+	// the parent (eg. a table/swimlane cell using its container's color). Shown
+	// only when the caller marks the value as inheritable (allowInherit). Applies
+	// the 'inherit' sentinel and closes the picker like choosing a color.
+	var inheritBtn = mxUtils.button(mxResources.get('inherit', null, 'Inherit'), function()
+	{
+		applyFunction('inherit');
+
+		if (liveApply)
+		{
+			if (self.closeFn != null)
+			{
+				self.closeFn();
+			}
+		}
+		else
+		{
+			editorUi.hideDialog();
+		}
+	});
+
+	inheritBtn.setAttribute('title', mxResources.get('inherit', null, 'Inherit'));
+	// allowInherit may be a live predicate (re-evaluated as the selection changes
+	// while the reused color window stays open) or a plain boolean
+	function inheritAllowed(v)
+	{
+		return (typeof v === 'function') ? v() : v;
+	};
+
+	inheritBtn.style.display = (inheritAllowed(allowInherit)) ? '' : 'none';
+	inheritBtn.style.width = '100%';
+	inheritBtn.style.margin = '6px 0 0 0';
+	div.appendChild(inheritBtn);
+
 	var buttons = null;
 
 	if (!liveApply)
@@ -1389,10 +1431,11 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		buttons.style.whiteSpace = 'nowrap';
 		buttons.style.alignItems = 'center';
 		buttons.style.justifyContent = 'end';
+		buttons.style.marginTop = '34px';
 
 		if (!editorUi.isOffline())
 		{
-			buttons.appendChild(editorUi.createHelpIcon('https://github.com/jgraph/drawio/discussions/4713'));
+			buttons.appendChild(editorUi.createHelpIcon('https://www.drawio.com/docs/manual/editor/appearance/adaptive-colours/'));
 		}
 
 		var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
@@ -1559,7 +1602,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		applyFunction = fn;
 	};
 
-	this.setColor = function(newColor, newDefaultColor, newDefaultColorValue, newSingleColorMode)
+	this.setColor = function(newColor, newDefaultColor, newDefaultColorValue, newSingleColorMode, newAllowInherit)
 	{
 		// Reset session tracking for recent colors
 		sessionRecentColor = null;
@@ -1568,6 +1611,9 @@ var ColorDialog = function(editorUi, color, apply, cancelFn, defaultColor, defau
 		defaultColor = newDefaultColor;
 		defaultColorValue = newDefaultColorValue;
 		singleColorMode = newSingleColorMode;
+
+		// Toggles the inherit affordance for the reused (non-modal) picker
+		inheritBtn.style.display = (inheritAllowed(newAllowInherit)) ? '' : 'none';
 		cssDefaultColor = (newDefaultColorValue != null) ?
 			mxUtils.getLightDarkColor(newDefaultColorValue,
 				null, null, newSingleColorMode) : null;
@@ -1864,6 +1910,15 @@ var ColorWindow = function(editorUi, x, y, w)
 
 	this.fitHeight = function()
 	{
+		// While minimized the content is hidden (scrollHeight 0), so measuring
+		// would shrink to the title bar and setSize would then clamp back up to
+		// minimumSize, leaving a wrong-sized empty window. The minimize/restore
+		// logic owns the size in that state, so leave it alone.
+		if (self.window.minimized)
+		{
+			return;
+		}
+
 		var titleH = self.window.title.offsetHeight || titleHeight;
 		var contentH = container.scrollHeight;
 		var newH = titleH + contentH + self.window.contentHeightCorrection;
@@ -1891,6 +1946,7 @@ var ColorWindow = function(editorUi, x, y, w)
 	this.currentDefaultColor = null;
 	this.currentDefaultColorValue = null;
 	this.currentSingleColorMode = null;
+	this.currentAllowInherit = null;
 	this.applying = false;
 
 	var refreshColor = mxUtils.bind(this, function()
@@ -1902,8 +1958,11 @@ var ColorWindow = function(editorUi, x, y, w)
 
 			if (color != null)
 			{
+				// Passes allowInherit so an external change (eg. collaborator
+				// edit) does not drop the Inherit button while the window is open
 				this.colorDialog.setColor(color, this.currentDefaultColor,
-					this.currentDefaultColorValue, this.currentSingleColorMode);
+					this.currentDefaultColorValue, this.currentSingleColorMode,
+					this.currentAllowInherit);
 			}
 		}
 	});
@@ -1919,16 +1978,17 @@ var ColorWindow = function(editorUi, x, y, w)
  * Updates the color window state for a new color property.
  */
 ColorWindow.prototype.update = function(color, applyFn, title,
-	defaultColor, defaultColorValue, singleColorMode, getColorFn)
+	defaultColor, defaultColorValue, singleColorMode, getColorFn, allowInherit)
 {
 	this.getColorFn = getColorFn || null;
 	this.currentDefaultColor = defaultColor;
 	this.currentDefaultColorValue = defaultColorValue;
 	this.currentSingleColorMode = singleColorMode;
+	this.currentAllowInherit = allowInherit;
 
 	this.window.setTitle(title);
 	this.colorDialog.setApplyFn(applyFn);
-	this.colorDialog.setColor(color, defaultColor, defaultColorValue, singleColorMode);
+	this.colorDialog.setColor(color, defaultColor, defaultColorValue, singleColorMode, allowInherit);
 	this.window.setVisible(true);
 	this.fitHeight();
 	this.colorDialog.init();
@@ -1973,13 +2033,20 @@ var AboutDialog = function(editorUi)
 /**
  * Constructs a simple textarea dialog.
  */
-var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
+var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink, headerControl, applyKeepsOpen, previewFn)
 {
+	var initialValue = (value != null) ? value : '';
+	var applying = false;
+
 	var div = document.createElement('div');
 	div.style.display = 'flex';
 	div.style.flexDirection = 'column';
 	div.style.height = '100%';
 	div.style.boxSizing = 'border-box';
+	// the flex column never overflows (the textarea scrolls internally),
+	// so opt out of the .geDialog > :first-child scroll container — it
+	// clips the focus halo of the bottom-row controls
+	div.style.overflow = 'visible';
 
 	var textarea = document.createElement('textarea');
 	textarea.style.flex = '1';
@@ -2007,6 +2074,26 @@ var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
 		buttons.appendChild(editorUi.createHelpIcon(helpLink));
 	}
 
+	// Optional caller-supplied control (e.g. a select) placed left of the
+	// action buttons, matching the type dropdown in ParseDialog.
+	if (headerControl != null)
+	{
+		buttons.appendChild(headerControl);
+	}
+
+	// Optional preview of the current text (wired by the caller), keeping
+	// the dialog open and the text unapplied.
+	if (previewFn != null)
+	{
+		var previewBtn = mxUtils.button(mxResources.get('preview'), function(evt)
+		{
+			previewFn(textarea.value, evt);
+		});
+
+		previewBtn.className = 'geBtn';
+		buttons.appendChild(previewBtn);
+	}
+
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
 		editorUi.hideDialog();
@@ -2023,7 +2110,30 @@ var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
 	var okBtn = mxUtils.button((buttonLabel != null) ?
 		buttonLabel : mxResources.get('apply'), function()
 	{
-		editorUi.hideDialog();
+		// applyKeepsOpen leaves the dialog open for an async fn that may
+		// fail (e.g. mermaid parsing) so the input isn't lost; the caller
+		// hides it via this.hide() once the apply succeeds, like the
+		// mermaid branch in ParseDialog.
+		if (applyKeepsOpen)
+		{
+			fn(textarea.value);
+
+			return;
+		}
+
+		// suppresses the unsaved-changes confirmation a caller may have
+		// wired into the dialog's onClose (see shouldConfirmClose)
+		applying = true;
+
+		try
+		{
+			editorUi.hideDialog();
+		}
+		finally
+		{
+			applying = false;
+		}
+
 		fn(textarea.value);
 	});
 
@@ -2048,6 +2158,36 @@ var SimpleTextareaDialog = function(editorUi, value, fn, buttonLabel, helpLink)
 	{
 		textarea.focus();
 		textarea.scrollTop = 0;
+	};
+
+	/**
+	 * True when closing now would lose the user's edits: the text differs
+	 * from the initial value and the close wasn't triggered by Apply.
+	 * Callers use this from the dialog's onClose to show an
+	 * "all changes will be lost" confirmation.
+	 */
+	this.shouldConfirmClose = function()
+	{
+		return !applying && textarea.value != initialValue;
+	};
+
+	/**
+	 * Hides the dialog with the unsaved-changes confirmation suppressed.
+	 * Used with applyKeepsOpen: the caller closes the dialog once its
+	 * async apply has succeeded.
+	 */
+	this.hide = function()
+	{
+		applying = true;
+
+		try
+		{
+			editorUi.hideDialog();
+		}
+		finally
+		{
+			applying = false;
+		}
 	};
 
 	div.appendChild(buttons);
@@ -2215,6 +2355,486 @@ var TextareaDialog = function(editorUi, title, url, fn, cancelFn, cancelTitle, w
 };
 
 /**
+ * Constructs a small WYSIWYG HTML editor dialog with a formatting
+ * toolbar and a source view. Used for tooltips and notes where plain
+ * HTML is the established format.
+ */
+var MarkupDialog = function(editorUi, title, value, fn, cancelFn, helpLink)
+{
+	var div = document.createElement('div');
+	div.style.display = 'flex';
+	div.style.flexDirection = 'column';
+	div.style.height = '100%';
+	div.style.boxSizing = 'border-box';
+
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, title);
+	hd.style.cssText = 'width:100%;text-align:center;margin:0 0 8px 0;flex-shrink:0';
+	div.appendChild(hd);
+
+	// Formatting toolbar
+	var toolbar = document.createElement('div');
+	toolbar.className = 'geMarkupToolbar';
+	div.appendChild(toolbar);
+
+	// Source view, hidden behind the WYSIWYG area initially
+	var textarea = document.createElement('textarea');
+	textarea.setAttribute('spellcheck', 'false');
+	textarea.setAttribute('autocorrect', 'off');
+	textarea.setAttribute('autocomplete', 'off');
+	textarea.setAttribute('autocapitalize', 'off');
+	textarea.style.overflow = 'auto';
+	textarea.style.resize = 'none';
+	textarea.style.flex = '1';
+	textarea.style.minHeight = '0';
+	textarea.style.width = '100%';
+	textarea.style.boxSizing = 'border-box';
+	textarea.style.display = 'none';
+	mxUtils.write(textarea, value || '');
+	div.appendChild(textarea);
+
+	this.textarea = textarea;
+
+	// WYSIWYG editing area shares the note box content styles
+	Graph.installNoteBoxStyle();
+	var wysiwyg = document.createElement('div');
+	wysiwyg.className = 'geNoteBox geMarkupWysiwyg';
+	wysiwyg.setAttribute('contenteditable', 'true');
+	wysiwyg.setAttribute('spellcheck', 'false');
+	wysiwyg.style.flex = '1';
+	wysiwyg.style.minHeight = '0';
+	div.appendChild(wysiwyg);
+
+	var sourceVisible = false;
+
+	function sourceToWysiwyg()
+	{
+		wysiwyg.innerHTML = Graph.sanitizeHtml(textarea.value);
+	};
+
+	function wysiwygToSource()
+	{
+		return Graph.sanitizeHtml(wysiwyg.innerHTML);
+	};
+
+	function getValue()
+	{
+		return (sourceVisible) ? textarea.value : wysiwygToSource();
+	};
+
+	sourceToWysiwyg();
+
+	// Pastes as plain text
+	mxEvent.addListener(wysiwyg, 'paste', function(evt)
+	{
+		if (evt.clipboardData != null)
+		{
+			var text = evt.clipboardData.getData('text/plain');
+			evt.preventDefault();
+
+			if (text != null && text.length > 0)
+			{
+				document.execCommand('insertText', false, text);
+			}
+		}
+	});
+
+	// Wraps the selection with the given markup or, in block mode, wraps
+	// the selected lines with prefix/suffix and the whole block with the
+	// given container markup
+	function applyFormat(prefix, suffix, block, containerStart, containerEnd)
+	{
+		var start = textarea.selectionStart;
+		var end = textarea.selectionEnd;
+		var text = textarea.value;
+		suffix = (suffix != null) ? suffix : '';
+
+		if (block)
+		{
+			// Expands the selection to whole lines
+			while (start > 0 && text.charAt(start - 1) != '\n')
+			{
+				start--;
+			}
+
+			while (end < text.length && text.charAt(end) != '\n')
+			{
+				end++;
+			}
+
+			var lines = text.substring(start, end).split('\n');
+
+			for (var i = 0; i < lines.length; i++)
+			{
+				lines[i] = prefix.replace('{1}', i + 1) + lines[i] + suffix;
+			}
+
+			var replaced = lines.join('\n');
+
+			if (containerStart != null)
+			{
+				replaced = containerStart + '\n' + replaced + '\n' + containerEnd;
+			}
+
+			textarea.value = text.substring(0, start) + replaced + text.substring(end);
+			textarea.selectionStart = start;
+			textarea.selectionEnd = start + replaced.length;
+		}
+		else
+		{
+			var selected = text.substring(start, end);
+			textarea.value = text.substring(0, start) + prefix + selected +
+				suffix + text.substring(end);
+
+			if (selected.length == 0)
+			{
+				textarea.selectionStart = start + prefix.length;
+				textarea.selectionEnd = textarea.selectionStart;
+			}
+			else
+			{
+				textarea.selectionStart = start;
+				textarea.selectionEnd = end + prefix.length + suffix.length;
+			}
+		}
+
+		textarea.focus();
+	};
+
+	// Returns the selection range if it is inside the WYSIWYG area
+	function getRange()
+	{
+		var sel = window.getSelection();
+
+		if (sel != null && sel.rangeCount > 0)
+		{
+			var range = sel.getRangeAt(0);
+
+			if (mxUtils.isAncestorNode(wysiwyg, range.commonAncestorContainer))
+			{
+				return range;
+			}
+		}
+
+		return null;
+	};
+
+	function execCmd(cmd, arg)
+	{
+		wysiwyg.focus();
+		document.execCommand(cmd, false, (arg != null) ? arg : null);
+	};
+
+	function wrapInline(tag)
+	{
+		var range = getRange();
+
+		if (range != null && !range.collapsed)
+		{
+			var node = document.createElement(tag);
+
+			try
+			{
+				range.surroundContents(node);
+			}
+			catch (e)
+			{
+				// Partial element selections cannot be surrounded
+				node.appendChild(range.extractContents());
+				range.insertNode(node);
+			}
+
+			var sel = window.getSelection();
+			sel.removeAllRanges();
+			range = document.createRange();
+			range.selectNodeContents(node);
+			sel.addRange(range);
+		}
+
+		wysiwyg.focus();
+	};
+
+	function insertLink()
+	{
+		var range = getRange();
+		range = (range != null) ? range.cloneRange() : null;
+
+		var dlg = new FilenameDialog(editorUi, 'https://',
+			mxResources.get('apply'), function(href)
+		{
+			if (href != null && href.length > 0 && href != 'https://')
+			{
+				wysiwyg.focus();
+
+				if (range != null)
+				{
+					var sel = window.getSelection();
+					sel.removeAllRanges();
+					sel.addRange(range);
+				}
+
+				if (range != null && !range.collapsed)
+				{
+					document.execCommand('createLink', false, href);
+				}
+				else
+				{
+					var temp = mxUtils.htmlEntities(href);
+					document.execCommand('insertHTML', false,
+						'<a href="' + temp + '">' + temp + '</a>');
+				}
+			}
+		}, mxResources.get('link'));
+
+		editorUi.showDialog(dlg.container, 340, 96, true, true);
+		dlg.init();
+	};
+
+	function addFormatButton(html, title, fn)
+	{
+		// Not a geButton as those are inverted in dark mode which would
+		// cancel out the light-dark colors of the button styles
+		var btn = document.createElement('a');
+		btn.className = 'geMarkupTbBtn';
+		btn.innerHTML = html;
+		btn.setAttribute('title', title);
+
+		// Keeps the focus and selection in the editing area
+		mxEvent.addListener(btn, 'mousedown', function(evt)
+		{
+			evt.preventDefault();
+		});
+
+		mxEvent.addListener(btn, 'click', function(evt)
+		{
+			fn();
+			evt.preventDefault();
+			mxEvent.consume(evt);
+		});
+
+		toolbar.appendChild(btn);
+
+		return btn;
+	};
+
+	addFormatButton('<b>B</b>', mxResources.get('bold'), function()
+	{
+		if (sourceVisible)
+		{
+			applyFormat('<b>', '</b>');
+		}
+		else
+		{
+			execCmd('bold');
+		}
+	});
+	addFormatButton('<i>I</i>', mxResources.get('italic'), function()
+	{
+		if (sourceVisible)
+		{
+			applyFormat('<i>', '</i>');
+		}
+		else
+		{
+			execCmd('italic');
+		}
+	});
+	addFormatButton('<s>S</s>', mxResources.get('strikethrough'), function()
+	{
+		if (sourceVisible)
+		{
+			applyFormat('<s>', '</s>');
+		}
+		else
+		{
+			execCmd('strikeThrough');
+		}
+	});
+	addFormatButton('&lt;/&gt;', mxResources.get('code', null, 'Code'), function()
+	{
+		if (sourceVisible)
+		{
+			applyFormat('<code>', '</code>');
+		}
+		else
+		{
+			wrapInline('code');
+		}
+	});
+	addFormatButton('<u>a</u>', mxResources.get('link'), function()
+	{
+		if (sourceVisible)
+		{
+			var start = textarea.selectionStart;
+			var end = textarea.selectionEnd;
+			var selected = textarea.value.substring(start, end);
+			var label = (selected.length > 0) ? selected : mxResources.get('link');
+			var prefix = '<a href="';
+			var suffix = '">' + label + '</a>';
+			textarea.value = textarea.value.substring(0, start) + prefix +
+				'https://' + suffix + textarea.value.substring(end);
+			textarea.selectionStart = start + prefix.length;
+			textarea.selectionEnd = textarea.selectionStart + 8;
+			textarea.focus();
+		}
+		else
+		{
+			insertLink();
+		}
+	});
+	addFormatButton('H', mxResources.get('heading'), function()
+	{
+		if (sourceVisible)
+		{
+			applyFormat('<h1>', '</h1>', true);
+		}
+		else
+		{
+			var block = null;
+
+			try
+			{
+				block = String(document.queryCommandValue('formatBlock')).toLowerCase();
+			}
+			catch (e)
+			{
+				// ignored
+			}
+
+			execCmd('formatBlock', (block == 'h1') ? '<div>' : '<h1>');
+		}
+	});
+	addFormatButton('&bull;&ndash;', mxResources.get('bulletedList'), function()
+	{
+		if (sourceVisible)
+		{
+			applyFormat('<li>', '</li>', true, '<ul>', '</ul>');
+		}
+		else
+		{
+			execCmd('insertUnorderedList');
+		}
+	});
+	addFormatButton('1.', mxResources.get('numberedList'), function()
+	{
+		if (sourceVisible)
+		{
+			applyFormat('<li>', '</li>', true, '<ol>', '</ol>');
+		}
+		else
+		{
+			execCmd('insertOrderedList');
+		}
+	});
+
+	// Source view toggle on the right of the toolbar
+	var sourceBtn = document.createElement('a');
+	sourceBtn.className = 'geMarkupTbBtn geMarkupSourceBtn';
+	mxUtils.write(sourceBtn, mxResources.get('html', null, 'HTML'));
+
+	mxEvent.addListener(sourceBtn, 'click', function(evt)
+	{
+		if (!sourceVisible)
+		{
+			textarea.value = wysiwygToSource();
+			sourceBtn.classList.add('geActiveItem');
+		}
+		else
+		{
+			sourceToWysiwyg();
+			sourceBtn.classList.remove('geActiveItem');
+		}
+
+		sourceVisible = !sourceVisible;
+		textarea.style.display = (sourceVisible) ? '' : 'none';
+		wysiwyg.style.display = (sourceVisible) ? 'none' : '';
+		((sourceVisible) ? textarea : wysiwyg).focus();
+
+		evt.preventDefault();
+		mxEvent.consume(evt);
+	});
+
+	toolbar.appendChild(sourceBtn);
+
+	this.init = function()
+	{
+		try
+		{
+			// Semantic tags instead of styled spans for editing commands
+			document.execCommand('styleWithCSS', false, false);
+		}
+		catch (e)
+		{
+			// ignored
+		}
+
+		wysiwyg.focus();
+	};
+
+	var buttons = document.createElement('div');
+	buttons.style.display = 'flex';
+	buttons.style.whiteSpace = 'nowrap';
+	buttons.style.alignItems = 'center';
+	buttons.style.justifyContent = 'end';
+	buttons.style.marginTop = '14px';
+	buttons.style.flexShrink = '0';
+
+	if (helpLink != null && !editorUi.isOffline())
+	{
+		buttons.appendChild(editorUi.createHelpIcon(helpLink));
+	}
+
+	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
+	{
+		editorUi.hideDialog();
+
+		if (cancelFn != null)
+		{
+			cancelFn();
+		}
+	});
+
+	cancelBtn.setAttribute('title', 'Escape');
+	cancelBtn.className = 'geBtn';
+
+	if (editorUi.editor.cancelFirst)
+	{
+		buttons.appendChild(cancelBtn);
+	}
+
+	var applyBtn = mxUtils.button(mxResources.get('apply'), function()
+	{
+		var newValue = getValue();
+		editorUi.hideDialog();
+		fn(newValue);
+	});
+
+	applyBtn.setAttribute('title', 'Ctrl+Enter');
+	applyBtn.className = 'geBtn gePrimaryBtn';
+	buttons.appendChild(applyBtn);
+
+	function keyHandler(e)
+	{
+		if (e.keyCode == 13 && mxEvent.isControlDown(e))
+		{
+			e.preventDefault();
+			applyBtn.click();
+		}
+	};
+
+	mxEvent.addListener(textarea, 'keydown', keyHandler);
+	mxEvent.addListener(wysiwyg, 'keydown', keyHandler);
+
+	if (!editorUi.editor.cancelFirst)
+	{
+		buttons.appendChild(cancelBtn);
+	}
+
+	div.appendChild(buttons);
+	this.container = div;
+};
+
+/**
  * Constructs a new edit file dialog.
  */
 var EditDiagramDialog = function(editorUi)
@@ -2227,7 +2847,6 @@ var EditDiagramDialog = function(editorUi)
 
 	var hd = document.createElement('h3');
 	mxUtils.write(hd, mxResources.get('editDiagram'));
-	hd.style.cssText = 'width:100%;text-align:center;margin-top:0px;margin-bottom:10px;flex-shrink:0';
 	div.appendChild(hd);
 
 	var textarea = document.createElement('textarea');
@@ -2475,7 +3094,7 @@ EditDiagramDialog.showNewWindowOption = true;
 /**
  * URL for the user-facing documentation of this dialog.
  */
-EditDiagramDialog.helpLink = 'https://github.com/jgraph/drawio/discussions/5592';
+EditDiagramDialog.helpLink = 'https://www.drawio.com/docs/manual/advanced/diagram-source-edit/';
 
 /**
  * Constructs a new export dialog.
@@ -3282,7 +3901,8 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 
 		// Avoid ':' in attribute names which seems to be valid in Chrome
 		if (name.length > 0 && name != 'label' && name != 'id' &&
-			name != 'placeholders' && name.indexOf(':') < 0)
+			name != 'placeholders' && name.indexOf(':') < 0 &&
+			EditDataDialog.isValidAttributeName(name))
 		{
 			try
 			{
@@ -3514,6 +4134,38 @@ var EditDataDialog = function(ui, cell, optionalGraph)
 	};
 
 	this.container = container;
+};
+
+/**
+ * Characters allowed as the first character of an XML attribute name
+ * (NameStartChar in the XML Name production, restricted to the BMP).
+ * See https://www.w3.org/TR/xml/#NT-Name.
+ */
+EditDataDialog.nameStartChar = ':A-Z_a-z' +
+	'\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF' +
+	'\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD';
+
+/**
+ * Characters allowed in an XML attribute name after the first character
+ * (NameChar in the XML Name production, restricted to the BMP).
+ */
+EditDataDialog.nameChar = '-.0-9\\u00B7\\u0300-\\u036F\\u203F-\\u2040' + EditDataDialog.nameStartChar;
+
+/**
+ * Matches a valid XML attribute name. Browsers' setAttribute does not reliably
+ * reject names that start with a digit (or other invalid characters), which
+ * produces invalid XML and silently corrupts the file on save, see
+ * jgraph/drawio#5647.
+ */
+EditDataDialog.attributeNamePattern = new RegExp('^[' + EditDataDialog.nameStartChar +
+	'][' + EditDataDialog.nameChar + ']*$');
+
+/**
+ * Returns true if the given string can be used as a data property (XML attribute) name.
+ */
+EditDataDialog.isValidAttributeName = function(name)
+{
+	return EditDataDialog.attributeNamePattern.test(name);
 };
 
 /**
