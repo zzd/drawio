@@ -2531,7 +2531,7 @@ Graph.exploreFromCell = function(sourceGraph, selectionCell, config)
 		container.style.background =
 			(sourceGraph.background == mxConstants.NONE ||
 			sourceGraph.background == null) ?
-			'light-dark(#ffffff,' + Editor.darkColor + ')' :
+			Editor.getDefaultPageBackgroundColor() :
 				sourceGraph.background;
 		
 		var deleteImage = document.createElement('img');
@@ -3329,7 +3329,10 @@ Graph.sanitizeNode = function(value)
 	return Graph.domPurify(value, true);
 };
 
-// Disallows external URLs in style attributes
+// Disallows external URLs in style attributes. draw.io labels only ever need
+// relative or data: references, so any absolute/external reference is blocked,
+// whichever CSS construct carries it (url(), image-set(), cross-fade(),
+// @import, @font-face src, cursor, mask-image, ...).
 Graph.isStyleAllowed = function(css)
 {
     // Normalize CSS escapes before checking
@@ -3337,37 +3340,118 @@ Graph.isStyleAllowed = function(css)
     var normalized = css.replace(/\\([0-9a-fA-F]{1,6})\s?/g, function(match, hex) {
         return String.fromCharCode(parseInt(hex, 16));
     }).replace(/\\(.)/g, '$1');
-    
-    // Match all url(...) occurrences
-    var urlRegex = /url\s*\(\s*(['"]?)(.*?)\1\s*\)/gi;
-    var match;
-    
-    while ((match = urlRegex.exec(normalized)) !== null)
+
+    // True if the given reference is neither relative nor a data: URL
+    var isExternal = function(url)
     {
-        var url = match[2].trim();
+        url = url.trim();
         var isRelative = !/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(url);
         var isDataUrl = url.toLowerCase().startsWith('data:');
-        
-        if (!isRelative && !isDataUrl)
+
+        return !isRelative && !isDataUrl;
+    };
+
+    // True if the given string would be fetched over the network. Used for
+    // bare quoted strings, where the CSS around them is not known to be a URL
+    // context, so only a reference that can actually load something counts. A
+    // colon alone does not make a string a URL, eg. [style*="color:red"],
+    // [href^="mailto:"] and content: "Note: x" are ordinary text.
+    var isRemoteRef = function(url)
+    {
+        return /^\s*(https?:|\/\/)/i.test(url);
+    };
+
+    // Checks the given form of the CSS for external references
+    var isFormAllowed = function(form)
+    {
+        var match;
+
+        // Matches all url(...) occurrences (covers unquoted and quoted
+        // arguments) and records the ranges of those that are allowed
+        var urlRegex = /url\s*\(\s*(['"]?)(.*?)\1\s*\)/gi;
+        var urlRanges = [];
+
+        while ((match = urlRegex.exec(form)) !== null)
+        {
+            if (isExternal(match[2]))
+            {
+                return false;
+            }
+
+            urlRanges.push([match.index, match.index + match[0].length]);
+        }
+
+        // True if the given range is inside a url(...) that was allowed above.
+        // Its argument has been checked as a whole, so a quoted string within
+        // it is part of that reference and not a reference of its own, eg. the
+        // raw xmlns in an inline SVG image
+        // url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'...")
+        var isInUrl = function(index, length)
+        {
+            for (var i = 0; i < urlRanges.length; i++)
+            {
+                if (index > urlRanges[i][0] && index + length <= urlRanges[i][1])
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        // External references are also passed as bare quoted strings to
+        // functions and at-rules that take a URL without a url() wrapper, eg.
+        // image-set(), -webkit-image-set(), cross-fade() and @import. Rejects
+        // any quoted string that would be fetched over the network and is not
+        // part of a url(...) that was allowed above.
+        var strRegex = /(['"])([^'"]*)\1/g;
+
+        while ((match = strRegex.exec(form)) !== null)
+        {
+            if (isRemoteRef(match[2]) && !isInUrl(match.index, match[0].length))
+            {
+                return false;
+            }
+        }
+
+        // Block @import entirely (can also load relative stylesheets)
+        if (/@import/i.test(form))
         {
             return false;
         }
-    }
-    
-    // Block @import entirely (check normalized version)
-    if (/@import/i.test(normalized))
+
+        return true;
+    };
+
+    // Removes the characters the URL parser removes before parsing. Both scheme
+    // tests above require the colon to follow the scheme characters directly, so
+    // a tab inside the scheme stops the match, the reference is read as relative
+    // and allowed, and the parser then drops the tab and fetches the absolute
+    // URL, eg. url("http<TAB>://..."). Same family as the link check in
+    // mxUtils.removeJavascriptProtocol. No real reference needs them.
+    var stripUrlWhitespace = function(form)
     {
-        return false;
-    }
-    
-    // TODO Consider also blocking:
-    // - @font-face (can load external fonts)
-    // - -webkit-mask-image, mask-image (can reference URLs)
-    // - list-style-image (can reference URLs)
-    // - cursor: url(...) (can reference URLs)
-    // - content: url(...) (can reference URLs)
-    
-    return true;
+        return form.replace(/[\t\n\r]/g, '');
+    };
+
+    var stripComments = function(form)
+    {
+        return form.replace(/\/\*[\s\S]*?\*\//g, '');
+    };
+
+    // Checks the CSS with and without comments, and each of those with and
+    // without the URL whitespace. Stripping comments shows the checks a
+    // reference that is split from its token to hide it, eg.
+    // url(/*x*/"http://...") or image-set(/*x*/"http://..." 1x). But a comment
+    // terminator inside a string is not a comment to the CSS parser, so
+    // stripping alone would delete a live declaration from the checked text,
+    // eg. content:"/*"; background:url(http://...); content:"*/". Every form
+    // must pass, so adding a form can only reject more, never allow more; the
+    // serialized output is not modified here.
+    return isFormAllowed(normalized) &&
+        isFormAllowed(stripComments(normalized)) &&
+        isFormAllowed(stripUrlWhitespace(normalized)) &&
+        isFormAllowed(stripComments(stripUrlWhitespace(normalized)));
 }
 // Allows use tag in SVG with local references only
 DOMPurify.addHook('afterSanitizeAttributes', function(node)
@@ -3380,7 +3464,13 @@ DOMPurify.addHook('afterSanitizeAttributes', function(node)
 	}
 	else if (node.nodeName.toLowerCase() == 'style')
 	{
-		if (!Graph.isStyleAllowed(node.textContent))
+		// Checks the CSS in the form it will have in the serialized output.
+		// Nodes whose text changes are removed, not rewritten, as style is a
+		// raw text element where writing back the checked value would add a
+		// literal </style> after the checks for that in DOMPurify have run
+		var css = Graph.zapGremlins(node.textContent);
+
+		if (css != node.textContent || !Graph.isStyleAllowed(css))
 		{
 			node.remove();
 		}
@@ -3390,6 +3480,13 @@ DOMPurify.addHook('afterSanitizeAttributes', function(node)
 // Disallows external URLs in style attributes
 DOMPurify.addHook('uponSanitizeAttribute', function(node, data)
 {
+	// Removes characters that are dropped when the node is serialized to XML
+	// so all checks see the value that will be written to the output. Eg. an
+	// entity for U+FFFF in java&#65535;script: is decoded while parsing the
+	// markup, hides the protocol from the checks and is then dropped by
+	// mxUtils.getXml, which turns the link into javascript: in the export.
+	data.attrValue = Graph.zapGremlins(data.attrValue);
+
 	if (data.attrName == 'style')
 	{
 		if (!Graph.isStyleAllowed(data.attrValue))
@@ -3623,6 +3720,9 @@ Graph.getCssVariables = function(style)
  */
 Graph.setSvgDataUriCssVars = function(dataUri, vars)
 {
+	// Checks the CSS in the form it will have in the serialized output
+	vars = Graph.zapGremlins(vars);
+
 	if (dataUri != null && dataUri.substring(0, 26) == 'data:image/svg+xml;base64,' &&
 		Graph.isStyleAllowed(vars))
 	{
@@ -3687,9 +3787,14 @@ Graph.isSameOrigin = function(url)
 /**
  * Prefixes all IDs, local references and CSS class names in the given
  * SVG element with the given prefix, to avoid collisions when the
- * content is inlined into another document.
+ * content is inlined into another document. The optional scope is a
+ * selector for the inlined container (eg. '#symbol-id'): style elements
+ * apply to the whole document in SVG regardless of their position, so
+ * without it a rule like path {...} from an icon leaks onto every path
+ * in the target document (overriding fill="none" on edges, as author
+ * CSS beats presentation attributes).
  */
-Graph.prefixSvgIds = function(root, prefix)
+Graph.prefixSvgIds = function(root, prefix, scope)
 {
 	var refAttrs = ['fill', 'stroke', 'filter', 'clip-path', 'mask',
 		'marker-start', 'marker-mid', 'marker-end', 'style'];
@@ -3705,8 +3810,45 @@ Graph.prefixSvgIds = function(root, prefix)
 		// that nested rules, eg. in media queries, are not supported.
 		return css.replace(/([^{}]*)(\{[^{}]*\})/g, function(match, sel, body)
 		{
-			return sel.replace(/([.#])(-?[A-Za-z_][\w-]*)/g,
-				'$1' + prefix + '$2') + prefixUrls(body);
+			sel = sel.replace(/([.#])(-?[A-Za-z_][\w-]*)/g,
+				'$1' + prefix + '$2');
+
+			// Scopes each selector to the container. A leading svg type
+			// selector maps to the scope itself (the source root becomes
+			// the container). Matching the originals under the scope in
+			// defs also styles their use-instances, like the prefixed
+			// class selectors above.
+			if (scope != null)
+			{
+				var parts = sel.split(',');
+
+				for (var i = 0; i < parts.length; i++)
+				{
+					var part = mxUtils.trim(parts[i]);
+
+					if (part == 'svg')
+					{
+						parts[i] = scope;
+					}
+					else if (part.substring(0, 4) == 'svg ' || part.substring(0, 4) == 'svg>' ||
+						part.substring(0, 4) == 'svg+' || part.substring(0, 4) == 'svg~')
+					{
+						parts[i] = scope + part.substring(3);
+					}
+					else if (part != '')
+					{
+						parts[i] = scope + ' ' + part;
+					}
+					else
+					{
+						parts[i] = part;
+					}
+				}
+
+				sel = parts.join(', ');
+			}
+
+			return sel + prefixUrls(body);
 		});
 	};
 
@@ -4086,7 +4228,7 @@ Graph.createSvgImageSymbol = function(defs, cache, src, aspect)
 								id += '-1';
 							}
 
-							Graph.prefixSvgIds(svg, id + '-');
+							Graph.prefixSvgIds(svg, id + '-', '#' + id);
 
 							var doc = defs.ownerDocument;
 							var symbol = (doc.createElementNS != null) ?
@@ -4100,13 +4242,51 @@ Graph.createSvgImageSymbol = function(defs, cache, src, aspect)
 								symbol.setAttribute('preserveAspectRatio', 'none');
 							}
 
-							// Keeps color-scheme and other styles of the root
-							var style = svg.getAttribute('style');
+							// Keeps the root's styles and inherited presentation
+							// attributes (eg. a fill="var(...)" consumed by the
+							// per-use CSS variables) on the symbol. Structural
+							// attributes are dropped: the viewport is mapped to
+							// viewBox/preserveAspectRatio above, x/y/width/height
+							// would override the use's sizing, and namespace
+							// declarations do not transfer. Local url(#...) refs
+							// and class names are prefixed like prefixSvgIds does
+							// for descendants (the root itself is not covered by
+							// its getElementsByTagName loop).
+							var skipAttrs = ['width', 'height', 'viewbox',
+								'preserveaspectratio', 'id', 'x', 'y', 'version'];
 
-							if (style != null && style != '')
+							for (var i = 0; i < svg.attributes.length; i++)
 							{
-								symbol.setAttribute('style', style.replace(
-									/url\(\s*(['"]?)#/g, 'url($1#' + id + '-'));
+								var attr = svg.attributes[i];
+								var name = attr.name.toLowerCase();
+
+								if (name.substring(0, 5) != 'xmlns' &&
+									mxUtils.indexOf(skipAttrs, name) < 0)
+								{
+									var value = attr.value;
+
+									if (name == 'class')
+									{
+										var tokens = value.split(/\s+/);
+
+										for (var j = 0; j < tokens.length; j++)
+										{
+											if (tokens[j] != '')
+											{
+												tokens[j] = id + '-' + tokens[j];
+											}
+										}
+
+										value = tokens.join(' ');
+									}
+									else if (value.indexOf('url(') >= 0)
+									{
+										value = value.replace(/url\(\s*(['"]?)#/g,
+											'url($1#' + id + '-');
+									}
+
+									symbol.setAttribute(attr.name, value);
+								}
 							}
 
 							var children = svg.childNodes;
@@ -4575,6 +4755,11 @@ Graph.shapeInsideOutlines = {
 	}
 };
 
+// Looked up by shape name from an untrusted cell style. A typeof check is not
+// enough on its own as constructor, toString and valueOf are inherited
+// functions, so the registry must not inherit from Object.prototype at all.
+Object.setPrototypeOf(Graph.shapeInsideOutlines, null);
+
 /**
  * Text flow boundaries for the SVG label conversion. Maps shape names to
  * functions that return a band function tau -> [left, right] with the
@@ -4826,6 +5011,9 @@ Graph.shapeInsideBands = {
 	}
 };
 
+// See the note on Graph.shapeInsideOutlines above.
+Object.setPrototypeOf(Graph.shapeInsideBands, null);
+
 /**
  * Returns the text flow band function for the given resolved style and
  * unscaled cell size, or null if unsupported (see shapeInsideBands).
@@ -4843,7 +5031,7 @@ Graph.prototype.getShapeInsideBands = function(style, w, h)
 			name = mxUtils.getValue(style, mxConstants.STYLE_SHAPE, null);
 		}
 
-		// typeof guards against inherited Object.prototype members
+		// The registry has a null prototype, see Graph.shapeInsideOutlines
 		var fn = Graph.shapeInsideBands[name];
 
 		if (typeof fn === 'function')
@@ -4931,8 +5119,8 @@ Graph.prototype.getShapeInsideOutline = function(style, w, h)
 			name = mxUtils.getValue(style, mxConstants.STYLE_SHAPE, null);
 		}
 
-		// typeof guards against inherited Object.prototype members
-		// for crafted shape names such as __proto__
+		// The registry has a null prototype so a crafted shape name such as
+		// __proto__ or constructor cannot resolve to an inherited member
 		var fn = Graph.shapeInsideOutlines[name];
 
 		if (typeof fn === 'function')
@@ -5332,12 +5520,17 @@ Graph.prototype.computeShapeInsideSpacer = function(value, style, outline, box, 
 		// as the outline allows.
 		var run = function(bottom)
 		{
-			var spacer = 0;
 			var result = null;
+			var probes = [];
 			var feas = null;
 			var infeas = null;
 
-			for (var i = 0; i < ((bottom) ? 8 : 5); i++)
+			// Measures the flow at the given offset in box coordinates,
+			// scores it against the alignment target and tracks the best
+			// offset, preferring fitting flows over the score except for
+			// bottom alignment within the box, where the score compares
+			// both (see below)
+			var probe = function(spacer)
 			{
 				var flow = self.measureShapeInsideFlow(value, style,
 					outline, box, spacer, w, h);
@@ -5385,9 +5578,6 @@ Graph.prototype.computeShapeInsideSpacer = function(value, style, outline, box, 
 						((flat) ? 1.5 * (btm - box.height) : null);
 				}
 
-				// Fitting flows are preferred over the score except for
-				// bottom alignment within the box, where the score
-				// compares both (see above)
 				var pref = !bottom || overflow;
 
 				if (score != null && (result == null ||
@@ -5396,15 +5586,40 @@ Graph.prototype.computeShapeInsideSpacer = function(value, style, outline, box, 
 					score < result.score)))
 				{
 					result = {spacer: spacer, score: score, fits: fits};
-
-					if (fits && score <= 1)
-					{
-						break;
-					}
 				}
 
-				var next = (bottom) ? spacer + box.height - btm :
-					spacer + (box.height - top - btm) / 2;
+				var entry = {spacer: spacer, top: top, btm: btm,
+					overflow: overflow, lines: flow.lines.length};
+				probes.push(entry);
+
+				return entry;
+			};
+
+			// Returns true if the best offset aligns the flow within a
+			// pixel, ie. iterating cannot improve it
+			var aligned = function()
+			{
+				return result != null && result.fits && result.score <= 1;
+			};
+
+			var spacer = 0;
+
+			for (var i = 0; i < ((bottom) ? 8 : 5); i++)
+			{
+				var p = probe(spacer);
+
+				if (p == null)
+				{
+					return null;
+				}
+
+				if (aligned())
+				{
+					break;
+				}
+
+				var next = (bottom) ? spacer + box.height - p.btm :
+					spacer + (box.height - p.top - p.btm) / 2;
 
 				if (bottom)
 				{
@@ -5413,7 +5628,7 @@ Graph.prototype.computeShapeInsideSpacer = function(value, style, outline, box, 
 					// found by bisection between the largest offset where
 					// the flow ends within the box and the smallest
 					// offset above it where it does not
-					if (btm <= box.height + 0.5)
+					if (p.btm <= box.height + 0.5)
 					{
 						feas = (feas == null) ? spacer :
 							Math.max(feas, spacer);
@@ -5430,7 +5645,7 @@ Graph.prototype.computeShapeInsideSpacer = function(value, style, outline, box, 
 						next = (feas + infeas) / 2;
 					}
 
-					if (!overflow)
+					if (!p.overflow)
 					{
 						next = Math.max(0, next);
 					}
@@ -5443,6 +5658,66 @@ Graph.prototype.computeShapeInsideSpacer = function(value, style, outline, box, 
 				}
 
 				spacer = next;
+			}
+
+			// The balanced offset of a given wrap is the fixed point of
+			// the iteration above, but in narrowing outlines it can lie
+			// outside the offset range that produces that wrap, so the
+			// iteration oscillates between wraps while the best offset
+			// sits at a wrap boundary, which is never a fixed point of
+			// the step. Bisects between adjacent probes with different
+			// wraps to sample the offsets around each boundary, keeping
+			// the best measured offset.
+			if (!bottom && !aligned())
+			{
+				// Same wrap = same line count and flow height
+				var sameWrap = function(p0, p1)
+				{
+					return p0.lines == p1.lines &&
+						Math.abs((p1.btm - p1.top) -
+							(p0.btm - p0.top)) <= 1;
+				};
+
+				var sorted = probes.slice().sort(function(a, b)
+				{
+					return a.spacer - b.spacer;
+				});
+
+				var n = 8;
+
+				for (var i = 0; i < sorted.length - 1 &&
+					n > 0 && !aligned(); i++)
+				{
+					var p0 = sorted[i];
+					var p1 = sorted[i + 1];
+
+					while (n > 0 && !aligned() && !sameWrap(p0, p1) &&
+						p1.spacer - p0.spacer > 1)
+					{
+						var mid = Math.round((p0.spacer + p1.spacer) / 2);
+
+						if (mid <= p0.spacer || mid >= p1.spacer)
+						{
+							break;
+						}
+
+						var pm = probe(mid);
+						n--;
+
+						if (pm == null)
+						{
+							break;
+						}
+						else if (sameWrap(p0, pm))
+						{
+							p0 = pm;
+						}
+						else
+						{
+							p1 = pm;
+						}
+					}
+				}
 			}
 
 			return result;
@@ -6033,7 +6308,7 @@ Graph.prototype.enableDiagramBackground = false;
  * 
  */
 Graph.prototype.defaultPageBackgroundColor = (urlParams['embedInline'] == '1') ?
-	'transparent' : 'light-dark(#ffffff, ' + Editor.darkColor + ')';
+	'transparent' : Editor.getDefaultPageBackgroundColor();
 
 /**
  * 
@@ -9118,6 +9393,45 @@ Graph.prototype.initLayoutManager = function()
 };
 
 /**
+ * Returns all cells below the given parent (default: model root) whose style
+ * defines a childLayout, ie. the containers the layout manager runs a layout
+ * for. Returns an empty array if there is no layout manager.
+ */
+Graph.prototype.getChildLayoutCells = function(parent)
+{
+	if (this.layoutManager == null)
+	{
+		return [];
+	}
+
+	var manager = this.layoutManager;
+
+	return this.model.filterDescendants(function(cell)
+	{
+		return manager.hasLayout(cell);
+	}, parent);
+};
+
+/**
+ * Executes the layouts of all cells returned by getChildLayoutCells using the
+ * layout manager's two-phase execution: nested child layouts run before their
+ * parent layout (so the parent sees the final child sizes), then all layouts
+ * run from top to bottom. Used to apply the layouts defined in a diagram
+ * without editing it, e.g. when a file with childLayout styles is opened via
+ * the #create hash — the manager otherwise only runs them when the model
+ * changes.
+ */
+Graph.prototype.executeAllChildLayouts = function(parent)
+{
+	var cells = this.getChildLayoutCells(parent);
+
+	if (cells.length > 0)
+	{
+		this.layoutManager.executeLayoutForCells(cells);
+	}
+};
+
+/**
  * Returns true if every prepare-based member of the given (possibly
  * composite) layout can run synchronously right now via executeSync.
  */
@@ -10824,6 +11138,15 @@ Graph.prototype.isLockedGroup = function(cell)
 };
 
 /**
+ * Returns true if the given cell has the tooltipCell=1 style.
+ */
+Graph.prototype.isTooltipCell = function(cell)
+{
+	return cell != null && mxUtils.getValue(
+		this.getCurrentCellStyle(cell), 'tooltipCell', '0') == '1';
+};
+
+/**
  * Returns true if the cell has the lockedGroup style key (either '0' or '1').
  * Used to decide whether double-clicks inside the group should route to the
  * mermaid editor.
@@ -10872,11 +11195,11 @@ Graph.prototype.isEditIconVisible = function(cell)
 /**
  * Returns the nearest ancestor (including cell) with lockedGroup=1, or null.
  */
-Graph.prototype.getLockedGroupAncestor = function(cell)
+Graph.prototype.getLockedGroupAncestor = function(cell, checkTooltipCell)
 {
 	while (cell != null)
 	{
-		if (this.isLockedGroup(cell))
+		if (this.isLockedGroup(cell) || (checkTooltipCell && this.isTooltipCell(cell)))
 		{
 			return cell;
 		}
@@ -12991,43 +13314,101 @@ Graph.prototype.zoom = function(factor, center)
 };
 
 /**
- * Function: zoomIn
- * 
- * Zooms into the graph by <zoomFactor>.
+ * Function: getZoomSteps
+ *
+ * Returns the ascending list of scales used as stops for discrete zoom
+ * steps. The stops are derived from <zoomFactor> outward from 1 so that
+ * 100% is always a stop, regardless of the current scale. All stops lie
+ * on the 5% grid (for crisp grid rendering and round percentages) with
+ * a minimum step of 5%, covering the range 5%-16000%.
  */
-Graph.prototype.zoomIn = function()
+Graph.prototype.getZoomSteps = function()
 {
-	// Switches to 1% zoom steps below 15%
-	if (this.view.scale < 0.15)
+	if (this.zoomSteps == null || this.zoomStepsFactor != this.zoomFactor)
 	{
-		this.zoom((this.view.scale + 0.01) / this.view.scale);
+		// Computed in units of 5% so all stops stay on the 5% grid,
+		// forcing a minimum step of one unit to guarantee progress
+		var steps = [1];
+		var t = 20;
+
+		while (t > 1)
+		{
+			t = Math.max(Math.min(Math.round(t / this.zoomFactor), t - 1), 1);
+			steps.splice(0, 0, t / 20);
+		}
+
+		t = 20;
+
+		while (t < 3200)
+		{
+			t = Math.min(Math.max(Math.round(t * this.zoomFactor), t + 1), 3200);
+			steps.push(t / 20);
+		}
+
+		this.zoomSteps = steps;
+		this.zoomStepsFactor = this.zoomFactor;
+	}
+
+	return this.zoomSteps;
+};
+
+/**
+ * Function: getZoomStep
+ *
+ * Returns the next stop of <getZoomSteps> for the given scale in the
+ * given direction. A scale between two stops moves to the adjacent
+ * stop, so zooming through 100% always lands on exactly 100%.
+ */
+Graph.prototype.getZoomStep = function(scale, zoomIn)
+{
+	var steps = this.getZoomSteps();
+	var eps = 0.000001;
+	var result = (zoomIn) ? steps[steps.length - 1] : steps[0];
+
+	if (zoomIn)
+	{
+		for (var i = 0; i < steps.length; i++)
+		{
+			if (steps[i] > scale + eps)
+			{
+				result = steps[i];
+				break;
+			}
+		}
 	}
 	else
 	{
-		// Uses to 5% zoom steps for better grid rendering in webkit
-		// and to avoid rounding errors for zoom steps
-		this.zoom((Math.round(this.view.scale * this.zoomFactor * 20) / 20) / this.view.scale);
+		for (var i = steps.length - 1; i >= 0; i--)
+		{
+			if (steps[i] < scale - eps)
+			{
+				result = steps[i];
+				break;
+			}
+		}
 	}
+
+	return result;
+};
+
+/**
+ * Function: zoomIn
+ *
+ * Zooms into the graph to the next stop of <getZoomSteps>.
+ */
+Graph.prototype.zoomIn = function()
+{
+	this.zoom(this.getZoomStep(this.view.scale, true) / this.view.scale);
 };
 
 /**
  * Function: zoomOut
- * 
- * Zooms out of the graph by <zoomFactor>.
+ *
+ * Zooms out of the graph to the previous stop of <getZoomSteps>.
  */
 Graph.prototype.zoomOut = function()
 {
-	// Switches to 1% zoom steps below 15%
-	if (this.view.scale <= 0.15)
-	{
-		this.zoom((this.view.scale - 0.01) / this.view.scale);
-	}
-	else
-	{
-		// Uses to 5% zoom steps for better grid rendering in webkit
-		// and to avoid rounding errors for zoom steps
-		this.zoom((Math.round(this.view.scale * (1 / this.zoomFactor) * 20) / 20) / this.view.scale);
-	}
+	this.zoom(this.getZoomStep(this.view.scale, false) / this.view.scale);
 };
 
 /**
@@ -13207,7 +13588,7 @@ Graph.prototype.getTooltipForCell = function(cell)
 		return null;
 	}
 
-	var lockedAncestor = this.getLockedGroupAncestor(cell);
+	var lockedAncestor = this.getLockedGroupAncestor(cell, true);
 
 	if (lockedAncestor != null)
 	{
@@ -15916,7 +16297,12 @@ TableLayout.prototype.execute = function(parent)
 		// bottom). The stored geometry stays at (0,0,0,0), so state.origin
 		// still points at the group's parent origin and is left untouched
 		// (children compute their state.x from it).
+		// The null check is required as this patches the mxGraphView
+		// prototype, so it also runs for plain mxGraph instances (eg. the
+		// GraphML import in mxGraphMlCodec) where isTransparentBounds is
+		// not defined.
 		if (this.graph.model.isVertex(state.cell) &&
+			this.graph.isTransparentBounds != null &&
 			this.graph.isTransparentBounds(state.cell))
 		{
 			var bounds = this.graph.getTransparentBounds(state.cell);
@@ -19546,24 +19932,29 @@ if (typeof mxVertexHandler !== 'undefined')
 		};
 		
 		/**
-		 * Overrides ungroup to check if group should be removed.
+		 * Overrides ungroup to check if group should be removed. Removes
+		 * invisible groups and transparentBounds containers: the latter
+		 * derive their rendered box from their children (the stored
+		 * geometry is a pinned origin), so without children they degrade
+		 * to a zero-sized artifact at the origin.
 		 */
 		Graph.prototype.removeCellsAfterUngroup = function(cells)
 		{
 			var cellsToRemove = [];
-			
+
 			for (var i = 0; i < cells.length; i++)
 			{
 				if (this.isCellDeletable(cells[i]) &&
-					this.isTransparentState(
-						this.view.getState(cells[i])))
+					(this.isTransparentState(
+						this.view.getState(cells[i])) ||
+					this.isTransparentBounds(cells[i])))
 				{
 					cellsToRemove.push(cells[i]);
 				}
 			}
-			
+
 			cells = cellsToRemove;
-			
+
 			mxGraph.prototype.removeCellsAfterUngroup.apply(this, arguments);
 		};
 
@@ -20961,7 +21352,7 @@ if (typeof mxVertexHandler !== 'undefined')
 							
 							if (spacing)
 							{
-								cellsSize += (horizontal) ? state.width : state.height;
+								cellsSize += (horizontal) ? state.unscaledWidth : state.unscaledHeight;
 							}
 
 							vertices.push(state);
@@ -20978,8 +21369,8 @@ if (typeof mxVertexHandler !== 'undefined')
 		
 					if (spacing)
 					{
-						cellsSize -= (horizontal? (vertices[0].width / 2 + vertices[vertices.length - 1].width / 2) :
-									(vertices[0].height / 2 + vertices[vertices.length - 1].height / 2))
+						cellsSize -= (horizontal? (vertices[0].unscaledWidth / 2 + vertices[vertices.length - 1].unscaledWidth / 2) :
+									(vertices[0].unscaledHeight / 2 + vertices[vertices.length - 1].unscaledHeight / 2))
 					}
 
 					var t = this.view.translate;
@@ -20992,7 +21383,7 @@ if (typeof mxVertexHandler !== 'undefined')
 					try
 					{
 						var dt = (max - min - cellsSize) / (vertices.length - 1);
-						var t0 = min + (spacing? (horizontal? vertices[0].width / 2 : vertices[0].height / 2) : 0);
+						var t0 = min + (spacing? (horizontal? vertices[0].unscaledWidth / 2 : vertices[0].unscaledHeight / 2) : 0);
 						
 						for (var i = 1; i < vertices.length - 1; i++)
 						{
@@ -21042,7 +21433,7 @@ if (typeof mxVertexHandler !== 'undefined')
 
 							if (spacing)
 							{
-								t0 += horizontal? vertices[i].width : vertices[i].height;
+								t0 += horizontal? vertices[i].unscaledWidth : vertices[i].unscaledHeight;
 							}
 						}
 					}
@@ -21604,8 +21995,13 @@ if (typeof mxVertexHandler !== 'undefined')
 				imgExport.getLinkForCellState = function(state, canvas)
 				{
 					var result = state.view.graph.getAbsoluteUrl(imgExportGetLinkForCellState.apply(this, arguments));
-					
-					return (result != null && !state.view.graph.isCustomLink(result)) ? result : null;
+
+					// Checks the link after getAbsoluteUrl as baseUrl is prepended to
+					// relative links and can complete a scheme the link did not contain.
+					// The export writes the link into the file, where nothing can check
+					// it at display time.
+					return (result != null && !state.view.graph.isCustomLink(result)) ?
+						Graph.sanitizeLink(result) : null;
 				};
 				
 				imgExport.getLinkTargetForCellState = function(state, canvas)
@@ -22934,7 +23330,18 @@ if (typeof mxVertexHandler !== 'undefined')
 			
 			var a = document.createElement('a');
 			a.setAttribute('rel', this.linkRelation);
-			a.setAttribute('href', this.getAbsoluteUrl(link));
+
+			// Checks the link after getAbsoluteUrl as baseUrl is prepended to
+			// relative links and can complete a scheme the link did not contain.
+			// The href is not written for unsafe links so the hint is inert, the
+			// click handler for custom links is added below and does not use it.
+			var href = Graph.sanitizeLink(this.getAbsoluteUrl(link));
+
+			if (href != null)
+			{
+				a.setAttribute('href', href);
+			}
+
 			a.setAttribute('title', short((this.isCustomLink(link)) ?
 				this.getLinkTitle(link) : link, 80));
 			
@@ -26450,23 +26857,68 @@ if (typeof mxVertexHandler !== 'undefined')
 				{
 					if (this.isSpaceEvent(me))
 					{
+						// Applies the space to the chain of containers under the start
+						// point by moving their children beyond the point and changing
+						// the container size by the drag distance (jgraph/drawio#5544)
+						var parents = [this.graph.getDefaultParent()];
+						var container = this.graph.getCellAt(x0, y0, parents[0],
+							true, false, mxUtils.bind(this, function(state)
+						{
+							return !this.graph.isContainer(state.cell) ||
+								this.graph.isCellLocked(state.cell) ||
+								this.graph.isCellCollapsed(state.cell) ||
+								this.graph.isTable(state.cell) ||
+								this.graph.isTableRow(state.cell) ||
+								this.graph.isTableCell(state.cell);
+						}));
+
+						if (container != null)
+						{
+							var temp = [];
+
+							while (container != parents[0])
+							{
+								temp.unshift(container);
+								container = this.graph.model.getParent(container);
+							}
+
+							parents = parents.concat(temp);
+						}
+
 						this.graph.model.beginUpdate();
 						try
 						{
-							var cells = this.graph.getCellsBeyond(x0, y0, this.graph.getDefaultParent(), true, true);
-	
-							for (var i = 0; i < cells.length; i++)
+							for (var j = 0; j < parents.length; j++)
 							{
-								if (this.graph.isCellMovable(cells[i]))
+								var cells = this.graph.getCellsBeyond(x0, y0, parents[j], true, true);
+
+								for (var i = 0; i < cells.length; i++)
 								{
-									var tmp = this.graph.view.getState(cells[i]);
-									var geo = this.graph.getCellGeometry(cells[i]);
-									
-									if (tmp != null && geo != null)
+									if (this.graph.isCellMovable(cells[i]) &&
+										mxUtils.indexOf(parents, cells[i]) < 0)
+									{
+										var tmp = this.graph.view.getState(cells[i]);
+										var geo = this.graph.getCellGeometry(cells[i]);
+
+										if (tmp != null && geo != null)
+										{
+											geo = geo.clone();
+											geo.translate(dx, dy);
+											this.graph.model.setGeometry(cells[i], geo);
+										}
+									}
+								}
+
+								if (j > 0 && this.graph.isCellResizable(parents[j]))
+								{
+									var geo = this.graph.getCellGeometry(parents[j]);
+
+									if (geo != null)
 									{
 										geo = geo.clone();
-										geo.translate(dx, dy);
-										this.graph.model.setGeometry(cells[i], geo);
+										geo.width = Math.max(0, geo.width + dx);
+										geo.height = Math.max(0, geo.height + dy);
+										this.graph.model.setGeometry(parents[j], geo);
 									}
 								}
 							}
@@ -26803,23 +27255,31 @@ if (typeof mxVertexHandler !== 'undefined')
 			return mxGraphHandlerGetBoundingBox.apply(this, arguments);
 		};
 
-		// Ignores child cells with part style as guides
+		// Ignores child cells with part style and cells outside of the
+		// visible area plus half a viewport of margin in each direction
+		// as guides (guides for such cells cannot be seen)
 		var mxGraphHandlerGetGuideStates = mxGraphHandler.prototype.getGuideStates;
-		
+
 		mxGraphHandler.prototype.getGuideStates = function()
 		{
 			var states = mxGraphHandlerGetGuideStates.apply(this, arguments);
+			var c = this.graph.container;
+			var area = (c != null) ? new mxRectangle(
+				c.scrollLeft - this.graph.panDx - c.clientWidth / 2,
+				c.scrollTop - this.graph.panDy - c.clientHeight / 2,
+				2 * c.clientWidth, 2 * c.clientHeight) : null;
 			var result = [];
-			
+
 			// NOTE: Could do via isStateIgnored hook
 			for (var i = 0; i < states.length; i++)
 			{
-				if (mxUtils.getValue(states[i].style, 'part', '0') != '1')
+				if (mxUtils.getValue(states[i].style, 'part', '0') != '1' &&
+					(area == null || mxUtils.intersects(area, states[i])))
 				{
 					result.push(states[i]);
 				}
 			}
-			
+
 			return result;
 		};
 
@@ -27064,7 +27524,722 @@ if (typeof mxVertexHandler !== 'undefined')
 			// Resets state after gesture
 			this.blockDelayedSelection = null;
 		};
-		
+
+		/**
+		 * Size guides. While resizing, the width and height of the vertex are
+		 * snapped to the width and height of the other vertices in the graph
+		 * (the equivalent of the position guides in mxGuide for moving cells)
+		 * and the matching size is marked with a guide on the resized shape
+		 * and on the shape that defines the size. Where no size is snapped,
+		 * the moving edges are snapped to the edges and centers of the other
+		 * vertices instead and the match is marked with a line along the
+		 * aligned edge (see snapEdges).
+		 *
+		 * Set via the enableSizeGuides configuration option.
+		 */
+		mxVertexHandler.prototype.sizeGuidesEnabled = true;
+
+		/**
+		 * Returns true if size guides are enabled. Uses the same switch as the
+		 * position guides so View, Guides turns off both.
+		 */
+		mxVertexHandler.prototype.isSizeGuidesEnabled = function()
+		{
+			return this.sizeGuidesEnabled && (this.graph.graphHandler == null ||
+				this.graph.graphHandler.guidesEnabled);
+		};
+
+		/**
+		 * Returns true if size guides are enabled for the given native event.
+		 * Alt disables the guides as in mxGuide.isEnabledForEvent.
+		 */
+		mxVertexHandler.prototype.isSizeGuidesEnabledForEvent = function(evt)
+		{
+			return this.isSizeGuidesEnabled() && !mxEvent.isAltDown(evt);
+		};
+
+		/**
+		 * Returns the tolerance for the size guides in unscaled units. Uses the
+		 * same values as mxGuide.getGuideTolerance for the position guides.
+		 */
+		mxVertexHandler.prototype.getSizeGuideTolerance = function(gridEnabled)
+		{
+			return (gridEnabled && this.graph.gridEnabled) ? this.graph.gridSize / 2 : 2;
+		};
+
+		/**
+		 * Returns the sizes that are used for snapping the size of the resized
+		 * vertex as an array of {state, width, height} with the sizes given in
+		 * unscaled units and sorted by the distance to the resized vertex, so
+		 * the closest shape wins if multiple shapes have the same size. States
+		 * with a quadrant rotation use their visible bounds (see
+		 * mxGraphHandler.getGuideState) and the sizes are swapped if the
+		 * resized vertex itself has a quadrant rotation, so that the sizes are
+		 * compared along the same screen axes as its unrotated geometry.
+		 *
+		 * Ignores selected cells, descendants of the resized cell and cells
+		 * outside the visible area plus one half viewport of margin (guides for
+		 * shapes that are not on the screen cannot be seen).
+		 */
+		mxVertexHandler.prototype.getSizeGuideStates = function()
+		{
+			var graph = this.graph;
+			var model = graph.getModel();
+			var view = graph.view;
+			var scale = view.scale;
+			var cell = this.state.cell;
+			var c = graph.container;
+			var area = (c != null) ? new mxRectangle(
+				c.scrollLeft - graph.panDx - c.clientWidth / 2,
+				c.scrollTop - graph.panDy - c.clientHeight / 2,
+				2 * c.clientWidth, 2 * c.clientHeight) : null;
+
+			var filter = function(temp)
+			{
+				return temp != cell && model.isVertex(temp) &&
+					!graph.isCellSelected(temp) && !model.isAncestor(cell, temp) &&
+					model.getGeometry(temp) != null &&
+					!model.getGeometry(temp).relative &&
+					view.getState(temp) != null;
+			};
+
+			var states = view.getCellStates(model.filterDescendants(
+				filter, graph.getDefaultParent()));
+			var cx = this.state.getCenterX();
+			var cy = this.state.getCenterY();
+			var swap = mxUtils.mod(mxUtils.getNumber(this.state.style,
+				mxConstants.STYLE_ROTATION, 0), 360) % 180 == 90;
+			var result = [];
+
+			for (var i = 0; i < states.length; i++)
+			{
+				var state = graph.graphHandler.getGuideState(states[i]);
+
+				if (state.width > 0 && state.height > 0 &&
+					(area == null || mxUtils.intersects(area, state)))
+				{
+					var dx = state.getCenterX() - cx;
+					var dy = state.getCenterY() - cy;
+
+					result.push({state: state,
+						width: ((swap) ? state.height : state.width) / scale,
+						height: ((swap) ? state.width : state.height) / scale,
+						dist: dx * dx + dy * dy});
+				}
+			}
+
+			result.sort(function(a, b)
+			{
+				return a.dist - b.dist;
+			});
+
+			return result;
+		};
+
+		/**
+		 * Returns {state, value, diff} for the state in sizeGuideStates whose
+		 * width (horizontal is true) or height is closest to the given size
+		 * within the given tolerance, or null if there is no such state. The
+		 * given size, the returned value and the tolerance are all in the
+		 * coordinate system of the given scale (see union).
+		 */
+		mxVertexHandler.prototype.getSizeGuideMatch = function(size, horizontal, tol, scale)
+		{
+			var result = null;
+
+			for (var i = 0; i < this.sizeGuideStates.length; i++)
+			{
+				var entry = this.sizeGuideStates[i];
+				var value = ((horizontal) ? entry.width : entry.height) * scale;
+				var diff = Math.abs(value - size);
+
+				// States are sorted by distance so the closest state wins for equal diffs
+				if (value >= 1 && diff <= tol && (result == null || diff < result.diff))
+				{
+					result = {state: entry.state, value: value, diff: diff};
+				}
+			}
+
+			return result;
+		};
+
+		/**
+		 * Snaps the width and height of the given result of union to the size
+		 * of the closest matching state in sizeGuideStates and stores the
+		 * matched states in sizeGuideWidthState and sizeGuideHeightState for
+		 * redrawSizeGuides. The edge of the result that is not being dragged
+		 * must not move, so the position is adjusted for the new size. If that
+		 * edge does not match the original bounds the shape has been flipped
+		 * over during the gesture and no snapping takes place.
+		 */
+		mxVertexHandler.prototype.snapSize = function(result, bounds, index,
+			gridEnabled, scale, constrained, centered)
+		{
+			var tol = this.getSizeGuideTolerance(gridEnabled) * scale;
+			var geo = this.graph.getCellGeometry(this.state.cell);
+			var aspect = (geo != null && geo.width > 0 && geo.height > 0) ?
+				geo.width / geo.height : null;
+
+			// Aspect ratio is preserved so only one size can be snapped
+			if (constrained && aspect == null)
+			{
+				return;
+			}
+
+			// Left and right handles change the width, top and bottom handles
+			// change the height. With a constrained resize both sizes change.
+			var matchW = (constrained || (index != 1 && index != 6)) ?
+				this.getSizeGuideMatch(result.width, true, tol, scale) : null;
+			var matchH = (constrained || (index != 3 && index != 4)) ?
+				this.getSizeGuideMatch(result.height, false, tol, scale) : null;
+
+			// Uses the closer match and derives the other size from the aspect ratio
+			if (constrained)
+			{
+				if (matchW != null && (matchH == null || matchW.diff <= matchH.diff))
+				{
+					matchH = null;
+				}
+				else
+				{
+					matchW = null;
+				}
+			}
+
+			if (matchW == null && matchH == null)
+			{
+				return;
+			}
+
+			var width = (matchW != null) ? matchW.value :
+				((constrained) ? matchH.value * aspect : null);
+			var height = (matchH != null) ? matchH.value :
+				((constrained) ? matchW.value / aspect : null);
+			var x = result.x;
+			var y = result.y;
+
+			if (width != null)
+			{
+				if (centered)
+				{
+					x = result.x + (result.width - width) / 2;
+				}
+				else if (index == 0 || index == 3 || index == 5 /* Left */)
+				{
+					// Right edge is fixed
+					if (Math.abs(result.x + result.width - bounds.x - bounds.width) > 0.01)
+					{
+						width = null;
+					}
+					else
+					{
+						x = result.x + result.width - width;
+					}
+				}
+				// Left edge is fixed
+				else if (Math.abs(result.x - bounds.x) > 0.01)
+				{
+					width = null;
+				}
+			}
+
+			if (height != null)
+			{
+				if (centered)
+				{
+					y = result.y + (result.height - height) / 2;
+				}
+				else if (index < 3 /* Top Row */)
+				{
+					// Bottom edge is fixed
+					if (Math.abs(result.y + result.height - bounds.y - bounds.height) > 0.01)
+					{
+						height = null;
+					}
+					else
+					{
+						y = result.y + result.height - height;
+					}
+				}
+				// Top edge is fixed
+				else if (Math.abs(result.y - bounds.y) > 0.01)
+				{
+					height = null;
+				}
+			}
+
+			// Keeps the minimum size for the children of the resized cell (see union)
+			if (this.minBounds != null)
+			{
+				if (width != null && width < this.minBounds.x * scale + this.minBounds.width *
+					scale + Math.max(0, this.x0 * scale - x))
+				{
+					width = null;
+				}
+
+				if (height != null && height < this.minBounds.y * scale + this.minBounds.height *
+					scale + Math.max(0, this.y0 * scale - y))
+				{
+					height = null;
+				}
+			}
+
+			// Both sizes are coupled via the aspect ratio so they are applied together
+			if (constrained && (width == null || height == null))
+			{
+				return;
+			}
+
+			if (width != null)
+			{
+				result.x = x;
+				result.width = width;
+				this.sizeGuideWidthState = (matchW != null) ? matchW.state : null;
+			}
+
+			if (height != null)
+			{
+				result.y = y;
+				result.height = height;
+				this.sizeGuideHeightState = (matchH != null) ? matchH.state : null;
+			}
+		};
+
+		/**
+		 * Returns {state, value, diff} for the state in sizeGuideStates with
+		 * the edge or center closest to the given x- (horizontal is true) or
+		 * y-coordinate within the given tolerance, or null if there is no
+		 * such state. The given and returned values are in screen coordinates
+		 * and the tolerance is in screen pixels.
+		 */
+		mxVertexHandler.prototype.getEdgeGuideMatch = function(value, horizontal, tol)
+		{
+			var result = null;
+
+			for (var i = 0; i < this.sizeGuideStates.length; i++)
+			{
+				var state = this.sizeGuideStates[i].state;
+				var values = (horizontal) ?
+					[state.x, state.getCenterX(), state.x + state.width] :
+					[state.y, state.getCenterY(), state.y + state.height];
+
+				for (var j = 0; j < values.length; j++)
+				{
+					var diff = Math.abs(values[j] - value);
+
+					// States are sorted by distance so the closest state wins for equal diffs
+					if (diff <= tol && (result == null || diff < result.diff))
+					{
+						result = {state: state, value: values[j], diff: diff};
+					}
+				}
+			}
+
+			return result;
+		};
+
+		/**
+		 * Returns true if the given size is allowed for the resized cell at
+		 * the given position, ie. at least 1 and keeps the minimum size for
+		 * the children of the resized cell (see union).
+		 */
+		mxVertexHandler.prototype.isEdgeGuideSizeAllowed = function(size, pos, horizontal, scale)
+		{
+			if (size < 1)
+			{
+				return false;
+			}
+
+			if (this.minBounds != null)
+			{
+				if (horizontal)
+				{
+					return size >= this.minBounds.x * scale + this.minBounds.width *
+						scale + Math.max(0, this.x0 * scale - pos);
+				}
+				else
+				{
+					return size >= this.minBounds.y * scale + this.minBounds.height *
+						scale + Math.max(0, this.y0 * scale - pos);
+				}
+			}
+
+			return true;
+		};
+
+		/**
+		 * Snaps the moving edges of the given result of union to the edges
+		 * and centers of the states in sizeGuideStates and stores the matches
+		 * in edgeGuideXMatch and edgeGuideYMatch for redrawSizeGuides. Axes
+		 * where the size was snapped (see snapSize) or where the fixed edge
+		 * has moved (flipped gesture) are ignored. The matches are in screen
+		 * coordinates while the result is in the unscaled geometry space of
+		 * the resized cell, so rotated cells and relative geometries are not
+		 * supported (their axes do not map to the screen axes). Disabled
+		 * together with the position guides for moving cells (see mxGuide).
+		 */
+		mxVertexHandler.prototype.snapEdges = function(result, bounds, index, gridEnabled, scale)
+		{
+			var geo = this.graph.getCellGeometry(this.state.cell);
+			var alpha = mxUtils.toRadians(this.state.style[mxConstants.STYLE_ROTATION] || '0');
+
+			if (alpha != 0 || geo == null || geo.relative || !mxGuide.prototype.positionEnabled)
+			{
+				return;
+			}
+
+			var view = this.graph.view;
+			// Same origin as the bounds for the live preview (see resizeVertex)
+			var ox = (this.parentState != null) ? this.parentState.x : view.translate.x * view.scale;
+			var oy = (this.parentState != null) ? this.parentState.y : view.translate.y * view.scale;
+			// Minimum of 2px keeps the guides usable at low zoom levels (see mxGuide)
+			var tol = Math.max(2, this.getSizeGuideTolerance(gridEnabled) * view.scale);
+
+			if (this.sizeGuideWidthState == null &&
+				(index == 0 || index == 3 || index == 5 /* Left */))
+			{
+				// Right edge must not have moved (see snapSize)
+				if (Math.abs(result.x + result.width - bounds.x - bounds.width) <= 0.01)
+				{
+					var match = this.getEdgeGuideMatch(ox + result.x * view.scale, true, tol);
+
+					if (match != null)
+					{
+						var x = (match.value - ox) / view.scale;
+						var width = result.x + result.width - x;
+
+						if (this.isEdgeGuideSizeAllowed(width, x, true, scale))
+						{
+							result.width = width;
+							result.x = x;
+							this.edgeGuideXMatch = match;
+						}
+					}
+				}
+			}
+			else if (this.sizeGuideWidthState == null &&
+				(index == 2 || index == 4 || index == 7 /* Right */))
+			{
+				// Left edge must not have moved
+				if (Math.abs(result.x - bounds.x) <= 0.01)
+				{
+					var match = this.getEdgeGuideMatch(ox +
+						(result.x + result.width) * view.scale, true, tol);
+
+					if (match != null)
+					{
+						var width = (match.value - ox) / view.scale - result.x;
+
+						if (this.isEdgeGuideSizeAllowed(width, result.x, true, scale))
+						{
+							result.width = width;
+							this.edgeGuideXMatch = match;
+						}
+					}
+				}
+			}
+
+			if (this.sizeGuideHeightState == null && index < 3 /* Top */)
+			{
+				// Bottom edge must not have moved
+				if (Math.abs(result.y + result.height - bounds.y - bounds.height) <= 0.01)
+				{
+					var match = this.getEdgeGuideMatch(oy + result.y * view.scale, false, tol);
+
+					if (match != null)
+					{
+						var y = (match.value - oy) / view.scale;
+						var height = result.y + result.height - y;
+
+						if (this.isEdgeGuideSizeAllowed(height, y, false, scale))
+						{
+							result.height = height;
+							result.y = y;
+							this.edgeGuideYMatch = match;
+						}
+					}
+				}
+			}
+			else if (this.sizeGuideHeightState == null && index > 4 /* Bottom */)
+			{
+				// Top edge must not have moved
+				if (Math.abs(result.y - bounds.y) <= 0.01)
+				{
+					var match = this.getEdgeGuideMatch(oy +
+						(result.y + result.height) * view.scale, false, tol);
+
+					if (match != null)
+					{
+						var height = (match.value - oy) / view.scale - result.y;
+
+						if (this.isEdgeGuideSizeAllowed(height, result.y, false, scale))
+						{
+							result.height = height;
+							this.edgeGuideYMatch = match;
+						}
+					}
+				}
+			}
+		};
+
+		/**
+		 * Creates or updates the given shape for a guide line between the
+		 * given points along the aligned edge.
+		 */
+		mxVertexHandler.prototype.createEdgeGuideShape = function(shape, p1, p2)
+		{
+			var points = [p1, p2];
+
+			if (shape == null)
+			{
+				shape = new mxPolyline(points, mxConstants.GUIDE_COLOR,
+					mxConstants.GUIDE_STROKEWIDTH);
+				shape.dialect = mxConstants.DIALECT_SVG;
+				shape.pointerEvents = false;
+				shape.init(this.graph.getView().getOverlayPane());
+			}
+			else
+			{
+				shape.points = points;
+			}
+
+			shape.node.style.visibility = 'visible';
+			shape.redraw();
+
+			return shape;
+		};
+
+		/**
+		 * Creates or updates the given shape for a guide that marks the width
+		 * (horizontal is true) or height of the given rectangle with a line
+		 * through the center of the rectangle and a mark at each end. The line
+		 * is rotated by the given angle in radians around the center.
+		 */
+		mxVertexHandler.prototype.createSizeGuideShape = function(shape, rect, alpha, horizontal)
+		{
+			var size = 5 * this.graph.view.scale;
+			var cx = rect.getCenterX();
+			var cy = rect.getCenterY();
+			var p1 = (horizontal) ? new mxPoint(rect.x, cy) : new mxPoint(cx, rect.y);
+			var p2 = (horizontal) ? new mxPoint(rect.x + rect.width, cy) :
+				new mxPoint(cx, rect.y + rect.height);
+			var dx = (horizontal) ? 0 : size;
+			var dy = (horizontal) ? size : 0;
+
+			var points = [new mxPoint(p1.x - dx, p1.y - dy), new mxPoint(p1.x + dx, p1.y + dy),
+				p1, p2, new mxPoint(p2.x - dx, p2.y - dy), new mxPoint(p2.x + dx, p2.y + dy)];
+
+			if (alpha != 0)
+			{
+				var cos = Math.cos(alpha);
+				var sin = Math.sin(alpha);
+				var c = new mxPoint(cx, cy);
+
+				for (var i = 0; i < points.length; i++)
+				{
+					points[i] = mxUtils.getRotatedPoint(points[i], cos, sin, c);
+				}
+			}
+
+			if (shape == null)
+			{
+				shape = new mxPolyline(points, mxConstants.GUIDE_COLOR,
+					mxConstants.GUIDE_STROKEWIDTH);
+				shape.dialect = mxConstants.DIALECT_SVG;
+				shape.pointerEvents = false;
+				shape.init(this.graph.getView().getOverlayPane());
+			}
+			else
+			{
+				shape.points = points;
+			}
+
+			shape.node.style.visibility = 'visible';
+			shape.redraw();
+
+			return shape;
+		};
+
+		/**
+		 * Draws the guides for the currently matched sizes on the resized shape
+		 * and on the matched shapes. Shapes are recycled between mouse moves.
+		 * Guides on matched states with a quadrant rotation are drawn without
+		 * the rotation, as those states use their visible bounds, and along the
+		 * other axis if the sizes were swapped for a quadrant rotation of the
+		 * resized cell (see getSizeGuideStates).
+		 */
+		mxVertexHandler.prototype.redrawSizeGuides = function()
+		{
+			this.sizeGuideShapes = (this.sizeGuideShapes != null) ? this.sizeGuideShapes : [];
+			var count = 0;
+
+			if (this.state != null && this.bounds != null)
+			{
+				var alpha = mxUtils.toRadians(this.state.style[mxConstants.STYLE_ROTATION] || '0');
+				var swap = mxUtils.mod(mxUtils.getNumber(this.state.style,
+					mxConstants.STYLE_ROTATION, 0), 360) % 180 == 90;
+
+				var stateAngle = function(state)
+				{
+					var rot = mxUtils.mod(mxUtils.getNumber(state.style,
+						mxConstants.STYLE_ROTATION, 0), 360);
+
+					return (rot % 180 == 90) ? 0 : mxUtils.toRadians(rot);
+				};
+
+				var addGuide = mxUtils.bind(this, function(rect, angle, horizontal)
+				{
+					this.sizeGuideShapes[count] = this.createSizeGuideShape(
+						this.sizeGuideShapes[count], rect, angle, horizontal);
+					count++;
+				});
+
+				var addEdgeGuide = mxUtils.bind(this, function(p1, p2)
+				{
+					this.sizeGuideShapes[count] = this.createEdgeGuideShape(
+						this.sizeGuideShapes[count], p1, p2);
+					count++;
+				});
+
+				if (this.sizeGuideWidthState != null)
+				{
+					addGuide(this.bounds, alpha, true);
+					addGuide(this.sizeGuideWidthState, stateAngle(
+						this.sizeGuideWidthState), !swap);
+				}
+
+				if (this.sizeGuideHeightState != null)
+				{
+					addGuide(this.bounds, alpha, false);
+					addGuide(this.sizeGuideHeightState, stateAngle(
+						this.sizeGuideHeightState), swap);
+				}
+
+				if (this.edgeGuideXMatch != null)
+				{
+					var other = this.edgeGuideXMatch.state;
+
+					addEdgeGuide(new mxPoint(this.edgeGuideXMatch.value,
+						Math.min(this.bounds.y, other.y)),
+						new mxPoint(this.edgeGuideXMatch.value,
+						Math.max(this.bounds.y + this.bounds.height, other.y + other.height)));
+				}
+
+				if (this.edgeGuideYMatch != null)
+				{
+					var other = this.edgeGuideYMatch.state;
+
+					addEdgeGuide(new mxPoint(Math.min(this.bounds.x, other.x),
+						this.edgeGuideYMatch.value),
+						new mxPoint(Math.max(this.bounds.x + this.bounds.width, other.x + other.width),
+						this.edgeGuideYMatch.value));
+				}
+			}
+
+			for (var i = count; i < this.sizeGuideShapes.length; i++)
+			{
+				if (this.sizeGuideShapes[i] != null)
+				{
+					this.sizeGuideShapes[i].node.style.visibility = 'hidden';
+				}
+			}
+		};
+
+		/**
+		 * Destroys the shapes and resets the state of the size guides.
+		 */
+		mxVertexHandler.prototype.destroySizeGuides = function()
+		{
+			if (this.sizeGuideShapes != null)
+			{
+				for (var i = 0; i < this.sizeGuideShapes.length; i++)
+				{
+					if (this.sizeGuideShapes[i] != null)
+					{
+						this.sizeGuideShapes[i].destroy();
+					}
+				}
+
+				this.sizeGuideShapes = null;
+			}
+
+			this.sizeGuideStates = null;
+			this.sizeGuideWidthState = null;
+			this.sizeGuideHeightState = null;
+			this.edgeGuideXMatch = null;
+			this.edgeGuideYMatch = null;
+			this.sizeGuidesActive = null;
+		};
+
+		// Collects the sizes for the guides at the start of a resize gesture
+		var vertexHandlerStartSizeGuides = mxVertexHandler.prototype.start;
+
+		mxVertexHandler.prototype.start = function(x, y, index)
+		{
+			vertexHandlerStartSizeGuides.apply(this, arguments);
+
+			this.sizeGuideStates = (this.state != null && index >= 0 &&
+				this.isSizeGuidesEnabled()) ? this.getSizeGuideStates() : null;
+		};
+
+		// Passes the state of the modifier keys to union and draws the guides
+		// after the bounds for the live preview have been updated
+		var vertexHandlerResizeVertex = mxVertexHandler.prototype.resizeVertex;
+
+		mxVertexHandler.prototype.resizeVertex = function(me)
+		{
+			this.sizeGuidesActive = this.isSizeGuidesEnabledForEvent(me.getEvent());
+			vertexHandlerResizeVertex.apply(this, arguments);
+			this.redrawSizeGuides();
+		};
+
+		// Snaps the resulting size to the size of the other shapes
+		var vertexHandlerUnionSizeGuides = mxVertexHandler.prototype.union;
+
+		mxVertexHandler.prototype.union = function(bounds, dx, dy, index,
+			gridEnabled, scale, tr, constrained, centered)
+		{
+			var result = vertexHandlerUnionSizeGuides.apply(this, arguments);
+
+			this.sizeGuideWidthState = null;
+			this.sizeGuideHeightState = null;
+			this.edgeGuideXMatch = null;
+			this.edgeGuideYMatch = null;
+
+			if (this.sizeGuidesActive && !this.singleSizer && index >= 0 &&
+				this.sizeGuideStates != null && this.sizeGuideStates.length > 0)
+			{
+				this.snapSize(result, bounds, index, gridEnabled,
+					scale, constrained, centered);
+
+				// Edges are aligned where the size was not snapped
+				if (!constrained && !centered)
+				{
+					this.snapEdges(result, bounds, index, gridEnabled, scale);
+				}
+			}
+
+			return result;
+		};
+
+		var vertexHandlerResetSizeGuides = mxVertexHandler.prototype.reset;
+
+		mxVertexHandler.prototype.reset = function()
+		{
+			vertexHandlerResetSizeGuides.apply(this, arguments);
+
+			this.destroySizeGuides();
+		};
+
+		var vertexHandlerDestroySizeGuides = mxVertexHandler.prototype.destroy;
+
+		mxVertexHandler.prototype.destroy = function()
+		{
+			vertexHandlerDestroySizeGuides.apply(this, arguments);
+
+			this.destroySizeGuides();
+		};
+
 		mxVertexHandler.prototype.updateLinkHint = function(link, links)
 		{
 			try

@@ -43,7 +43,6 @@ window.DRAWIO_GITHUB_API_URL = window.DRAWIO_GITHUB_API_URL || 'https://api.gith
 window.DRAWIO_GITHUB_ID = window.DRAWIO_GITHUB_ID || 'Iv1.98d62f0431e40543';
 window.DRAWIO_DROPBOX_ID = window.DRAWIO_DROPBOX_ID || 'jg02tc0onwmhlgm';
 window.SAVE_URL = window.SAVE_URL || window.DRAWIO_SERVER_URL + 'save';
-window.OPEN_URL = window.OPEN_URL || window.DRAWIO_SERVER_URL + 'import';
 window.PROXY_URL = window.PROXY_URL || window.DRAWIO_SERVER_URL + 'proxy';
 window.DRAWIO_VIEWER_URL = window.DRAWIO_VIEWER_URL || null;
 window.NOTIFICATIONS_URL = window.NOTIFICATIONS_URL || ((/.*\.draw\.io$/.test(window.location.hostname)) ||
@@ -51,6 +50,12 @@ window.NOTIFICATIONS_URL = window.NOTIFICATIONS_URL || ((/.*\.draw\.io$/.test(wi
 	window.DRAWIO_SERVER_URL + 'notifications' : null);
 window.RT_WEBSOCKET_URL = window.RT_WEBSOCKET_URL || ('wss://' + ((window.location.hostname == 'test.draw.io') ?
 	'app.diagrams.net' : window.location.hostname) + '/rt');
+// Maximum AI prompt length on the Atlassian deployments (applied to
+// Editor.maxPublicPromptLength on ac.draw.io / aj.draw.io / Forge CDN hosts,
+// 0 disables the limit); must not exceed the generate/v3 worker's
+// MAX_PROMPT_LENGTH_ATLASSIAN, which enforces the server-side cap
+window.DRAWIO_ATLASSIAN_PROMPT_LENGTH = (window.DRAWIO_ATLASSIAN_PROMPT_LENGTH != null) ?
+	window.DRAWIO_ATLASSIAN_PROMPT_LENGTH : 100000;
 
 // Paths and files
 window.SHAPES_PATH = window.SHAPES_PATH || 'shapes';

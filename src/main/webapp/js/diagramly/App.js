@@ -741,18 +741,24 @@ App.isSameDomain = function(link)
 	var a = document.createElement('a');
 	a.href = link;
 
-	return a.protocol === window.location.protocol ||
+	return a.protocol === window.location.protocol &&
 		a.host === window.location.host;
 };
 
 /**
- * Returns true if the given relative path is a built-in plugin.
+ * Returns true if the given relative path is a built-in plugin. Accepts the
+ * path as stored in App.pluginRegistry and the leading slash form used before
+ * the registry was made relative, as resolved against PLUGINS_BASE_PATH by
+ * the caller. Both forms are built from the registry so that the given path
+ * is only ever compared, never rewritten.
  */
 App.isBuiltInPlugin = function(path)
 {
 	for (var key in App.pluginRegistry)
 	{
-		if (App.pluginRegistry[key] == path)
+		var plugin = App.pluginRegistry[key];
+
+		if (plugin === path || PLUGINS_BASE_PATH + '/' + plugin === path)
 		{
 			return true;
 		}
@@ -794,7 +800,7 @@ App.main = function(callback, createUi)
 		if (mxIsElectron && typeof electron === 'undefined')
 		{
 			alert('Runtime Environment not found.');
-			document.body.innerHTML = '<div style="margin-top:10%;text-align:center;">' +
+			document.body.innerHTML = '<div style="grid-column:1 / -1;grid-row:1 / -1;margin-top:10%;text-align:center;">' +
 				'<img src="mxgraph/images/warning.png" align="top" style="padding-right:6px;"/>' +
 				'Runtime Environment not found.</div>';
 			
@@ -847,7 +853,7 @@ App.main = function(callback, createUi)
 			'ac.draw.io' === window.location.hostname ||
 			'aj.draw.io' === window.location.hostname))
 		{
-			document.body.innerHTML = '<div style="margin-top:10%;text-align:center;">Stand-alone mode not allowed for this domain.</div>';
+			document.body.innerHTML = '<div style="grid-column:1 / -1;grid-row:1 / -1;margin-top:10%;text-align:center;">Stand-alone mode not allowed for this domain.</div>';
 			
 			return;
 		}
@@ -1089,6 +1095,50 @@ App.main = function(callback, createUi)
 				// Adds bundle text to resources
 				mxResources.parse(xhr[0].getText());
 				
+				// Adds the bundle to the offline cache: language files are
+				// cached on first use instead of being precached, and on the
+				// very first visit this page is not yet controlled by the
+				// service worker, so the request above bypassed it. In dev
+				// mode also fills the missing dev sources - an offline dev
+				// reload needs the complete set, not just the files this
+				// session finished caching (see GenerateServiceWorker)
+				try
+				{
+					if ('serviceWorker' in navigator)
+					{
+						navigator.serviceWorker.ready.then(function(reg)
+						{
+							if (reg.active != null)
+							{
+								reg.active.postMessage({warmLazy: bundle,
+									warmDev: urlParams['dev'] == '1'});
+
+								// Languages configured as installed by
+								// default - each code is validated against
+								// the lazy manifest by the service worker
+								if (Editor.defaultLanguages != null)
+								{
+									for (var i = 0; i < Editor.defaultLanguages.length; i++)
+									{
+										var lang = Editor.defaultLanguages[i];
+
+										if (typeof lang === 'string' &&
+											/^[a-z0-9-]+$/.test(lang))
+										{
+											reg.active.postMessage({warmLazy:
+												'resources/dia_' + lang + '.txt'});
+										}
+									}
+								}
+							}
+						});
+					}
+				}
+				catch (e)
+				{
+					// ignore
+				}
+
 				// Configuration mode
 				if (isLocalStorage && localStorage != null && window.location.hash != null &&
 					window.location.hash.substring(0, 9) == '#_CONFIG_')
@@ -1197,7 +1247,20 @@ App.main = function(callback, createUi)
 						var ui = (createUi != null) ? createUi() : new App(new Editor(
 								urlParams['chrome'] == '0' || uiTheme == 'min',
 								null, null, null, urlParams['chrome'] != '0'));
-						
+
+						// Opens files passed by the OS via the file_handlers
+						// registration in images/manifest.json (installed PWA)
+						if ('launchQueue' in window && urlParams['embed'] != '1')
+						{
+							window.launchQueue.setConsumer(function(launchParams)
+							{
+								if (launchParams.files != null && launchParams.files.length > 0)
+								{
+									ui.loadFileSystemEntry(launchParams.files[0]);
+								}
+							});
+						}
+
 						if (window.mxscript != null)
 						{
 							// Loads dropbox for all browsers but IE8 and below (no CORS) if not disabled or if enabled and in embed mode
@@ -1723,6 +1786,21 @@ App.prototype.init = function()
 		this.isDefaultTheme(Editor.currentTheme))
 	{
 		this.setCompactMode(mxSettings.settings.compactMode);
+	}
+
+	// Restores collaboration cursor preferences from settings (an absent key
+	// means no user choice, keeping the default or configured value)
+	if (Editor.isSettingsEnabled())
+	{
+		if (mxSettings.settings.shareCursorPosition != null)
+		{
+			this.shareCursorPosition = mxSettings.settings.shareCursorPosition;
+		}
+
+		if (mxSettings.settings.showRemoteCursors != null)
+		{
+			this.showRemoteCursors = mxSettings.settings.showRemoteCursors;
+		}
 	}
 
 	/**
@@ -4091,13 +4169,16 @@ App.prototype.executeCreateObject = function(value, done)
 						}
 
 						// Sets create value with compressed XML. When a layout
-						// was applied, store the laid-out XML and drop the layout
-						// so a reload reproduces the result without re-running it.
+						// was applied, store the laid-out XML and drop the
+						// layout options so a reload reproduces the result
+						// without re-running them.
 						value.type = 'xml';
 						value.compressed = true;
-						value.data = Graph.compress((value.layout != null) ?
+						value.data = Graph.compress((value.layout != null ||
+							value.applyLayouts) ?
 							mxUtils.getXml(this.editor.getGraphXml()) : xml);
 						delete value.layout;
+						delete value.applyLayouts;
 						window.location.hash = 'create=' +
 							encodeURIComponent(JSON.stringify(value));
 					});
@@ -4106,13 +4187,29 @@ App.prototype.executeCreateObject = function(value, done)
 					// custom-layout JSON, the same format as the desktop
 					// --layout flag and the embed "layout" action) before
 					// fitting so the view reflects the new positions.
-					if (value.layout != null)
+					var runLayout = mxUtils.bind(this, function()
 					{
-						this.executeLayoutSpec(value.layout, finish);
+						if (value.layout != null)
+						{
+							this.executeLayoutSpec(value.layout, finish);
+						}
+						else
+						{
+							finish();
+						}
+					});
+
+					// applyLayouts: run the layouts defined in the diagram's
+					// childLayout styles (nested children before their parents)
+					// first, so a one-shot layout given via the layout option
+					// sees the containers at their final size.
+					if (value.applyLayouts)
+					{
+						this.applyChildLayouts(runLayout);
 					}
 					else
 					{
-						finish();
+						runLayout();
 					}
 				}), true, null, true);
 		});
@@ -4137,7 +4234,8 @@ App.prototype.executeCreateObject = function(value, done)
 				{
 					// image:true creates the diagram as a static SVG image cell
 					// (carrying the mermaid source for re-editing), matching the
-					// legacy image insert. Uses the previous mermaid config.
+					// legacy image insert. New images follow the configured Mermaid
+					// config, or keep the legacy look when unset (parseMermaidImage).
 					this.parseMermaidImage(data, mxUtils.bind(this, function(xml)
 					{
 						createDiagram(xml);
@@ -4147,7 +4245,8 @@ App.prototype.executeCreateObject = function(value, done)
 				{
 					this.parseMermaidDiagram(data, null, mxUtils.bind(this, function(xml)
 					{
-						createDiagram(mxMermaidToDrawio.wrapGroup(xml, data, null));
+						createDiagram(mxMermaidToDrawio.wrapGroup(xml, data,
+							EditorUi.getInsertMermaidConfig()));
 					}), onMermaidError);
 				}
 			}
@@ -5493,24 +5592,19 @@ App.prototype.loadTemplate = function(url, onload, onerror, templateFilename, as
 					onload(xml);
 				}, onerror, filterFn);
 			}
-			else if (new XMLHttpRequest().upload && this.isRemoteFileFormat(data, filterFn))
+			else if (this.isGliffyData(data, filterFn))
 			{
-				if (this.isExternalDataComms())
+				this.importGliffy(data, mxUtils.bind(this, function(xml)
 				{
-					// Asynchronous parsing via server
-					this.parseFileData(data, mxUtils.bind(this, function(xhr)
+					if (xml.substring(0, 13) == '<mxGraphModel')
 					{
-						if (xhr.readyState == 4 && xhr.status >= 200 && xhr.status <= 299 &&
-							xhr.responseText.substring(0, 13) == '<mxGraphModel')
-						{
-							onload(xhr.responseText);
-						}
-					}), url);
-				}
-				else
-				{
-					this.showError(mxResources.get('error'), mxResources.get('notInOffline'), null, onerror);
-				}
+						onload(xml);
+					}
+					else
+					{
+						onerror();
+					}
+				}), onerror, url);
 			}
 			else if (this.isLucidChartData(data))
 			{
@@ -7887,20 +7981,16 @@ App.prototype.convertFile = function(url, filename, mimeType, extension, success
 						success(new LocalFile(this, data, filename, true));
 					}
 				}
-				else if (Graph.fileSupport && new XMLHttpRequest().upload && this.isRemoteFileFormat(data, url))
+				else if (Graph.fileSupport && this.isGliffyData(data, url))
 				{
-					this.parseFileData(data, mxUtils.bind(this, function(xhr)
+					this.importGliffy(data, mxUtils.bind(this, function(xml)
 					{
-						if (xhr.readyState == 4)
+						success(new LocalFile(this, xml, name, true));
+					}), mxUtils.bind(this, function(err)
+					{
+						if (error != null)
 						{
-							if (xhr.status >= 200 && xhr.status <= 299)
-							{
-								success(new LocalFile(this, xhr.responseText, name, true));
-							}
-							else if (error != null)
-							{
-								error({message: mxResources.get('errorLoadingFile')});
-							}
+							error({message: mxResources.get('errorLoadingFile')});
 						}
 					}), filename);
 				}
