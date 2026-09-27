@@ -697,6 +697,13 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 												}
 											}
 										}
+										else if (edgeStyle == mxEdgeStyle.SequenceMessage &&
+											handler.bends.length == 3)
+										{
+											// Moves the y of a sequence message (instead of
+											// adding a waypoint that would bend the message)
+											handle = 1;
+										}
 									}
 									
 									// Creates a new waypoint and starts moving it
@@ -706,7 +713,9 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 									}
 								}
 
-								var validEdge = !entity && (state.visibleSourceState != null ||
+								// Self-calls are moved as a whole (like entity relations)
+								var validEdge = !entity && !(edgeStyle == mxEdgeStyle.SequenceMessage &&
+										handler.bends.length > 3) && (state.visibleSourceState != null ||
 										state.visibleTargetState != null);
 								var validHandle = handle == mxEvent.LABEL_HANDLE ||
 									handle == 0 || handle == handler.bends.length - 1;
@@ -1115,6 +1124,28 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 		// Applies newEdgeStyle
 		this.connectionHandler.insertEdge = function(parent, id, value, source, target, style)
 		{
+			// Inserts a new sequence message with the newEdgeStyle of its source
+			// already applied, so that listeners on insert do not see the current
+			// edge style (eg. libavoid auto-routing would bake its route)
+			if (source != null && isSequencePreview(this))
+			{
+				try
+				{
+					var styles = Graph.decodeNewEdgeStyle(this.graph.getCellStyle(source)['newEdgeStyle']);
+
+					for (var key in styles)
+					{
+						style = mxUtils.setStyle(style, key, styles[key]);
+					}
+
+					arguments[5] = style;
+				}
+				catch (e)
+				{
+					// ignore
+				}
+			}
+
 			var edge = mxConnectionHandler.prototype.insertEdge.apply(this, arguments);
 
 			if (source != null)
@@ -1124,6 +1155,89 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 			
 			return edge
 		};
+
+		// True if the connection handler previews a new sequence message, which
+		// gets its edge style from the newEdgeStyle of the source
+		var isSequencePreview = function(handler)
+		{
+			return handler.edgeState != null && handler.edgeState.style[
+				mxConstants.STYLE_EDGE] == 'sequenceEdgeStyle';
+		};
+
+		// Keeps the y of a new sequence message at the mouse (see
+		// mxEdgeStyle.SequenceMessage). The waypoint gives the preview its y
+		// and is written to the new edge by mxConnectionHandler.connect. The
+		// drag start is no use for the y since the connect arrows sit at the
+		// vertical center of the source. The floating ends are previewed on the
+		// activation bars they are connected to (see getSequenceTerminal). Back
+		// on the lifeline of the source, the message is a self-call that leaves
+		// at the mouse y and returns sequenceSelfCallSize below.
+		var connectionHandlerUpdateEdgeState = this.connectionHandler.updateEdgeState;
+
+		this.connectionHandler.updateEdgeState = function(current, constraint)
+		{
+			var previous = this.previous;
+			var currentState = this.currentState;
+
+			if (isSequencePreview(this) && this.currentPoint != null)
+			{
+				var graph = this.graph;
+				var self = previous != null && currentState != null &&
+					graph.getSequenceLifeline(previous.cell) ==
+					graph.getSequenceLifeline(currentState.cell);
+
+				// A pinned end defines the y of the message (or of its end)
+				var sourcePin = (this.sourceConstraint != null && this.sourceConstraint.point != null &&
+					previous != null) ? graph.getConnectionPoint(previous, this.sourceConstraint) : null;
+				var targetPin = (constraint != null && constraint.point != null &&
+					currentState != null) ? graph.getConnectionPoint(currentState, constraint) : null;
+				var y = (sourcePin != null) ? sourcePin.y : ((targetPin != null && !self) ?
+					targetPin.y : this.currentPoint.y);
+				var y2 = (!self) ? y : ((targetPin != null) ? targetPin.y :
+					y + graph.sequenceSelfCallSize * graph.view.scale);
+
+				var resolve = function(state, c, y)
+				{
+					return (state != null && (c == null || c.point == null)) ?
+						graph.view.getState(graph.getSequenceTerminal(
+							state.cell, y)) || state : state;
+				};
+
+				this.previous = resolve(previous, this.sourceConstraint, y);
+				this.currentState = resolve(currentState, constraint, y2);
+				this.waypoints = (self) ? graph.getSequenceSelfCallPoints(this.previous, y, y2) :
+					[new mxPoint(this.currentPoint.x, y)];
+			}
+
+			try
+			{
+				connectionHandlerUpdateEdgeState.apply(this, arguments);
+			}
+			finally
+			{
+				this.previous = previous;
+				this.currentState = currentState;
+			}
+		};
+
+		// Waypoints are not reset in mxConnectionHandler.reset
+		this.connectionHandler.addListener(mxEvent.START, mxUtils.bind(this, function()
+		{
+			this.connectionHandler.waypoints = null;
+		}));
+
+		// Connects a new sequence message to the activation bars at its y: the
+		// connect arrows and the drop target are usually the lifeline
+		this.connectionHandler.addListener(mxEvent.CONNECT, mxUtils.bind(this, function(sender, evt)
+		{
+			var edge = evt.getProperty('cell');
+			var pts = this.connectionHandler.waypoints;
+
+			if (pts != null && pts.length > 0 && this.isSequenceMessage(edge))
+			{
+				this.updateSequenceTerminals(edge, pts[0].y, null, pts[pts.length - 1].y);
+			}
+		}));
 
 		// Creates rubberband selection and associates with graph instance
 	    var rubberband = new mxRubberband(this);
@@ -1165,7 +1279,10 @@ Graph = function(container, model, renderHint, stylesheet, themes, standalone)
 	    
 	    this.connectionHandler.isOutlineConnectEvent = function(me)
 	    {
-			if (mxEvent.isShiftDown(me.getEvent()) && mxEvent.isAltDown(me.getEvent()))
+			// Sequence messages connect to the perimeter so that an end is not
+			// pinned inside an activation bar at a height-relative point
+			if ((mxEvent.isShiftDown(me.getEvent()) && mxEvent.isAltDown(me.getEvent())) ||
+				isSequencePreview(this))
 			{
 				return false;
 			}
@@ -1678,6 +1795,11 @@ Graph.textStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'fontSt
 	'horizontal', 'textDirection', 'autosizeText'];
 
 /**
+ * Text styles that are shared between the vertex and edge default styles.
+ */
+Graph.sharedTextStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor'];
+
+/**
  * Styles that are used for pasting text styles.
  */
 Graph.pasteTextStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'fontStyle',
@@ -1773,8 +1895,9 @@ Graph.newColorPlaceholder = 'rgba(0, 0, 0, 0)';
 /**
  * Value to be used to identify new background colors. This value is
  * be a valid CSS background that will never be used in practice.
+ * Black is not used here as black text highlights do occur in labels.
  */
-Graph.newBackgroundPlaceholder = 'rgb(0, 0, 0)';
+Graph.newBackgroundPlaceholder = 'rgb(1, 2, 3)';
 
 /**
  * Default value for adaptiveColors. Default is 'auto'.
@@ -2173,7 +2296,7 @@ Graph.getGivenColor = function(elt, property)
 			// ignore
 		}
 
-		if (color == null && elt.style[property] != '')
+		if (color == null && elt.style != null && elt.style[property] != '')
 		{
 			color = elt.style[property];
 		}
@@ -2196,15 +2319,186 @@ Graph.setTextColor = function(node, color, isForeground)
 	var property = (isForeground) ?
 		'color' : 'background-color';
 
-	// Detects changes in other elements
+	// A collapsed selection means the command below only changes the
+	// typing style and the placeholder never appears in the DOM. If the
+	// cursor is within an element that carries the property, the
+	// selection is extended to that element, so the color change is
+	// applied to the styled run under the cursor. Otherwise the real
+	// color is used as the typing style and no placeholder is inserted,
+	// as the placeholder would otherwise become the typing style and
+	// appear as an actual color in the content when typing resumes.
+	if (window.getSelection)
+	{
+		var selection = window.getSelection();
+
+		if (selection.rangeCount > 0 && selection.isCollapsed &&
+			mxUtils.isAncestorNode(node, selection.anchorNode))
+		{
+			var elt = (selection.anchorNode.nodeType ==
+				mxConstants.NODETYPE_ELEMENT) ?
+				selection.anchorNode :
+				selection.anchorNode.parentNode;
+			var run = null;
+
+			while (elt != null && elt != node && run == null)
+			{
+				var value = Graph.getGivenColor(elt, property);
+
+				if (value != null && value != '')
+				{
+					run = elt;
+				}
+
+				elt = elt.parentNode;
+			}
+
+			if (run != null)
+			{
+				var range = document.createRange();
+				range.selectNodeContents(run);
+				selection.removeAllRanges();
+				selection.addRange(range);
+			}
+			else
+			{
+				if (color != mxConstants.NONE)
+				{
+					var typingCss = document.queryCommandState('styleWithCSS');
+
+					if (isForeground && !typingCss)
+					{
+						document.execCommand('styleWithCSS', false, true);
+					}
+
+					document.execCommand((isForeground) ?
+						'forecolor' : 'backcolor', false, color);
+
+					if (isForeground && !typingCss)
+					{
+						document.execCommand('styleWithCSS', false, false);
+					}
+				}
+
+				return;
+			}
+		}
+	}
+
+	// Detects changes in other elements. Elements outside the HTML and SVG
+	// namespaces, eg. MathML in older browsers, have no style and are skipped.
 	var temp = node.getElementsByTagName('*');
 	var previous = [];
 
 	for (var i = 0; i < temp.length; i++)
 	{
+		if (temp[i].style == null)
+		{
+			continue;
+		}
+
 		previous.push({node: temp[i],
-			value: temp[i].style[property]});
+			value: temp[i].style[property],
+			attr: (isForeground) ?
+				temp[i].getAttribute('color') : null});
 	}
+
+	// Returns the recorded state for the given element or null
+	// if the element was created by the command below
+	function getPrevious(elt)
+	{
+		for (var i = 0; i < previous.length; i++)
+		{
+			if (previous[i].node == elt)
+			{
+				return previous[i];
+			}
+		}
+
+		return null;
+	};
+
+	// Clears the property from the style and backup style attribute of
+	// the given element so it is not restored after editing stops, and
+	// removes attributes that are left without an effect
+	function clearProperty(elt)
+	{
+		if (elt.style == null)
+		{
+			return;
+		}
+
+		if (elt.style[property] != '')
+		{
+			elt.style[property] = '';
+		}
+
+		try
+		{
+			var temp = elt.getAttribute(Graph.backupStyleAttribute);
+
+			if (temp != null)
+			{
+				var originalStyles = JSON.parse(temp);
+				originalStyles[property] = '';
+				var empty = true;
+
+				for (var key in originalStyles)
+				{
+					empty = empty && originalStyles[key] == '';
+				}
+
+				if (empty && (elt.getAttribute('style') == null ||
+					elt.getAttribute('style') == ''))
+				{
+					elt.removeAttribute(Graph.backupStyleAttribute);
+				}
+				else
+				{
+					elt.setAttribute(Graph.backupStyleAttribute,
+						JSON.stringify(originalStyles));
+				}
+			}
+		}
+		catch (e)
+		{
+			// ignore
+		}
+
+		if (elt.getAttribute('style') == '')
+		{
+			elt.removeAttribute('style');
+		}
+	};
+
+	// Replaces the given element with its child nodes
+	function unwrap(elt)
+	{
+		var parent = elt.parentNode;
+
+		if (parent != null)
+		{
+			while (elt.firstChild != null)
+			{
+				parent.insertBefore(elt.firstChild, elt);
+			}
+
+			parent.removeChild(elt);
+		}
+	};
+
+	// Returns true if the visible content of the given ancestor is fully
+	// covered by the given element, ie. the ancestor renders no text or
+	// replaced content of its own outside of the element
+	function isCovered(ancestor, elt)
+	{
+		return ancestor.textContent == elt.textContent &&
+			ancestor.getElementsByTagName('img').length ==
+				elt.getElementsByTagName('img').length &&
+			ancestor.getElementsByTagName('br').length ==
+				elt.getElementsByTagName('br').length &&
+			ancestor.getElementsByTagName('hr').length ==
+				elt.getElementsByTagName('hr').length;
+	};
 
 	// Forces CSS styling for the foreground placeholder so it is applied as an
 	// inline style instead of a <font color> attribute. The legacy attribute
@@ -2226,90 +2520,150 @@ Graph.setTextColor = function(node, color, isForeground)
 		document.execCommand('styleWithCSS', false, false);
 	}
 
-	// Finds the element and sets the real color
+	// Finds the elements carrying the placeholder. A multi-line selection
+	// yields one element per line block, and the Firefox anchor workaround
+	// below moves elements around, which reorders the live element
+	// collection, so the matches are collected before any changes are made.
 	var elts = node.getElementsByTagName('*');
-	
+	var matches = [];
+
 	for (var i = 0; i < elts.length; i++)
 	{
-		// Removes color from backup style attribute if removed in style
-		// This happens if the color was removed from a parent element
-		if (i < previous.length && previous[i].node == elts[i] &&
-			previous[i].value != elts[i].style[property] &&
-			elts[i].style[property] == '')
+		if (elts[i].style == null)
 		{
-			// Updates the backup style to apply the change when editing stops
-			try
-			{
-				var temp = elts[i].getAttribute(Graph.backupStyleAttribute);
+			continue;
+		}
 
-				if (temp != null)
-				{
-					var originalStyles = JSON.parse(temp);
-					originalStyles[property] = '';
-					elts[i].setAttribute(Graph.backupStyleAttribute,
-						JSON.stringify(originalStyles));
-				}
-			}
-			catch (e)
+		// Matches only elements that the command above created or
+		// changed to the placeholder, so that a genuine color equal
+		// to the placeholder elsewhere in the label is left alone
+		var prev = getPrevious(elts[i]);
+
+		if ((isForeground && elts[i].getAttribute('color') == placeholder &&
+				(prev == null || prev.attr != placeholder)) ||
+			(elts[i].style[property] == placeholder &&
+				(prev == null || prev.value != placeholder)))
+		{
+			matches.push(elts[i]);
+		}
+	}
+
+	// Sets the real color on all matched elements
+	for (var i = 0; i < matches.length; i++)
+	{
+		var elt = matches[i];
+
+		if (isForeground && elt.getAttribute('color') == placeholder)
+		{
+			elt.removeAttribute('color');
+		}
+
+		elt.style[property] = (color != mxConstants.NONE) ?
+			mxUtils.getLightDarkColor(color).cssText : null;
+
+		// Updates the backup style to apply the change when editing stops
+		try
+		{
+			var temp = elt.getAttribute(Graph.backupStyleAttribute);
+			var originalStyles = (temp != null) ? JSON.parse(temp) : {};
+			originalStyles[property] = (color != mxConstants.NONE) ? color : '';
+			elt.setAttribute(Graph.backupStyleAttribute,
+				JSON.stringify(originalStyles));
+		}
+		catch (e)
+		{
+			// ignore
+		}
+
+		// Workaround for Firefox that adds the new element around
+		// anchor elements which ignore inherited colors is to move
+		// the font element inside anchor elements
+		if (isForeground && mxClient.IS_FF)
+		{
+			var child = elt.firstChild;
+
+			if (child != null &&
+				child.nodeName == 'A' &&
+				child.nextSibling == null &&
+				child.firstChild != null)
 			{
-				// ignore
+				var parent = elt.parentNode;
+				parent.insertBefore(child, elt);
+				var tmp = child.firstChild;
+
+				while (tmp != null)
+				{
+					var next = tmp.nextSibling;
+					elt.appendChild(tmp);
+					tmp = next;
+				}
+
+				child.appendChild(elt);
+			}
+		}
+	}
+
+	// Normalizes the DOM around the matched elements like Chrome does
+	// natively: the property is cleared from descendants, which the new
+	// color overrides, and from ancestors that are fully covered by the
+	// matched element, so their color no longer shows, and spans left
+	// without attributes are unwrapped. Without this, Firefox accumulates
+	// one nested span per color change, as the backup style attribute
+	// stops its native cleanup from removing the previous spans, and the
+	// stale backups restore the previous colors after editing stops.
+	for (var i = 0; i < matches.length; i++)
+	{
+		var elt = matches[i];
+		var desc = elt.getElementsByTagName('*');
+		var stale = [];
+
+		for (var j = 0; j < desc.length; j++)
+		{
+			stale.push(desc[j]);
+		}
+
+		for (var j = 0; j < stale.length; j++)
+		{
+			clearProperty(stale[j]);
+
+			if (stale[j].nodeName == 'SPAN' &&
+				stale[j].attributes.length == 0)
+			{
+				unwrap(stale[j]);
 			}
 		}
 
-		if ((isForeground && elts[i].getAttribute('color') == placeholder) ||
-			elts[i].style[property] == placeholder)
+		var parent = elt.parentNode;
+
+		while (parent != null && parent != node &&
+			isCovered(parent, elt))
 		{
-			if (isForeground && elts[i].getAttribute('color') == placeholder)
+			var next = parent.parentNode;
+			clearProperty(parent);
+
+			if (parent.nodeName == 'SPAN' &&
+				parent.attributes.length == 0)
 			{
-				elts[i].removeAttribute('color');
+				unwrap(parent);
 			}
 
-			elts[i].style[property] = (color != mxConstants.NONE) ?
-				mxUtils.getLightDarkColor(color).cssText : null;
+			parent = next;
+		}
+	}
 
-			// Updates the backup style to apply the change when editing stops
-			try
-			{
-				var temp = elts[i].getAttribute(Graph.backupStyleAttribute);
-				var originalStyles = (temp != null) ? JSON.parse(temp) : {};
-				originalStyles[property] = (color != mxConstants.NONE) ? color : '';
-				elts[i].setAttribute(Graph.backupStyleAttribute,
-					JSON.stringify(originalStyles));
-			}
-			catch (e)
-			{
-				// ignore
-			}
+	// Removes the property from the backup style attribute of elements
+	// where the command removed the style, eg. when Firefox strips the
+	// conflicting style from elements within the selection but keeps the
+	// elements in place, as the stale backup would otherwise restore the
+	// previous color after editing stops
+	for (var i = 0; i < previous.length; i++)
+	{
+		var elt = previous[i].node;
 
-			// Workaround for Firefox that adds the new element around
-			// anchor elements which ignore inherited colors is to move
-			// the font element inside anchor elements
-			if (isForeground && mxClient.IS_FF)
-			{
-				var elt = elts[i];
-				var child = elt.firstChild;
-
-				if (child != null &&
-					child.nodeName == 'A' &&
-					child.nextSibling == null &&
-					child.firstChild != null)
-				{
-					var parent = elt.parentNode;
-					parent.insertBefore(child, elt);
-					var tmp = child.firstChild;
-
-					while (tmp != null)
-					{
-						var next = tmp.nextSibling;
-						elt.appendChild(tmp);
-						tmp = next;
-					}
-
-					child.appendChild(elt);
-				}
-
-				break;
-			}
+		if (previous[i].value != elt.style[property] &&
+			elt.style[property] == '')
+		{
+			clearProperty(elt);
 		}
 	}
 };
@@ -3477,7 +3831,7 @@ DOMPurify.addHook('afterSanitizeAttributes', function(node)
 	}
 });
 
-// Disallows external URLs in style attributes
+// Disallows markup in attribute values and external URLs in style attributes
 DOMPurify.addHook('uponSanitizeAttribute', function(node, data)
 {
 	// Removes characters that are dropped when the node is serialized to XML
@@ -3486,6 +3840,35 @@ DOMPurify.addHook('uponSanitizeAttribute', function(node, data)
 	// markup, hides the protocol from the checks and is then dropped by
 	// mxUtils.getXml, which turns the link into javascript: in the export.
 	data.attrValue = Graph.zapGremlins(data.attrValue);
+
+	// An attribute value that starts with a tag is markup, not a value. The
+	// application the diagram is rendered into may hand one of its own
+	// attributes to a parser: Jira DC upgrades every element with class
+	// shared-item-trigger and expands its href with jQuery, which builds nodes
+	// from a string that starts with < instead of matching a selector, so a
+	// label carrying that class and href ran script in the Jira page.
+	// Denylisting the class cannot work as the host supplies both the class and
+	// the sink, same as the data attributes in Init.js, so the markup is stopped
+	// here. Checked after the normalization above, which is what a hidden
+	// leading character would be dropped by on the way to the output, eg.
+	// \u0001<img src onerror=...>. [jgraph/drawio-jira#120]
+	//
+	// The diagram XML that the SVG export writes to the content attribute of
+	// the root is markup by design and must survive: EditorUi.importFiles reads
+	// it back off the sanitized document (via Graph.clipSvgDataUri) to open an
+	// exported SVG as a diagram instead of an image. It is kept for the same
+	// prefixes the import accepts, so nothing that would be used is removed and
+	// no other markup is kept in that attribute either.
+	var isDiagramData = data.attrName == 'content' &&
+		node.nodeName.toLowerCase() == 'svg' &&
+		(data.attrValue.substring(0, 8) == '<mxfile ' ||
+		data.attrValue.substring(0, 14) == '<mxGraphModel>' ||
+		data.attrValue.substring(0, 14) == '<mxGraphModel ');
+
+	if (!isDiagramData && /^\s*</.test(data.attrValue))
+	{
+		data.keepAttr = false; // remove entire attribute
+	}
 
 	if (data.attrName == 'style')
 	{
@@ -5335,15 +5718,54 @@ Graph.prototype.getShapeInsideGrow = function(spacer, valign)
  * lines flow differently against the floats when the content is a direct
  * child of the editing host.
  */
-Graph.prototype.createShapeInsideValue = function(outline, box, spacer, w, h, value, padding, valign, clip)
+Graph.prototype.createShapeInsideValue = function(outline, box, spacer, w, h, value, padding, valign, clip, background)
 {
 	var height = Math.round(box.height +
 		this.getShapeInsideGrow(spacer, valign));
 
-	return '<div style="float:left;width:' + Math.round(box.width) + 'px;height:' +
-		height + 'px;">' +
+	// Text decorations do not propagate into out-of-flow boxes, so the
+	// wrapper inherits them to keep underline and line-through on the
+	// flowed label (the decoration is set on the label, see getTextCss).
+	// With a label background the wrapper is a stacking context so that
+	// the background box stays behind the text and in front of the shape
+	return '<div style="float:left;text-decoration:inherit;' +
+		((background != null) ? 'position:relative;z-index:0;' : '') +
+		'width:' + Math.round(box.width) + 'px;height:' + height + 'px;">' +
+		((background != null) ? background : '') +
 		this.createShapeInsideMarkup(outline, box, spacer, w, h, padding, clip) +
 		value + '</div>';
+};
+
+/**
+ * Returns the markup for the label background box of a shapeInside label
+ * for the given flow measurement and label padding, or null if there is
+ * no text. The flow wrapper always fills the label box, so the box that
+ * carries the background in mxSvgCanvas2D.createCss would cover the whole
+ * shape. The background is painted here instead, out of flow so that it
+ * does not take part in the text flow, and sized to the flowed text as it
+ * is for a label without a text flow. The colors are not part of the
+ * markup: they are style values and are applied to the returned element
+ * via the CSSOM after painting (see the mxText.paint override).
+ */
+Graph.prototype.createShapeInsideBackground = function(flow, padding, border)
+{
+	if (flow == null)
+	{
+		return null;
+	}
+
+	var pad = (padding != null) ? padding :
+		{top: 0, right: 0, bottom: 0, left: 0};
+
+	return '<div data-shape-inside="1" data-shape-inside-background="1" ' +
+		'contenteditable="false" style="position:absolute;z-index:-1;' +
+		'box-sizing:border-box;pointer-events:none;' +
+		((border) ? 'border-style:solid;border-width:1px;' : '') +
+		'left:' + Math.round(flow.left - pad.left) +
+		'px;top:' + Math.round(flow.top - pad.top) +
+		'px;width:' + Math.round(flow.right - flow.left + pad.left + pad.right) +
+		'px;height:' + Math.round(flow.bottom - flow.top + pad.top + pad.bottom) +
+		'px;"></div>';
 };
 
 /**
@@ -5400,6 +5822,7 @@ Graph.prototype.measureShapeInsideFlow = function(value, style, outline, box, sp
 		var walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, null);
 		var top = null;
 		var bottom = null;
+		var left = null;
 		var right = null;
 		var bands = [];
 
@@ -5415,6 +5838,7 @@ Graph.prototype.measureShapeInsideFlow = function(value, style, outline, box, sp
 				{
 					top = (top == null) ? rects[i].top : Math.min(top, rects[i].top);
 					bottom = (bottom == null) ? rects[i].bottom : Math.max(bottom, rects[i].bottom);
+					left = (left == null) ? rects[i].left : Math.min(left, rects[i].left);
 					right = (right == null) ? rects[i].right : Math.max(right, rects[i].right);
 					bands.push([rects[i].top - base.top, rects[i].bottom - base.top]);
 				}
@@ -5446,7 +5870,7 @@ Graph.prototype.measureShapeInsideFlow = function(value, style, outline, box, sp
 			}
 
 			result = {top: top - base.top, bottom: bottom - base.top,
-				right: right - base.left, lines: lines};
+				left: left - base.left, right: right - base.left, lines: lines};
 		}
 
 		div.innerHTML = '';
@@ -5927,6 +6351,19 @@ mxText.prototype.paint = function(c, update)
 		state.view.graph instanceof Graph) ? state.view.graph : null;
 	var restore = null;
 	var flowCanvas = null;
+	var restoreBackground = null;
+	var backgroundColors = null;
+
+	// The label background of the existing DOM is painted in the flow
+	// wrapper, so it must stay out of the CSS that the update rewrites
+	if (update && (this.background != null || this.border != null) &&
+		this.node != null && typeof this.node.querySelector === 'function' &&
+		this.node.querySelector('[data-shape-inside-background]') != null)
+	{
+		restoreBackground = [this.background, this.border];
+		this.background = null;
+		this.border = null;
+	}
 
 	if (!update && graph != null &&
 		typeof graph.getShapeInsideFloats === 'function' &&
@@ -5957,11 +6394,42 @@ mxText.prototype.paint = function(c, update)
 				var value = mxUtils.replaceTrailingNewlines(restore, '<div><br></div>');
 				var align = graph.getShapeInsideSpacer(state, value, outline,
 					box, w, h);
+				var background = null;
+
+				// The label background is painted in the flow wrapper as the
+				// box that carries it in mxSvgCanvas2D.createCss is filled by
+				// the wrapper (see createShapeInsideBackground)
+				var bg = (this.background != mxConstants.NONE) ? this.background : null;
+				var border = (this.border != mxConstants.NONE) ? this.border : null;
+
+				if (bg != null || border != null)
+				{
+					// Memoized on the spacer cache, which is keyed on the
+					// same inputs as the flow (see getShapeInsideSpacer)
+					if (align.flow === undefined)
+					{
+						align.flow = graph.measureShapeInsideFlow(value,
+							state.style, outline, box, align.spacer, w, h,
+							null, align.clip);
+					}
+
+					background = graph.createShapeInsideBackground(align.flow,
+						mxUtils.parseCssSpacing(this.labelPadding), border != null);
+				}
+
+				if (background != null)
+				{
+					restoreBackground = [this.background, this.border];
+					backgroundColors = [bg, border];
+					this.background = null;
+					this.border = null;
+				}
+
 				this.value = graph.createShapeInsideValue(outline, box,
 					align.spacer, w, h, value,
 					graph.getShapeInsidePadding(state.style),
 					mxUtils.getValue(state.style, mxConstants.STYLE_VERTICAL_ALIGN,
-						mxConstants.ALIGN_MIDDLE), align.clip);
+						mxConstants.ALIGN_MIDDLE), align.clip, background);
 			}
 		}
 	}
@@ -5975,6 +6443,33 @@ mxText.prototype.paint = function(c, update)
 		if (restore != null)
 		{
 			this.value = restore;
+		}
+
+		if (restoreBackground != null)
+		{
+			this.background = restoreBackground[0];
+			this.border = restoreBackground[1];
+
+			// Colors are style values and are never written into the markup
+			var node = (backgroundColors != null && this.node != null) ?
+				this.node.querySelector('[data-shape-inside-background]') : null;
+
+			if (node != null)
+			{
+				var getColor = (typeof c.getLightDarkColor === 'function') ?
+					function(color) { return c.getLightDarkColor(color).cssText; } :
+					function(color) { return color; };
+
+				if (backgroundColors[0] != null)
+				{
+					node.style.backgroundColor = getColor(backgroundColors[0]);
+				}
+
+				if (backgroundColors[1] != null)
+				{
+					node.style.borderColor = getColor(backgroundColors[1]);
+				}
+			}
 		}
 
 		if (flowCanvas != null)
@@ -6398,6 +6893,36 @@ Graph.prototype.editAfterInsert = false;
  * Defines the built-in properties to be ignored in tooltips.
  */
 Graph.prototype.builtInProperties = ['label', 'tooltip', 'placeholders', 'placeholder', 'note'];
+
+/**
+ * Defines the property name prefixes to be ignored in tooltips. The PlantUML
+ * and Mermaid converters stamp round-trip identity onto every generated cell
+ * (plantUmlId / plantUmlBaseStyle / plantUmlBaseValue and the mermaid
+ * equivalents, plus plantUmlData / mermaidData on the wrapper group). Those
+ * attributes must stay in the model - EditorUi.replaceLockedGroupChildren and
+ * mergeMermaidStyleDelta re-parse them - but they are internal bookkeeping,
+ * so hovering a shape of an inserted diagram must not dump them as a tooltip.
+ * Matched by prefix so attributes added by a later bundle stay hidden too.
+ */
+Graph.prototype.builtInPropertyPrefixes = ['plantUml', 'mermaid'];
+
+/**
+ * Returns true if the given property name starts with one of the prefixes in
+ * builtInPropertyPrefixes and is therefore ignored in tooltips.
+ */
+Graph.prototype.isBuiltInPropertyPrefix = function(name)
+{
+	for (var i = 0; i < this.builtInPropertyPrefixes.length; i++)
+	{
+		if (name.substring(0, this.builtInPropertyPrefixes[i].length) ==
+			this.builtInPropertyPrefixes[i])
+		{
+			return true;
+		}
+	}
+
+	return false;
+};
 
 /**
  * Specifies if icons should be shown on cells with a note. Default is
@@ -7447,7 +7972,7 @@ Graph.prototype.destroy = function()
 					if (key == 'edgeStyle' && styles[key] == 'elbowEdgeStyle' && dir != null)
 					{
 						this.setCellStyles('elbow', (dir == mxConstants.DIRECTION_SOUTH ||
-							dir == mxConstants.DIRECTION_NOTH) ? 'vertical' : 'horizontal',
+							dir == mxConstants.DIRECTION_NORTH) ? 'vertical' : 'horizontal',
 							edges);
 					}
 				}
@@ -7473,7 +7998,9 @@ Graph.prototype.destroy = function()
 			{
 				var src = this.model.getTerminal(edges[i], true);
 
-				if (src != null && src == this.model.getTerminal(edges[i], false))
+				// Sequence messages route their own self-calls
+				if (src != null && src == this.model.getTerminal(edges[i], false) &&
+					!this.isSequenceMessage(edges[i]))
 				{
 					this.applyLoopStyle(edges[i], src);
 				}
@@ -7517,6 +8044,548 @@ Graph.prototype.destroy = function()
 			finally
 			{
 				this.model.endUpdate();
+			}
+		}
+	};
+
+	/**
+	 * Returns true if the given cell is a UML sequence message, that is, an
+	 * edge routed by mxEdgeStyle.SequenceMessage. The style is applied via the
+	 * newEdgeStyle of the lifeline and activation bar shapes, so only messages
+	 * drawn in a sequence diagram (and the sequence templates) are affected.
+	 */
+	Graph.prototype.isSequenceMessage = function(cell)
+	{
+		return this.model.isEdge(cell) && this.getCurrentCellStyle(
+			cell)[mxConstants.STYLE_EDGE] == 'sequenceEdgeStyle';
+	};
+
+	/**
+	 * Returns true if the given end of the given edge is pinned to a fixed
+	 * connection point. Such an end defines the message y (see
+	 * mxEdgeStyle.SequenceMessage) and moves with its terminal.
+	 */
+	Graph.prototype.isSequenceMessagePinned = function(edge, source)
+	{
+		return this.model.getTerminal(edge, source) != null &&
+			this.getCurrentCellStyle(edge)[(source) ? mxConstants.STYLE_EXIT_X :
+			mxConstants.STYLE_ENTRY_X] != null;
+	};
+
+	/**
+	 * Returns the stored y of the given sequence message in model coordinates,
+	 * or null if the message has no y of its own.
+	 */
+	Graph.prototype.getSequenceMessageY = function(edge)
+	{
+		var geo = this.getCellGeometry(edge);
+
+		return (geo != null && geo.points != null && geo.points.length == 1 &&
+			geo.points[0] != null) ? geo.points[0].y : null;
+	};
+
+	/**
+	 * Stores the given y in model coordinates as the message y of the given
+	 * sequence message. The y is stored as the single waypoint (the encoding
+	 * the mermaid sequence renderer emits); its x is irrelevant for routing
+	 * but kept in the middle of the message for a readable geometry.
+	 */
+	Graph.prototype.setSequenceMessageY = function(edge, y)
+	{
+		var geo = this.getCellGeometry(edge);
+
+		if (geo != null)
+		{
+			var state = this.view.getState(edge);
+			var x = 0;
+
+			if (state != null && state.absolutePoints != null)
+			{
+				var pts = state.absolutePoints;
+				var p0 = pts[0];
+				var pe = pts[pts.length - 1];
+
+				if (p0 != null && pe != null)
+				{
+					x = (p0.x + pe.x) / 2 / this.view.scale -
+						this.view.translate.x - state.origin.x;
+				}
+			}
+
+			geo = geo.clone();
+			geo.points = [new mxPoint(x, y)];
+			this.model.setGeometry(edge, geo);
+		}
+	};
+
+	/**
+	 * Returns the y of the given end of the given edge as currently routed, in
+	 * model coordinates, or null if the edge has no state.
+	 */
+	Graph.prototype.getRoutedEdgeY = function(edge, source)
+	{
+		var state = this.view.getState(edge);
+
+		if (state != null && state.absolutePoints != null)
+		{
+			var pts = state.absolutePoints;
+			var pt = (source) ? pts[0] : pts[pts.length - 1];
+
+			if (pt != null)
+			{
+				return pt.y / this.view.scale - this.view.translate.y - state.origin.y;
+			}
+		}
+
+		return null;
+	};
+
+	/**
+	 * Returns true if the given cell is a UML lifeline.
+	 */
+	Graph.prototype.isLifeline = function(cell)
+	{
+		return this.model.isVertex(cell) && this.getCurrentCellStyle(
+			cell)[mxConstants.STYLE_SHAPE] == 'umlLifeline';
+	};
+
+	/**
+	 * Returns the lifeline of the given cell, that is, the cell itself or the
+	 * parent of an activation bar, or the given cell if it has no lifeline.
+	 */
+	Graph.prototype.getSequenceLifeline = function(cell)
+	{
+		var parent = this.model.getParent(cell);
+
+		return (!this.isLifeline(cell) && this.isLifeline(parent)) ? parent : cell;
+	};
+
+	/**
+	 * Returns true if both ends of the given sequence message are connected to
+	 * the same lifeline (or its activation bars).
+	 */
+	Graph.prototype.isSequenceSelfCall = function(edge)
+	{
+		var source = this.model.getTerminal(edge, true);
+		var target = this.model.getTerminal(edge, false);
+
+		return source != null && target != null &&
+			this.getSequenceLifeline(source) == this.getSequenceLifeline(target);
+	};
+
+	/**
+	 * Width and default height of a self-call (see mxEdgeStyle.SequenceMessage).
+	 */
+	Graph.prototype.sequenceSelfCallSize = 30;
+
+	/**
+	 * Returns the two waypoints of a self-call that leaves the given terminal
+	 * state at y1 and returns at y2 (all in view coordinates): the loop runs
+	 * sequenceSelfCallSize to the right of the anchor at y1.
+	 */
+	Graph.prototype.getSequenceSelfCallPoints = function(state, y1, y2)
+	{
+		var size = this.sequenceSelfCallSize * this.view.scale;
+		var pt = this.view.getPerimeterPoint(state, new mxPoint(
+			state.x + state.width + size, y1), false);
+		var x = ((pt != null) ? pt.x : state.x + state.width) + size;
+
+		return [new mxPoint(x, y1), new mxPoint(x, y2)];
+	};
+
+	/**
+	 * Returns the cell that a sequence message at the given y (in view
+	 * coordinates) connects to on the lifeline of the given terminal: the
+	 * topmost activation bar (or other connectable child on the lifeline's
+	 * spine, including bars nested on a bar) that spans the y, else the lifeline
+	 * itself. This keeps the message on the side of the activation bar instead
+	 * of the spine behind it, as the mermaid sequence renderer does. Returns the
+	 * given terminal if it is neither a lifeline nor a child of one.
+	 */
+	Graph.prototype.getSequenceTerminal = function(terminal, y)
+	{
+		var lifeline = (this.isLifeline(terminal)) ? terminal :
+			this.model.getParent(terminal);
+		var state = (this.isLifeline(lifeline)) ? this.view.getState(lifeline) : null;
+		var result = terminal;
+
+		if (state != null)
+		{
+			// Horizontal range a child must overlap: the spine, then the bar
+			// matched so far (a nested bar is offset from its parent bar)
+			var left = state.getCenterX();
+			var right = left;
+			result = lifeline;
+
+			// Later children are painted on top, so the last match wins
+			for (var i = 0; i < this.model.getChildCount(lifeline); i++)
+			{
+				var child = this.model.getChildAt(lifeline, i);
+				var cs = this.view.getState(child);
+
+				if (cs != null && this.model.isVertex(child) &&
+					this.isCellConnectable(child) && cs.x <= right &&
+					cs.x + cs.width >= left && cs.y <= y && cs.y + cs.height >= y)
+				{
+					result = child;
+					left = cs.x;
+					right = cs.x + cs.width;
+				}
+			}
+		}
+
+		return result;
+	};
+
+	/**
+	 * Connects the floating ends of the given sequence message to the cells
+	 * returned by getSequenceTerminal for the given y (in view coordinates),
+	 * or for the optional y2 at the target end (the return of a self-call).
+	 * Ends that are pinned to a connection point, and ends whose terminal is in
+	 * the optional dictionary of moved cells, are left as they are.
+	 */
+	Graph.prototype.updateSequenceTerminals = function(edge, y, moved, y2)
+	{
+		for (var i = 0; i < 2; i++)
+		{
+			var source = (i == 0);
+			var terminal = this.model.getTerminal(edge, source);
+
+			if (terminal != null && !this.isSequenceMessagePinned(edge, source) &&
+				(moved == null || !this.isCellOrAncestorIn(terminal, moved)))
+			{
+				var cell = this.getSequenceTerminal(terminal,
+					(source || y2 == null) ? y : y2);
+
+				if (cell != terminal)
+				{
+					this.model.setTerminal(edge, cell, source);
+				}
+			}
+		}
+	};
+
+	/**
+	 * Returns true if the given cell or one of its ancestors is in the given
+	 * dictionary.
+	 */
+	Graph.prototype.isCellOrAncestorIn = function(cell, dict)
+	{
+		while (cell != null)
+		{
+			if (dict.get(cell))
+			{
+				return true;
+			}
+
+			cell = this.model.getParent(cell);
+		}
+
+		return false;
+	};
+
+	/**
+	 * Shifts the anchor offset of the pinned ends of the given sequence message
+	 * by dy, unless the terminal is in the optional dictionary of moved cells
+	 * (in which case the pin follows its shape). Returns true if the message
+	 * has a pinned end.
+	 */
+	Graph.prototype.shiftSequenceMessagePins = function(edge, dy, moved)
+	{
+		var pinned = false;
+
+		for (var i = 0; i < 2; i++)
+		{
+			var source = (i == 0);
+
+			if (this.isSequenceMessagePinned(edge, source))
+			{
+				pinned = true;
+
+				if (moved == null || !this.isCellOrAncestorIn(
+					this.model.getTerminal(edge, source), moved))
+				{
+					var key = (source) ? mxConstants.STYLE_EXIT_DY :
+						mxConstants.STYLE_ENTRY_DY;
+					var val = parseFloat(this.getCurrentCellStyle(edge)[key]);
+
+					this.setCellStyles(key, ((isFinite(val)) ? val : 0) + dy, [edge]);
+				}
+			}
+		}
+
+		return pinned;
+	};
+
+	/**
+	 * Prepares the given sequence message for a move by dy. A message keeps its
+	 * terminals when moved (see the disconnectGraph override), so the move must
+	 * change the message y instead: the current y is stored as the waypoint
+	 * that cellsMoved then translates, and the anchor offset of a pinned end is
+	 * shifted unless its terminal moves along (in which case the pin follows
+	 * its shape). The moved argument is a dictionary of the moved cells.
+	 */
+	Graph.prototype.prepareSequenceMessageMove = function(edge, dy, moved)
+	{
+		var state = this.view.getState(edge);
+		var pinned = this.shiftSequenceMessagePins(edge, dy, moved);
+
+		// Stores the y as currently routed, which materializes the y of a
+		// message that has none yet and keeps a stored y that the route did not
+		// use (a pinned end, a clamped y) from moving the message elsewhere. A
+		// self-call keeps its waypoints, which are translated with it.
+		if (!this.isSequenceSelfCall(edge) && (this.getSequenceMessageY(edge) != null ||
+			(!pinned && this.model.getTerminal(edge, true) != null &&
+			this.model.getTerminal(edge, false) != null)))
+		{
+			var y = this.getRoutedEdgeY(edge, true);
+
+			if (y != null)
+			{
+				this.setSequenceMessageY(edge, y);
+			}
+		}
+
+		// Attaches the ends to the activation bars at the new y
+		var pts = (state != null) ? state.absolutePoints : null;
+
+		if (pts != null && pts[0] != null && pts[pts.length - 1] != null)
+		{
+			this.updateSequenceTerminals(edge, pts[0].y + dy * this.view.scale,
+				moved, pts[pts.length - 1].y + dy * this.view.scale);
+		}
+	};
+
+	/**
+	 * Returns true if the given cell is a sequence message or an edge that is
+	 * connected to a lifeline or an activation bar on a lifeline, that is, an
+	 * edge that the sequence edge style is offered for (see Menus edgeStyle).
+	 */
+	Graph.prototype.isSequenceMessageCandidate = function(cell)
+	{
+		if (this.isSequenceMessage(cell))
+		{
+			return true;
+		}
+		else if (this.model.isEdge(cell))
+		{
+			for (var i = 0; i < 2; i++)
+			{
+				var terminal = this.model.getTerminal(cell, i == 0);
+
+				if (terminal != null && this.isLifeline(
+					this.getSequenceLifeline(terminal)))
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	};
+
+	/**
+	 * Makes sequence messages of the given edges at the y where they are routed
+	 * now, after their edge style was set to sequenceEdgeStyle with their
+	 * waypoints removed in the current update (see Menus edgeStyle): a message
+	 * keeps the y of its source end, a self-call leaves and returns at the y of
+	 * its ends, and the ends are attached to the activation bars at these y.
+	 * Must be called before the view is revalidated, as the previous routes are
+	 * taken from the cell states. Edges with a dangling end are left straight.
+	 */
+	Graph.prototype.makeSequenceMessages = function(edges)
+	{
+		var s = this.view.scale;
+		var t = this.view.translate;
+
+		for (var i = 0; i < edges.length; i++)
+		{
+			var edge = edges[i];
+			var state = this.view.getState(edge);
+			var pts = (state != null) ? state.absolutePoints : null;
+
+			if (pts != null && pts[0] != null && pts[pts.length - 1] != null &&
+				this.model.getTerminal(edge, true) != null &&
+				this.model.getTerminal(edge, false) != null)
+			{
+				var origin = state.origin;
+				var y1 = pts[0].y;
+				var y2 = pts[pts.length - 1].y;
+
+				if (this.isSequenceSelfCall(edge))
+				{
+					// A loop whose ends are at the same y gets the default height
+					if (Math.abs(y2 - y1) < 1)
+					{
+						y2 = y1 + this.sequenceSelfCallSize * s;
+					}
+
+					// The loop is placed next to the resolved source terminal
+					this.updateSequenceTerminals(edge, y1, null, y2);
+					var ss = this.view.getState(this.model.getTerminal(edge, true));
+					var geo = this.getCellGeometry(edge);
+
+					if (ss != null && geo != null)
+					{
+						var wp = this.getSequenceSelfCallPoints(ss, y1, y2);
+						geo = geo.clone();
+						geo.points = [];
+
+						for (var j = 0; j < wp.length; j++)
+						{
+							geo.points.push(new mxPoint(wp[j].x / s - t.x - origin.x,
+								wp[j].y / s - t.y - origin.y));
+						}
+
+						this.model.setGeometry(edge, geo);
+					}
+				}
+				else
+				{
+					this.setSequenceMessageY(edge, y1 / s - t.y - origin.y);
+					this.updateSequenceTerminals(edge, y1);
+				}
+			}
+		}
+	};
+
+	/**
+	 * Returns the lifeline that a click on the hover arrow of the given cell in
+	 * the given direction connects to (see connectVertex): the nearest lifeline
+	 * east or west of the lifeline of the given cell that overlaps it
+	 * vertically. Returns null for other directions and if the cell is neither
+	 * a lifeline nor an activation bar on one.
+	 */
+	Graph.prototype.getSequenceConnectTarget = function(cell, direction)
+	{
+		var east = direction == mxConstants.DIRECTION_EAST;
+		var lifeline = this.getSequenceLifeline(cell);
+		var ls = this.view.getState(lifeline);
+		var result = null;
+
+		if ((east || direction == mxConstants.DIRECTION_WEST) &&
+			ls != null && this.isLifeline(lifeline))
+		{
+			var x = ls.getCenterX();
+			var dist = null;
+
+			this.view.states.visit(mxUtils.bind(this, function(key, state)
+			{
+				var d = (east) ? state.getCenterX() - x : x - state.getCenterX();
+
+				if (d > 0 && (dist == null || d < dist) && state.y < ls.y + ls.height &&
+					state.y + state.height > ls.y && this.isLifeline(state.cell) &&
+					this.isCellConnectable(state.cell) && !this.isCellLocked(state.cell))
+				{
+					result = state.cell;
+					dist = d;
+				}
+			}));
+		}
+
+		return result;
+	};
+
+	/**
+	 * Vertical distance between a new sequence message that is inserted with a
+	 * click on a hover arrow and the message above it (see
+	 * getSequenceMessageRow).
+	 */
+	Graph.prototype.sequenceMessageSpacing = 40;
+
+	/**
+	 * Returns the y, in view coordinates, of the next free row for a new
+	 * message from the given source, a lifeline or an activation bar on one, to
+	 * the given lifeline: sequenceMessageSpacing below the lowest edge on a
+	 * lifeline that ends in the vertical range of the source and overlaps the
+	 * two lifelines horizontally, or below the head of a lifeline and at the top
+	 * of an activation bar without such an edge.
+	 */
+	Graph.prototype.getSequenceMessageRow = function(source, target)
+	{
+		var s = this.view.scale;
+		var spacing = this.sequenceMessageSpacing * s;
+		var ss = this.view.getState(source);
+		var ls = this.view.getState(this.getSequenceLifeline(source));
+		var ts = this.view.getState(target);
+		var x0 = Math.min(ls.x, ts.x);
+		var x1 = Math.max(ls.x + ls.width, ts.x + ts.width);
+		var bottom = null;
+
+		var isOnLifeline = mxUtils.bind(this, function(state)
+		{
+			return state != null && this.isLifeline(this.getSequenceLifeline(state.cell));
+		});
+
+		this.view.states.visit(mxUtils.bind(this, function(key, state)
+		{
+			var pts = state.absolutePoints;
+
+			if (pts != null && this.model.isEdge(state.cell) &&
+				(isOnLifeline(state.getVisibleTerminalState(true)) ||
+				isOnLifeline(state.getVisibleTerminalState(false))))
+			{
+				var minX = null;
+				var maxX = null;
+				var maxY = null;
+
+				for (var i = 0; i < pts.length; i++)
+				{
+					if (pts[i] != null)
+					{
+						minX = (minX != null) ? Math.min(minX, pts[i].x) : pts[i].x;
+						maxX = (maxX != null) ? Math.max(maxX, pts[i].x) : pts[i].x;
+						maxY = (maxY != null) ? Math.max(maxY, pts[i].y) : pts[i].y;
+					}
+				}
+
+				if (maxY != null && minX <= x1 && maxX >= x0 && maxY >= ss.y &&
+					maxY <= ss.y + ss.height && (bottom == null || maxY > bottom))
+				{
+					bottom = maxY;
+				}
+			}
+		}));
+
+		if (bottom != null)
+		{
+			return bottom + spacing;
+		}
+		else if (source == ls.cell && ss.shape != null &&
+			typeof ss.shape.getHeadSize === 'function')
+		{
+			return ss.y + ss.shape.getHeadSize(ss.height / s) * s + spacing;
+		}
+		else
+		{
+			return ss.y;
+		}
+	};
+
+	/**
+	 * Makes the given cell, a lifeline or an activation bar, tall enough for a
+	 * message at the given y in view coordinates, with half the message spacing
+	 * below it (and above the foot of a mirrored lifeline).
+	 */
+	Graph.prototype.growSequenceCell = function(cell, y)
+	{
+		var state = this.view.getState(cell);
+		var geo = this.getCellGeometry(cell);
+
+		if (state != null && geo != null)
+		{
+			var s = this.view.scale;
+			var foot = (state.shape != null && typeof state.shape.isMirrored === 'function' &&
+				state.shape.isMirrored()) ? state.shape.getHeadSize(state.height / s) * s : 0;
+			var dh = (y + this.sequenceMessageSpacing * s / 2 + foot -
+				state.y - state.height) / s;
+
+			if (dh > 0)
+			{
+				// Rounded to remove the noise of the view coordinates
+				geo = geo.clone();
+				geo.height = Math.round((geo.height + dh) * 100) / 100;
+				this.model.setGeometry(cell, geo);
 			}
 		}
 	};
@@ -8007,8 +9076,10 @@ Graph.prototype.destroy = function()
 
 	/**
 	 * Copies the style of the given cells to the given vertex and edge style.
+	 * If force is true (Set as Default Style) then only the default style for
+	 * the type of the given cells is updated.
 	 */
-	Graph.prototype.copyCellStyles = function(cells, keys, values, vertexStyle, edgeStyle, vertexStyleIgnored, edgeStyleIgnored, edgeLabel)
+	Graph.prototype.copyCellStyles = function(cells, keys, values, vertexStyle, edgeStyle, vertexStyleIgnored, edgeStyleIgnored, edgeLabel, force)
 	{
 		var vertex = false;
 		var edge = false;
@@ -8037,7 +9108,10 @@ Graph.prototype.destroy = function()
 
 		for (var i = 0; i < keys.length; i++)
 		{
-			var common = mxUtils.indexOf(Graph.textStyles, keys[i]) >= 0;
+			// Edge labels pass all text styles to the edge default, other cells
+			// share font styles with the other default only while editing
+			var common = (edgeLabel) ? mxUtils.indexOf(Graph.textStyles, keys[i]) >= 0 :
+				!force && mxUtils.indexOf(Graph.sharedTextStyles, keys[i]) >= 0;
 
 			// Ignores transparent stroke colors
 			if (keys[i] != 'strokeColor' || (values[i] != null && values[i] != 'none'))
@@ -8572,9 +9646,12 @@ Graph.prototype.destroy = function()
 	
 	/**
 	 * Overridden to change the order of the enclosing table for selected
-	 * table cells and rows, whose child order defines their column and row
-	 * position rather than the paint order. Cells passed in explicitly are
-	 * ordered in-place like before.
+	 * table cells, whose child order defines their column position rather
+	 * than the paint order, so ordering them in-place would move them to
+	 * another column and shift merged spans onto the wrong cells. Table
+	 * rows are ordered in-place: their sibling order is the row position,
+	 * so the z-order actions move the row up or down within the table.
+	 * Cells passed in explicitly are ordered in-place like before.
 	 */
 	Graph.prototype.orderCells = function(back, cells, increment)
 	{
@@ -8589,9 +9666,10 @@ Graph.prototype.destroy = function()
 			{
 				var cell = cells[i];
 
-				while (this.isTableCell(cell) || this.isTableRow(cell))
+				if (this.isTableCell(cell))
 				{
-					cell = this.model.getParent(cell);
+					cell = this.model.getParent(
+						this.model.getParent(cell));
 				}
 
 				if (!lookup.get(cell))
@@ -9947,7 +11025,8 @@ Graph.elkConfigToOptions = function(config)
 				key === 'includeEdgeLabels' || key === 'includeVertexLabels' ||
 				key === 'portSpread' || key === 'resizeLayoutRoot' ||
 				key === 'extractIsolated' || key === 'sharedStems' ||
-				key === 'nonTreeEdges' || key === 'groupPadding')
+				key === 'nonTreeEdges' || key === 'siblingOrder' ||
+				key === 'groupPadding')
 			{
 				options[key] = config[key];
 			}
@@ -10021,6 +11100,14 @@ Graph.elkOptionsToConfig = function(layoutOptions, runOptions)
 		if (runOptions.nonTreeEdges === 'elk')
 		{
 			config.nonTreeEdges = 'elk';
+		}
+
+		// Default 'geometry' (mrtree ranks a parent's children by their
+		// current cross-axis position) — only the legacy model-order
+		// opt-out deviates.
+		if (runOptions.siblingOrder === 'model')
+		{
+			config.siblingOrder = 'model';
 		}
 
 		// Container padding base (number or CSS-style 'top right bottom
@@ -11786,6 +12873,26 @@ Graph.prototype.connectVertex = function(source, direction, length, evt, forceCl
 		}
 	}
 
+	// Uses the parent of the composite as the container if no target or
+	// other container was found at the end point so that cells inserted in
+	// the direction of the flow stay in the parent and extend it instead of
+	// falling out into the default parent. The end point is relative to the
+	// parent of the composite, which is also the cell that gets cloned.
+	// Parents are only ever extended to the right and bottom so end points
+	// above or left of the parent origin are not handled here.
+	// [jgraph/drawio#3693]
+	if (container == null && target == null && !cloneSource &&
+		pt.x >= 0 && pt.y >= 0)
+	{
+		var sourceParent = this.model.getParent(composite);
+
+		if (sourceParent != null && this.model.isVertex(sourceParent) &&
+			this.isContainer(sourceParent) && !this.isCellLocked(sourceParent))
+		{
+			container = sourceParent;
+		}
+	}
+
 	var duplicate = (!mxEvent.isShiftDown(evt) || mxEvent.isControlDown(evt)) || forceClone;
 	
 	if (duplicate && (urlParams['sketch'] != '1' || forceClone))
@@ -13097,6 +14204,152 @@ Graph.prototype.updateGroupBounds = function(cells, border, moveGroup, topBorder
 };
 
 /**
+ * Repairs the structural mistakes a generated or imported model tends to carry,
+ * without touching what the author expressed. Every step is idempotent, so a
+ * normalized file normalizes to itself, and none of them moves a cell the
+ * author placed.
+ *
+ * 1. **Edge parents.** An edge belongs to the nearest common ancestor of its
+ *    terminals — the editor maintains that on every edit
+ *    (mxGraphModel.updateEdgeParents), generators typically park every edge on
+ *    the layer instead. It renders, but a layout reads an edge's coordinates in
+ *    the frame of the cell that contains it, so an edge filed too far out is
+ *    laid out in the wrong place.
+ * 2. **Missing edge geometry.** An edge cell written without a geometry is
+ *    silently not rendered at all; the standard relative geometry restores it.
+ * 3. **Containers that clip their children.** A child reaching past its
+ *    parent's bounds is drawn outside the container box. The container is grown
+ *    to contain it — never shrunk, and no child is moved, so a container with
+ *    deliberate breathing room keeps it.
+ *
+ * @param {mxCell} [root] - model root to normalize (defaults to the model root)
+ * @returns {Object} counts per step: {edgeParents, edgeGeometries, containers}
+ */
+Graph.prototype.normalizeModel = function(root)
+{
+	var model = this.getModel();
+	root = (root != null) ? root : model.getRoot();
+
+	var result = {edgeParents: 0, edgeGeometries: 0, containers: 0};
+	var graph = this;
+
+	// Pre-images of the edge parents, so the caller can report what moved.
+	var edges = [];
+
+	var collectEdges = function(cell)
+	{
+		var childCount = model.getChildCount(cell);
+
+		for (var i = 0; i < childCount; i++)
+		{
+			var child = model.getChildAt(cell, i);
+
+			if (model.isEdge(child))
+			{
+				edges.push({edge: child, parent: model.getParent(child)});
+			}
+
+			collectEdges(child);
+		}
+	};
+
+	collectEdges(root);
+
+	model.beginUpdate();
+
+	try
+	{
+		model.updateEdgeParents(root);
+
+		for (var i = 0; i < edges.length; i++)
+		{
+			if (model.getParent(edges[i].edge) != edges[i].parent)
+			{
+				result.edgeParents++;
+			}
+
+			if (model.getGeometry(edges[i].edge) == null)
+			{
+				var edgeGeo = new mxGeometry();
+				edgeGeo.relative = true;
+				model.setGeometry(edges[i].edge, edgeGeo);
+				result.edgeGeometries++;
+			}
+		}
+
+		var growContainers = function(cell)
+		{
+			var childCount = model.getChildCount(cell);
+
+			for (var i = 0; i < childCount; i++)
+			{
+				growContainers(model.getChildAt(cell, i));
+			}
+
+			if (!model.isVertex(cell) || childCount == 0 ||
+				graph.isTransparentBounds(cell))
+			{
+				return;
+			}
+
+			var geo = model.getGeometry(cell);
+
+			if (geo == null || geo.relative)
+			{
+				return;
+			}
+
+			// Child geometry is relative to this cell's origin, so the
+			// children's bounding box is directly comparable to its size.
+			var children = [];
+
+			for (var j = 0; j < childCount; j++)
+			{
+				var child = model.getChildAt(cell, j);
+				var childGeo = model.getGeometry(child);
+
+				if (model.isVertex(child) && childGeo != null && !childGeo.relative)
+				{
+					children.push(child);
+				}
+			}
+
+			if (children.length == 0)
+			{
+				return;
+			}
+
+			var bounds = graph.getBoundingBoxFromGeometry(children, false);
+
+			if (bounds == null)
+			{
+				return;
+			}
+
+			var width = Math.max(geo.width, bounds.x + bounds.width);
+			var height = Math.max(geo.height, bounds.y + bounds.height);
+
+			if (width > geo.width || height > geo.height)
+			{
+				geo = geo.clone();
+				geo.width = width;
+				geo.height = height;
+				model.setGeometry(cell, geo);
+				result.containers++;
+			}
+		};
+
+		growContainers(root);
+	}
+	finally
+	{
+		model.endUpdate();
+	}
+
+	return result;
+};
+
+/**
  * Substitutes the visible (child-derived) bounds for transparentBounds cells,
  * whose stored geometry is pinned at (0,0,0,0). The base implementation reads
  * each cell's stored geometry directly with no child recursion, so without this
@@ -13265,6 +14518,14 @@ Graph.prototype.getSwimlaneAt = function (x, y, parent)
 };
 
 /**
+ * Returns true if the given cell is foldable via its treeFolding style.
+ */
+Graph.prototype.isTreeCellFoldable = function(cell, style)
+{
+	return style['treeFolding'] == '1';
+};
+
+/**
  * Disables folding for non-swimlanes.
  */
 Graph.prototype.isCellFoldable = function(cell)
@@ -13279,7 +14540,7 @@ Graph.prototype.isCellFoldable = function(cell)
 	return this.foldingEnabled && !this.isTransparentBounds(cell) &&
 		mxUtils.getValue(style,
 		mxConstants.STYLE_RESIZABLE, '1') != '0' &&
-		(style['treeFolding'] == '1' ||
+		(this.isTreeCellFoldable(cell, style) ||
 		(!this.isCellLocked(cell) &&
 		((this.isContainer(cell) && style['collapsible'] != '0') ||
 		(!this.isContainer(cell) && style['collapsible'] == '1'))));
@@ -13603,7 +14864,8 @@ Graph.prototype.getTooltipForCell = function(cell)
 
 		if (tip == null)
 		{
-			var ignored = this.builtInProperties;
+			// Copies the shared list as the link handling below appends to it
+			var ignored = this.builtInProperties.slice();
 			var attrs = cell.value.attributes;
 			var temp = [];
 			tip = '';
@@ -13618,7 +14880,8 @@ Graph.prototype.getTooltipForCell = function(cell)
 			for (var i = 0; i < attrs.length; i++)
 			{
 				if (((Graph.translateDiagram && attrs[i].nodeName == 'label') ||
-					mxUtils.indexOf(ignored, attrs[i].nodeName) < 0) &&
+					(mxUtils.indexOf(ignored, attrs[i].nodeName) < 0 &&
+					!this.isBuiltInPropertyPrefix(attrs[i].nodeName))) &&
 					attrs[i].nodeValue.length > 0)
 				{
 					temp.push({name: attrs[i].nodeName, value: attrs[i].nodeValue});
@@ -17609,7 +18872,11 @@ if (typeof mxVertexHandler !== 'undefined')
 		};
 		
 		/**
-		 * Overridden to add expand style.
+		 * Overridden to add expand style. A transparentBounds parent is never
+		 * extended: its stored geometry stays pinned at (0,0,0,0) and the visible
+		 * box is derived from the children, so mxGraph.extendParent (reached from
+		 * cellsAdded, cellsResized and cellsFolded) would only persist a stale
+		 * child.x + width + padding size into the file.
 		 */
 		var graphIsExtendParent = Graph.prototype.isExtendParent;
 		Graph.prototype.isExtendParent = function(cell)
@@ -17618,6 +18885,11 @@ if (typeof mxVertexHandler !== 'undefined')
 
 			if (parent != null)
 			{
+				if (this.isTransparentBounds(parent))
+				{
+					return false;
+				}
+
 				var style = this.getCurrentCellStyle(parent);
 
 				if (style['expand'] != null)
@@ -17631,7 +18903,8 @@ if (typeof mxVertexHandler !== 'undefined')
 		};
 
 		/**
-		 * Overridden to add contract style.
+		 * Overridden to add contract style. A transparentBounds parent is never
+		 * contracted, see isExtendParent.
 		 */
 		var graphIsContractParent = Graph.prototype.isContractParent;
 		Graph.prototype.isContractParent = function(cell)
@@ -17640,6 +18913,11 @@ if (typeof mxVertexHandler !== 'undefined')
 
 			if (parent != null)
 			{
+				if (this.isTransparentBounds(parent))
+				{
+					return false;
+				}
+
 				var style = this.getCurrentCellStyle(parent);
 
 				if (style['contract'] != null)
@@ -18242,7 +19520,9 @@ if (typeof mxVertexHandler !== 'undefined')
 				var source = state.getVisibleTerminalState(true);
 				var target = state.getVisibleTerminalState(false);
 
-				if (source != null && source == target)
+				// Sequence messages route their own self-calls
+				if (source != null && source == target &&
+					edgeStyle != mxEdgeStyle.SequenceMessage)
 				{
 					var handler = this.createEdgeSegmentHandler(state);
 					var changePoints = handler.changePoints;
@@ -18580,6 +19860,280 @@ if (typeof mxVertexHandler !== 'undefined')
 			else
 			{
 				graphTranslateCell.apply(this, arguments);
+			}
+		};
+
+		/**
+		 * Pins the y of a sequence message before one of its ends is
+		 * reconnected. A message with two floating ends has no y of its own, so
+		 * the new terminal's center would define it (see
+		 * mxGraphView.getNextPoint) and the message would drop to that center.
+		 * The y is taken from the end that is not being reconnected, which is
+		 * where the user sees the message, and a floating end is connected to
+		 * the activation bar at that y (see getSequenceTerminal). A message that
+		 * is reconnected to the lifeline of its other end becomes a self-call
+		 * from (or to) that y, and a self-call that is reconnected elsewhere
+		 * becomes a straight message at the y of the other end.
+		 */
+		var graphCellConnected = Graph.prototype.cellConnected;
+		Graph.prototype.cellConnected = function(edge, terminal, source, constraint)
+		{
+			var state = (terminal != null && this.isSequenceMessage(edge)) ?
+				this.view.getState(edge) : null;
+			var pts = (state != null) ? state.absolutePoints : null;
+			var pt = (pts != null) ? pts[(source) ? pts.length - 1 : 0] : null;
+			var other = this.model.getTerminal(edge, !source);
+
+			if (pt != null)
+			{
+				var floating = constraint == null || constraint.point == null;
+				var self = other != null && this.getSequenceLifeline(terminal) ==
+					this.getSequenceLifeline(other);
+
+				if (self && this.isSequenceSelfCall(edge))
+				{
+					// Reconnected on the same lifeline, keeps its waypoints
+					var own = pts[(source) ? 0 : pts.length - 1];
+
+					if (floating && own != null)
+					{
+						terminal = this.getSequenceTerminal(terminal, own.y);
+					}
+				}
+				else if (self)
+				{
+					var size = this.sequenceSelfCallSize * this.view.scale;
+					var y1 = (source) ? pt.y - size : pt.y;
+					var y2 = (source) ? pt.y : pt.y + size;
+
+					if (floating)
+					{
+						terminal = this.getSequenceTerminal(terminal, (source) ? y1 : y2);
+					}
+
+					var sourceState = this.view.getState((source) ? terminal : other);
+					var geo = this.getCellGeometry(edge);
+
+					if (sourceState != null && geo != null)
+					{
+						var s = this.view.scale;
+						var tr = this.view.translate;
+
+						geo = geo.clone();
+						geo.points = this.getSequenceSelfCallPoints(sourceState, y1, y2).map(function(p)
+						{
+							return new mxPoint(p.x / s - tr.x - state.origin.x,
+								p.y / s - tr.y - state.origin.y);
+						});
+
+						this.model.setGeometry(edge, geo);
+					}
+				}
+				else
+				{
+					this.setSequenceMessageY(edge, this.getRoutedEdgeY(edge, !source));
+
+					if (floating)
+					{
+						terminal = this.getSequenceTerminal(terminal, pt.y);
+					}
+				}
+			}
+
+			graphCellConnected.call(this, edge, terminal, source, constraint);
+		};
+
+		/**
+		 * Sequence messages keep their terminals when moved: the message y is
+		 * stored in the edge (see prepareSequenceMessageMove), so moving a
+		 * message changes its y instead of detaching it from the lifelines.
+		 */
+		var graphDisconnectGraph = Graph.prototype.disconnectGraph;
+		Graph.prototype.disconnectGraph = function(cells)
+		{
+			if (cells != null)
+			{
+				var temp = [];
+
+				for (var i = 0; i < cells.length; i++)
+				{
+					if (!this.isSequenceMessage(cells[i]))
+					{
+						temp.push(cells[i]);
+					}
+				}
+
+				cells = temp;
+			}
+
+			graphDisconnectGraph.apply(this, [cells]);
+		};
+
+		/**
+		 * Gives moved sequence messages a y to move before the move is applied.
+		 */
+		var graphCellsMoved = Graph.prototype.cellsMoved;
+		Graph.prototype.cellsMoved = function(cells, dx, dy, disconnect, constrain, extend)
+		{
+			var messages = [];
+
+			if (cells != null && dy != 0)
+			{
+				for (var i = 0; i < cells.length; i++)
+				{
+					if (this.isSequenceMessage(cells[i]))
+					{
+						messages.push(cells[i]);
+					}
+				}
+			}
+
+			if (messages.length == 0)
+			{
+				graphCellsMoved.apply(this, arguments);
+			}
+			else
+			{
+				// Keeps the prepared y in the same edit as the move
+				this.model.beginUpdate();
+				try
+				{
+					var dict = new mxDictionary();
+
+					for (var i = 0; i < cells.length; i++)
+					{
+						dict.put(cells[i], true);
+					}
+
+					for (var i = 0; i < messages.length; i++)
+					{
+						this.prepareSequenceMessageMove(messages[i], dy, dict);
+					}
+
+					graphCellsMoved.apply(this, arguments);
+				}
+				finally
+				{
+					this.model.endUpdate();
+				}
+			}
+		};
+
+		/**
+		 * A click on the left or right hover arrow of a lifeline, or of an
+		 * activation bar on a lifeline, connects to the next lifeline in that
+		 * direction (see getSequenceConnectTarget) instead of cloning the source
+		 * or showing the shape picker. The new message is placed on the next
+		 * free row (see getSequenceMessageRow), the lifelines and the activation
+		 * bar are made tall enough for it, and it is attached to the activation
+		 * bars on that row. Clone events and a click with no lifeline in that
+		 * direction are unchanged.
+		 */
+		var graphConnectVertex = Graph.prototype.connectVertex;
+		Graph.prototype.connectVertex = function(source, direction, length, evt, forceClone, ignoreCellAt, createTarget, done, targetCell)
+		{
+			var target = (!forceClone && !ignoreCellAt && targetCell == null) ?
+				this.getSequenceConnectTarget(source, direction) : null;
+			var sourceState = this.view.getState(source);
+			var targetState = this.view.getState(target);
+
+			if (sourceState == null || targetState == null)
+			{
+				return graphConnectVertex.apply(this, arguments);
+			}
+
+			var lifeline = this.getSequenceLifeline(source);
+			var y = this.getSequenceMessageRow(source, target);
+			var style = this.createCurrentEdgeStyle();
+			var temp = this.getCellStyle(source)['newEdgeStyle'];
+			var edge = null;
+
+			// Inserts the message with the newEdgeStyle of its source already
+			// applied, so that listeners on insert do not see the current edge
+			// style (eg. libavoid auto-routing would bake its route)
+			if (temp != null)
+			{
+				try
+				{
+					var styles = Graph.decodeNewEdgeStyle(temp);
+
+					for (var key in styles)
+					{
+						style = mxUtils.setStyle(style, key, styles[key]);
+					}
+				}
+				catch (e)
+				{
+					// ignore
+				}
+			}
+
+			this.model.beginUpdate();
+			try
+			{
+				this.growSequenceCell(source, y);
+
+				if (lifeline != source)
+				{
+					this.growSequenceCell(lifeline, y);
+				}
+
+				this.growSequenceCell(target, y);
+
+				edge = this.insertEdge(this.model.getParent(source), null, '',
+					source, target, style);
+				this.applyNewEdgeStyle(source, [edge], direction);
+
+				// The single waypoint holds the row (see mxEdgeStyle.SequenceMessage
+				// and the vertical elbow of older lifelines), rounded to remove the
+				// noise of the view coordinates
+				var s = this.view.scale;
+				var t = this.view.translate;
+				var pstate = this.view.getState(this.model.getParent(edge));
+				var origin = (pstate != null) ? pstate.origin : new mxPoint();
+				var geo = this.getCellGeometry(edge);
+
+				if (geo != null)
+				{
+					geo = geo.clone();
+					geo.points = [new mxPoint(Math.round(((sourceState.getCenterX() +
+						targetState.getCenterX()) / 2 / s - t.x - origin.x) * 100) / 100,
+						Math.round((y / s - t.y - origin.y) * 100) / 100)];
+					this.model.setGeometry(edge, geo);
+				}
+
+				// Keeps a clicked activation bar as the source, whose state is not
+				// updated yet if it was made taller for the row
+				var keep = new mxDictionary();
+
+				if (lifeline != source)
+				{
+					keep.put(source, true);
+				}
+
+				this.updateSequenceTerminals(edge, y, keep);
+
+				if (this.connectionHandler.insertBeforeSource)
+				{
+					this.insertEdgeBeforeCell(edge, source);
+				}
+
+				this.fireEvent(new mxEventObject('cellsInserted', 'cells', [edge]));
+			}
+			finally
+			{
+				this.model.endUpdate();
+			}
+
+			this.scrollCellToVisible(edge);
+
+			if (done != null)
+			{
+				done([edge]);
+			}
+			else
+			{
+				return [edge];
 			}
 		};
 
@@ -23817,7 +25371,7 @@ if (typeof mxVertexHandler !== 'undefined')
 					this.shapeInsideAlign = align;
 
 					// Wrapper geometry as in createShapeInsideValue
-					wrapper.style.cssText = 'float:left;width:' +
+					wrapper.style.cssText = 'float:left;text-decoration:inherit;width:' +
 						Math.round(box.width) + 'px;height:' +
 						Math.round(box.height + this.graph.getShapeInsideGrow(
 							align.spacer, mxUtils.getValue(state.style,
@@ -24755,7 +26309,16 @@ if (typeof mxVertexHandler !== 'undefined')
 		            return (pixels / mxConstants.PIXELS_PER_INCH).toFixed(3);
 		    }
 		};
-		
+
+		/**
+		 * Formats the given unscaled length in the given unit.
+		 */
+		function formatHintLength(length, unit)
+		{
+			return (unit == mxConstants.POINTS) ? Math.round(length) :
+				formatHintText(length, unit);
+		};
+
 		/**
 		 * Format pixels in the given unit
 		 */
@@ -26319,17 +27882,7 @@ if (typeof mxVertexHandler !== 'undefined')
 			var x = this.roundLength(point.x / s - t.x);
 			var y = this.roundLength(point.y / s - t.y);
 			var unit = this.graph.view.unit;
-
-			this.hint.innerHTML = formatHintText(x, unit) + ', ' + formatHintText(y, unit);
-			this.hint.style.visibility = 'visible';
-
-			if (edge != null)
-			{
-				edge.view.updateEdgeBounds(edge);
-				this.hint.innerHTML += ' (' + ((unit == mxConstants.POINTS) ?
-					Math.round(edge.length / s) : formatHintText(
-						edge.length / s, unit)) + ')';
-			}			
+			var text = formatHintText(x, unit) + ', ' + formatHintText(y, unit);
 
 			if (this.isSource || this.isTarget)
 			{
@@ -26338,14 +27891,24 @@ if (typeof mxVertexHandler !== 'undefined')
 					this.constraintHandler.currentFocus != null)
 				{
 					var pt = this.constraintHandler.currentConstraint.point;
-					this.hint.innerHTML = '[' + Math.round(pt.x * 100) + '%, '+ Math.round(pt.y * 100) + '%]';
+					text = '[' + Math.round(pt.x * 100) + '%, '+ Math.round(pt.y * 100) + '%]';
 				}
 				else if (this.marker.hasValidState())
 				{
-					this.hint.style.visibility = 'hidden';
+					text = null;
 				}
 			}
-			
+
+			if (edge != null)
+			{
+				edge.view.updateEdgeBounds(edge);
+				var length = formatHintLength(edge.length / s, unit);
+				text = (text != null) ? text + ' (' + length + ')' : length;
+			}
+
+			this.hint.innerHTML = (text != null) ? text : '';
+			this.hint.style.visibility = (text != null) ? 'visible' : 'hidden';
+
 			this.hint.style.left = Math.round(me.getGraphX() - this.hint.clientWidth / 2) + 'px';
 			this.hint.style.top = (Math.max(me.getGraphY(), point.y) + Editor.hintOffset) + 'px';
 			
@@ -26418,6 +27981,92 @@ if (typeof mxVertexHandler !== 'undefined')
 		 * Updates the hint for the current operation.
 		 */
 		mxEdgeHandler.prototype.removeHint = mxVertexHandler.prototype.removeHint;
+
+		/**
+		 * Shows the length of the preview edge while a new connection is created.
+		 */
+		mxConnectionHandler.prototype.updateHint = function(me)
+		{
+			var pts = (this.shape != null) ? this.shape.points : null;
+
+			if (pts != null && pts.length > 1)
+			{
+				var length = 0;
+
+				for (var i = 1; i < pts.length; i++)
+				{
+					// Last point is moved away from the mouse in mouseMove
+					var p0 = pts[i - 1];
+					var p1 = (i == pts.length - 1 && this.originalPoint != null) ?
+						this.originalPoint : pts[i];
+
+					if (p0 != null && p1 != null)
+					{
+						length += Math.sqrt((p1.x - p0.x) * (p1.x - p0.x) +
+							(p1.y - p0.y) * (p1.y - p0.y));
+					}
+				}
+
+				if (this.hint == null)
+				{
+					this.hint = createHint();
+					this.graph.container.appendChild(this.hint);
+				}
+
+				this.hint.innerHTML = formatHintLength(length /
+					this.graph.view.scale, this.graph.view.unit);
+				this.hint.style.left = Math.round(me.getGraphX() -
+					this.hint.clientWidth / 2) + 'px';
+				this.hint.style.top = (me.getGraphY() + Editor.hintOffset) + 'px';
+			}
+			else
+			{
+				this.removeHint();
+			}
+		};
+
+		/**
+		 * Removes the hint for new connections.
+		 */
+		mxConnectionHandler.prototype.removeHint = mxGraphHandler.prototype.removeHint;
+
+		/**
+		 * Updates the hint while a new connection is created.
+		 */
+		var connectionHandlerHintMouseMove = mxConnectionHandler.prototype.mouseMove;
+		mxConnectionHandler.prototype.mouseMove = function(sender, me)
+		{
+			connectionHandlerHintMouseMove.apply(this, arguments);
+
+			if (this.first != null && this.shape != null)
+			{
+				this.updateHint(me);
+			}
+			else
+			{
+				this.removeHint();
+			}
+		};
+
+		/**
+		 * Removes the hint for new connections.
+		 */
+		var connectionHandlerHintReset = mxConnectionHandler.prototype.reset;
+		mxConnectionHandler.prototype.reset = function()
+		{
+			this.removeHint();
+			connectionHandlerHintReset.apply(this, arguments);
+		};
+
+		/**
+		 * Removes the hint for new connections.
+		 */
+		var connectionHandlerHintDestroy = mxConnectionHandler.prototype.destroy;
+		mxConnectionHandler.prototype.destroy = function()
+		{
+			this.removeHint();
+			connectionHandlerHintDestroy.apply(this, arguments);
+		};
 	
 		/**
 		 * Defines the handles for the UI. Uses data-URIs to speed-up loading time where supported.
@@ -26555,6 +28204,50 @@ if (typeof mxVertexHandler !== 'undefined')
 			}
 
 			return edgeHandlerChangePoints.apply(this, arguments);
+		};
+
+		// Connects a sequence message whose middle handle was dragged to the
+		// activation bars at its new y, as moving the message does (see
+		// Graph.prepareSequenceMessageMove)
+		var sequenceEdgeHandlerChangePoints = mxEdgeHandler.prototype.changePoints;
+
+		mxEdgeHandler.prototype.changePoints = function(edge, points, clone)
+		{
+			var model = this.graph.getModel();
+			var y0 = (this.graph.isSequenceMessage(edge)) ?
+				this.graph.getRoutedEdgeY(edge, true) : null;
+			var result = null;
+
+			model.beginUpdate();
+			try
+			{
+				result = sequenceEdgeHandlerChangePoints.apply(this, arguments);
+				var geo = (result != null && this.graph.isSequenceMessage(result)) ?
+					this.graph.getCellGeometry(result) : null;
+				var pts = (geo != null) ? geo.points : null;
+
+				if (pts != null && pts.length > 0 && pts[0] != null && pts[pts.length - 1] != null)
+				{
+					var view = this.graph.view;
+					var dy = view.translate.y + this.state.origin.y;
+
+					// A pinned end defines the y, so the pin moves along
+					if (pts.length == 1 && y0 != null)
+					{
+						this.graph.shiftSequenceMessagePins(result, pts[0].y - y0);
+					}
+
+					// The target of a self-call is attached at the y where it returns
+					this.graph.updateSequenceTerminals(result, (pts[0].y + dy) * view.scale,
+						null, (pts[pts.length - 1].y + dy) * view.scale);
+				}
+			}
+			finally
+			{
+				model.endUpdate();
+			}
+
+			return result;
 		};
 
 		// Live obstacle-avoiding preview while dragging an edge endpoint. Orthogonal
@@ -27061,8 +28754,67 @@ if (typeof mxVertexHandler !== 'undefined')
 		
 		mxEdgeHandler.prototype.updatePreviewState = function(edge, point, terminalState, me)
 		{
-			mxEdgeHandlerUpdatePreviewState.apply(this, arguments);
-			
+			var args = Array.prototype.slice.call(arguments);
+
+			// Previews a floating end of a sequence message on the activation bar
+			// that it is connected to at the current message y (see cellConnected)
+			if (terminalState != null && (this.isSource || this.isTarget) &&
+				this.getConstraintHandler().currentConstraint == null &&
+				this.graph.isSequenceMessage(this.state.cell))
+			{
+				var pts = this.state.absolutePoints;
+				var pt = pts[(this.isSource) ? pts.length - 1 : 0];
+
+				if (pt != null)
+				{
+					args[2] = this.graph.view.getState(this.graph.getSequenceTerminal(
+						terminalState.cell, pt.y)) || terminalState;
+				}
+			}
+
+			mxEdgeHandlerUpdatePreviewState.apply(this, args);
+
+			// Previews the floating ends of a sequence message whose middle
+			// handle is dragged on the activation bars at the new y (see
+			// changePoints)
+			if (!this.isSource && !this.isTarget && !this.isLabel && this.points != null &&
+				this.points.length > 0 && this.points[0] != null &&
+				this.points[this.points.length - 1] != null &&
+				this.graph.isSequenceMessage(this.state.cell))
+			{
+				var view = this.graph.view;
+				var ends = [];
+
+				for (var i = 0; i < 2; i++)
+				{
+					var ts = edge.getVisibleTerminalState(i == 0);
+					var y = (this.points[(i == 0) ? 0 : this.points.length - 1].y +
+						view.translate.y + this.state.origin.y) * view.scale;
+					ends[i] = ts;
+
+					// Floating ends are routed again (a routed end reads as pinned)
+					if (ts != null && !this.graph.isSequenceMessagePinned(this.state.cell, i == 0))
+					{
+						ends[i] = view.getState(this.graph.getSequenceTerminal(ts.cell, y)) || ts;
+						edge.setVisibleTerminalState(ends[i], i == 0);
+						edge.setAbsoluteTerminalPoint(null, i == 0);
+					}
+					// Pinned ends move along (see changePoints)
+					else if (ts != null && this.points.length == 1)
+					{
+						var pt = edge.absolutePoints[(i == 0) ? 0 : edge.absolutePoints.length - 1];
+
+						if (pt != null)
+						{
+							edge.setAbsoluteTerminalPoint(new mxPoint(pt.x, y), i == 0);
+						}
+					}
+				}
+
+				view.updatePoints(edge, this.points, ends[0], ends[1]);
+				view.updateFloatingTerminalPoints(edge, ends[0], ends[1]);
+			}
+
 	    	if (terminalState != this.currentTerminalState)
 	    	{
 	    		startTime = new Date().getTime();
@@ -27081,7 +28833,10 @@ if (typeof mxVertexHandler !== 'undefined')
 		
 		mxEdgeHandler.prototype.isOutlineConnectEvent = function(me)
 		{
-			if (mxEvent.isShiftDown(me.getEvent()) && mxEvent.isAltDown(me.getEvent()))
+			// Sequence messages connect to the perimeter so that an end is not
+			// pinned inside an activation bar at a height-relative point
+			if ((mxEvent.isShiftDown(me.getEvent()) && mxEvent.isAltDown(me.getEvent())) ||
+				this.graph.isSequenceMessage(this.state.cell))
 			{
 				return false;
 			}
@@ -27253,6 +29008,30 @@ if (typeof mxVertexHandler !== 'undefined')
 			}
 			
 			return mxGraphHandlerGetBoundingBox.apply(this, arguments);
+		};
+
+		// A moved sequence message is snapped to the grid and aligned by guides
+		// with its line: the state of a horizontal edge is one pixel high, so its
+		// center is half a pixel below the line
+		var mxGraphHandlerGetStateBounds = mxGraphHandler.prototype.getStateBounds;
+		mxGraphHandler.prototype.getStateBounds = function(cells)
+		{
+			var bounds = mxGraphHandlerGetStateBounds.apply(this, arguments);
+
+			if (bounds != null && cells.length == 1 && this.graph.isSequenceMessage(cells[0]))
+			{
+				var state = this.graph.view.getState(cells[0]);
+				var pts = (state != null) ? state.absolutePoints : null;
+
+				if (pts != null && pts[0] != null && pts[pts.length - 1] != null &&
+					pts[0].y == pts[pts.length - 1].y)
+				{
+					bounds.y = pts[0].y;
+					bounds.height = 0;
+				}
+			}
+
+			return bounds;
 		};
 
 		// Ignores child cells with part style and cells outside of the

@@ -133,12 +133,12 @@
 	
 	/**
 	 * Switch to disable logging for mode and search terms.
+	 * preprod.diagrams.net logs on purpose: release-checklist errors must reach Logs Explorer before promote.
 	 */
 	EditorUi.enableLogging = urlParams['stealth'] != '1' && urlParams['lockdown'] != '1' &&
 		(/.*\.draw\.io$/.test(window.location.hostname) ||
 		/.*\.diagrams\.net$/.test(window.location.hostname) ||
 		/.*\.cdn\.prod\.atlassian-dev\.net$/.test(window.location.hostname)) && // Forge app
-		window.location.hostname != 'https://preprod.diagrams.net/' &&
 		window.location.hostname != 'support.draw.io' &&
 		window.location.hostname != 'test.draw.io';
 	
@@ -207,8 +207,8 @@
 	 * Shortcut for capability check.
 	 */
 	EditorUi.nativeFileSupport = !mxClient.IS_OP && !EditorUi.isElectronApp &&
-		urlParams['extAuth'] != '1' && 'showSaveFilePicker' in window &&
-		'showOpenFilePicker' in window;
+		urlParams['extAuth'] != '1' && typeof window.showSaveFilePicker === 'function' &&
+		typeof window.showOpenFilePicker === 'function';
 
 	/**
 	 * Specifies if drafts should be saved in IndexedDB.
@@ -352,6 +352,19 @@
 	EditorUi.mermaidImageBorder = 10;
 
 	/**
+	 * Returns true if the given window.onerror arguments describe an error the
+	 * browser has sanitized because it was thrown by a script from another
+	 * origin, eg. the bridge code in-app browsers inject into every page. Such
+	 * errors carry no location, stack or text other than "Script error.",
+	 * while errors of scripts loaded from the page's own origin always carry
+	 * their details.
+	 */
+	EditorUi.isOpaqueScriptError = function(message, linenumber)
+	{
+		return message == 'Script error.' && !linenumber;
+	};
+
+	/**
 	 * Updates action states depending on the selection.
 	 */
 	EditorUi.logError = function(message, url, linenumber, colno, err, severity, quiet)
@@ -462,6 +475,102 @@
 			{
 				// ignore
 			}
+		}
+	};
+
+	/**
+	 * Temporary telemetry for the realtime v7 rollout, remove after the
+	 * soak (set to false or revert the commit that added it). Sends
+	 * anomaly counters as WARNING entries to the log endpoint so the
+	 * release can be watched per client version in Logs Explorer
+	 * (textPayload:"CLIENT-LOG:rt7:"). A message carries the hashed file
+	 * id, the file mode, the random sync client id and short sanitized
+	 * fields only - no URL, stack, labels or user ids.
+	 */
+	EditorUi.realtimeTelemetry = true;
+
+	/**
+	 * Share of page loads that also run the sampled checks (snapshot drift
+	 * and the session summary) in addition to the anomaly events.
+	 */
+	EditorUi.realtimeTelemetrySampled = Math.random() < 0.02;
+
+	/**
+	 * Events sent per name and page load, keyed events fire once per key.
+	 */
+	EditorUi.realtimeTelemetryMax = 10;
+
+	/**
+	 * Counts sent events per name and key for the caps above.
+	 */
+	EditorUi.realtimeTelemetryCounts = Object.create(null);
+
+	/**
+	 * Sends an rt7 telemetry event. Fields are reduced to a short safe
+	 * charset. A file adds its hashed id, mode and sync client id and is
+	 * flagged so that its session summary is reported on close. Beacon
+	 * sends via sendBeacon for page unloads.
+	 */
+	EditorUi.logRealtime = function(name, fields, file, key, beacon)
+	{
+		try
+		{
+			if (EditorUi.realtimeTelemetry && name != null)
+			{
+				var id = name + ((key != null) ? ':' + key : '');
+				var count = EditorUi.realtimeTelemetryCounts[id] || 0;
+
+				if (count < ((key != null) ? 1 : EditorUi.realtimeTelemetryMax))
+				{
+					EditorUi.realtimeTelemetryCounts[id] = count + 1;
+
+					var clean = function(value)
+					{
+						return String(value).replace(/[^A-Za-z0-9._-]/g, '').substring(0, 32);
+					};
+
+					var msg = 'rt7:' + clean(name);
+
+					if (file != null)
+					{
+						file.realtimeTelemetryFlagged = true;
+						msg += ':f=' + file.ui.hashValue(file.getId()) +
+							((file.getMode() != null) ? ',m=' + clean(file.getMode()) : '') +
+							((file.sync != null) ? ',c=' + clean(file.sync.clientId) : '');
+					}
+
+					if (fields != null)
+					{
+						for (var k in fields)
+						{
+							if (fields[k] != null)
+							{
+								msg += ',' + clean(k) + '=' + clean(fields[k]);
+							}
+						}
+					}
+
+					if (urlParams['dev'] == '1')
+					{
+						EditorUi.debug('logRealtime', msg);
+					}
+					else if (EditorUi.enableLogging)
+					{
+						var url = ((window.DRAWIO_LOG_URL != null) ? window.DRAWIO_LOG_URL : '') +
+							'/log?severity=WARNING&v=' + encodeURIComponent(EditorUi.VERSION) +
+							'&msg=' + encodeURIComponent(msg);
+
+						if (!beacon || navigator.sendBeacon == null || !navigator.sendBeacon(url))
+						{
+							new Image().src = url;
+						}
+					}
+				}
+			}
+		}
+		catch (e)
+		{
+			// ignore
 		}
 	};
 
@@ -834,13 +943,22 @@
 	EditorUi.prototype.maxPrintPageCount = 1000;
 
 	/**
+	 * Maximum canvas area in pixels for image exports in embed mode. If an
+	 * export exceeds this area at the requested scale, the scale is reduced
+	 * until the output fits within the budget, so that generating the image
+	 * cannot crash the browser tab by running out of memory. 67108864 is
+	 * 8192 x 8192 px, ie. 256 MB of RGBA pixel data. Use 0 to disable.
+	 */
+	EditorUi.prototype.maxCanvasExportArea = 67108864;
+
+	/**
 	 * Holds the current file.
 	 */
 	EditorUi.prototype.currentFile = null;
 
 	/**
-	 * Specifies if PDF export should be done via print dialog. Default is
-	 * false which uses the PhantomJS backend to create the PDF.
+	 * Forces PDF export via the print dialog. Default is false, which uses
+	 * the export service if one is available (see isPrintPdfExport).
 	 */
 	EditorUi.prototype.printPdfExport = false;
 	
@@ -914,6 +1032,21 @@
 	 */
 	EditorUi.prototype.showRemoteCursors = true;
 	
+	/**
+	 * Specifies if the local view is sent to all collaborators.
+	 */
+	EditorUi.prototype.presenting = false;
+
+	/**
+	 * Client ID of the collaborator whose view is followed, null if none.
+	 */
+	EditorUi.prototype.followingPresenter = null;
+
+	/**
+	 * Delay between the view updates that are sent while presenting.
+	 */
+	EditorUi.prototype.presentingDelay = 300;
+
 	/**
 	 * Hook for subclassers.
 	 */
@@ -1028,6 +1161,242 @@
 	};
  
 	/**
+	 * Returns the visible area of the canvas in graph coordinates.
+	 */
+	EditorUi.prototype.getViewportBounds = function()
+	{
+		var graph = this.editor.graph;
+		var tr = graph.view.translate;
+		var s = graph.view.scale;
+		var c = graph.container;
+
+		return new mxRectangle(c.scrollLeft / s - tr.x,
+			c.scrollTop / s - tr.y, c.clientWidth / s,
+			c.clientHeight / s);
+	};
+
+	/**
+	 * Moves all collaborators to the current page and view of this client.
+	 */
+	EditorUi.prototype.bringEveryoneToMe = function()
+	{
+		var file = this.getCurrentFile();
+
+		if (file != null && file.sync != null &&
+			file.isRealtimeEnabled() && file.isRealtimeSupported())
+		{
+			file.sync.sendSharedViewMessage((this.currentPage != null) ?
+				this.currentPage.getId() : null, this.getViewportBounds());
+
+			// The sender ignores the echo of its own message
+			file.sync.showMessage(mxResources.get('viewSharedWithEveryone'));
+		}
+	};
+
+	/**
+	 * Moves this client to the given page and view. The arguments come from
+	 * a collaborator so unknown pages and invalid bounds are ignored.
+	 */
+	EditorUi.prototype.showSharedView = function(pageId, bounds)
+	{
+		var graph = this.editor.graph;
+
+		if (pageId != null && this.currentPage != null &&
+			pageId != this.currentPage.getId())
+		{
+			var page = this.getPageById(pageId);
+
+			if (page != null)
+			{
+				// Quiet as the page switch is not the user's edit
+				this.selectPage(page, true);
+			}
+		}
+
+		if (bounds != null && bounds.width > 0 && bounds.height > 0 &&
+			graph.container.clientWidth > 0 && graph.container.clientHeight > 0)
+		{
+			graph.fitWindow(bounds, 0);
+		}
+	};
+
+	/**
+	 * Returns true if the local view is sent to all collaborators.
+	 */
+	EditorUi.prototype.isPresenting = function()
+	{
+		return this.presenting;
+	};
+
+	/**
+	 * Starts or stops sending the local view to all collaborators. Does not
+	 * notify them, use togglePresenting for that.
+	 */
+	EditorUi.prototype.setPresenting = function(value)
+	{
+		if (this.presenting != value)
+		{
+			this.presenting = value;
+
+			if (value)
+			{
+				// A presenter is never moved by another client
+				this.stopFollowing();
+				this.installPresentingListeners();
+			}
+			else
+			{
+				this.uninstallPresentingListeners();
+			}
+
+			this.fireEvent(new mxEventObject('presentingChanged'));
+		}
+	};
+
+	/**
+	 * Starts or stops presenting and notifies the collaborators.
+	 */
+	EditorUi.prototype.togglePresenting = function()
+	{
+		var file = this.getCurrentFile();
+
+		if (file != null && file.sync != null &&
+			file.isRealtimeEnabled() && file.isRealtimeSupported())
+		{
+			var value = !this.isPresenting();
+			this.setPresenting(value);
+
+			file.sync.sendSharedViewMessage((this.currentPage != null) ?
+				this.currentPage.getId() : null, this.getViewportBounds(),
+				(value) ? 1 : 0);
+
+			// The sender ignores the echo of its own message
+			file.sync.showMessage(mxResources.get((value) ?
+				'presentingToEveryone' : 'presentationEnded'));
+		}
+	};
+
+	/**
+	 * Adds the listeners that send the local view while presenting.
+	 */
+	EditorUi.prototype.installPresentingListeners = function()
+	{
+		var graph = this.editor.graph;
+
+		this.presentingListener = mxUtils.bind(this, function()
+		{
+			// Scroll and zoom fire in bursts so the update is debounced
+			if (this.presentingThread != null)
+			{
+				window.clearTimeout(this.presentingThread);
+			}
+
+			this.presentingThread = window.setTimeout(mxUtils.bind(this, function()
+			{
+				this.presentingThread = null;
+				var file = this.getCurrentFile();
+
+				if (this.presenting && file != null && file.sync != null)
+				{
+					file.sync.sendViewUpdate((this.currentPage != null) ?
+						this.currentPage.getId() : null, this.getViewportBounds());
+				}
+			}), this.presentingDelay);
+		});
+
+		mxEvent.addListener(graph.container, 'scroll', this.presentingListener);
+		graph.view.addListener(mxEvent.SCALE, this.presentingListener);
+		graph.view.addListener(mxEvent.TRANSLATE, this.presentingListener);
+		graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, this.presentingListener);
+		this.editor.addListener('pageSelected', this.presentingListener);
+	};
+
+	/**
+	 * Removes the listeners that send the local view while presenting.
+	 */
+	EditorUi.prototype.uninstallPresentingListeners = function()
+	{
+		if (this.presentingListener != null)
+		{
+			var graph = this.editor.graph;
+
+			mxEvent.removeListener(graph.container, 'scroll', this.presentingListener);
+			graph.view.removeListener(this.presentingListener);
+			this.editor.removeListener(this.presentingListener);
+			this.presentingListener = null;
+		}
+
+		if (this.presentingThread != null)
+		{
+			window.clearTimeout(this.presentingThread);
+			this.presentingThread = null;
+		}
+	};
+
+	/**
+	 * Returns true if the view of the given client is followed. Returns true
+	 * for any presenter if no client is given.
+	 */
+	EditorUi.prototype.isFollowing = function(clientId)
+	{
+		return this.followingPresenter != null && (clientId == null ||
+			this.followingPresenter == clientId);
+	};
+
+	/**
+	 * Follows the view of the given client until the user works on the
+	 * canvas or the presentation ends.
+	 */
+	EditorUi.prototype.startFollowing = function(clientId)
+	{
+		if (clientId != null && this.followingPresenter != clientId)
+		{
+			this.stopFollowing();
+			this.followingPresenter = clientId;
+			var graph = this.editor.graph;
+
+			this.stopFollowingListener = mxUtils.bind(this, function()
+			{
+				this.stopFollowing();
+			});
+
+			// Own input ends the follow, programmatic scrolling does not
+			mxEvent.addListener(graph.container, 'wheel', this.stopFollowingListener);
+			mxEvent.addGestureListeners(graph.container, this.stopFollowingListener);
+
+			if (this.diagramContainer != null)
+			{
+				this.diagramContainer.classList.add('geFollowingView');
+			}
+
+			this.fireEvent(new mxEventObject('followingChanged'));
+		}
+	};
+
+	/**
+	 * Stops following the view of another client.
+	 */
+	EditorUi.prototype.stopFollowing = function()
+	{
+		if (this.followingPresenter != null)
+		{
+			var graph = this.editor.graph;
+
+			mxEvent.removeListener(graph.container, 'wheel', this.stopFollowingListener);
+			mxEvent.removeGestureListeners(graph.container, this.stopFollowingListener);
+			this.stopFollowingListener = null;
+			this.followingPresenter = null;
+
+			if (this.diagramContainer != null)
+			{
+				this.diagramContainer.classList.remove('geFollowingView');
+			}
+
+			this.fireEvent(new mxEventObject('followingChanged'));
+		}
+	};
+ 
+	/**
 	 * Returns true if offline app, which isn't a defined thing
 	 */
 	EditorUi.prototype.setMathEnabled = function(value)
@@ -1096,6 +1465,28 @@
 		// ignored in the desktop app where all resources are local
 		return this.isOfflineApp() || (!navigator.onLine && !EditorUi.isElectronApp) ||
 			(!ignoreStealth && (urlParams['stealth'] == '1' || urlParams['lockdown'] == '1'));
+	};
+
+	/**
+	 * Returns true if a server-side export service is configured and the app
+	 * is not offline. EXPORT_URL must be an absolute HTTP(S) or root-relative
+	 * URL. Null, empty and other values (such as the placeholder in the
+	 * PreConfig.js of the public build) mean that no service is available.
+	 */
+	EditorUi.prototype.isRemoteExportEnabled = function()
+	{
+		return !this.isOffline() && typeof EXPORT_URL === 'string' &&
+			/^(https?:\/\/|\/)/i.test(EXPORT_URL);
+	};
+
+	/**
+	 * Returns true if PDF export should use the print dialog instead of the
+	 * export service. This is the case if printPdfExport is set or if no
+	 * export service is available.
+	 */
+	EditorUi.prototype.isPrintPdfExport = function()
+	{
+		return this.printPdfExport || !this.isRemoteExportEnabled();
 	};
 
 	/**
@@ -1800,12 +2191,34 @@
 		if (node != null)
 		{
 			var graph = this.editor.graph;
-			
+
+			// One undoable step. The old pages are removed BEFORE the
+			// new ones are inserted: the page replays resolve by id,
+			// and a restore re-materializes the same page ids, so with
+			// the inserts recorded first the undo re-inserted the old
+			// pages while their restored twins were still present
+			// (skipped as "already there") and then removed the twins -
+			// an empty document, flushed to every collaborator
+			// (restore-undo). Reversed, the undo removes the restored
+			// pages first and the old page objects return cleanly. The
+			// viewed page is the select target of its own removal: a
+			// no-op on the way out (the page is gone by then) and the
+			// re-selection on the way back.
 			graph.model.beginUpdate();
 			try
 			{
 				var oldPages = (this.pages != null) ? this.pages.slice() : null;
+				var oldCurrent = this.currentPage;
 				var nodes = node.getElementsByTagName('diagram');
+
+				if (oldPages != null)
+				{
+					for (var i = 0; i < oldPages.length; i++)
+					{
+						graph.model.execute(new ChangePage(this, oldPages[i],
+							(oldPages[i] == oldCurrent) ? oldCurrent : null));
+					}
+				}
 
 				if (nodes.length > 1 || (nodes.length == 1 && nodes[0].hasAttribute('name')))
 				{
@@ -1813,18 +2226,43 @@
 					graph.defaultExportLinkTarget = node.getAttribute('linkTarget');
 					this.pages = (this.pages != null) ? this.pages : [];
 					
-					// Wraps page nodes
-					for (var i = nodes.length - 1; i >= 0; i--)
+					// Wraps page nodes. The viewed page stays selected if the
+					// new document has a page of the same id (a restore keeps
+					// the page ids), as on the collaborators who receive the
+					// replacement as a patch; else the first page is selected
+					var pages = [];
+
+					for (var i = 0; i < nodes.length; i++)
 					{
 						var page = this.updatePageRoot(new DiagramPage(nodes[i]));
-						
+
 						// Checks for invalid page names
 						if (page.getName() == null)
 						{
 							page.setName(mxResources.get('pageWithNumber', [i + 1]));
 						}
 
-						graph.model.execute(new ChangePage(this, page, (i == 0) ? page : null, 0));
+						pages.push(page);
+					}
+
+					var selectIndex = 0;
+
+					if (oldCurrent != null)
+					{
+						for (var i = 0; i < pages.length; i++)
+						{
+							if (pages[i].getId() == oldCurrent.getId())
+							{
+								selectIndex = i;
+								break;
+							}
+						}
+					}
+
+					for (var i = pages.length - 1; i >= 0; i--)
+					{
+						graph.model.execute(new ChangePage(this, pages[i],
+							(i == selectIndex) ? pages[i] : null, 0));
 					}
 				}
 				else
@@ -1849,15 +2287,6 @@
 					}
 				}
 				
-				// Removes old pages
-				if (oldPages != null)
-				{
-					for (var i = 0; i < oldPages.length; i++)
-					{
-						graph.model.execute(new ChangePage(this, oldPages[i], null));
-					}
-				}
-				
 				// Updates internal sync state for current file
 				var file = this.getCurrentFile();
 
@@ -1872,10 +2301,10 @@
 			}
 		}
 	};
-	
+
 	/**
 	 * Translates this point by the given vector.
-	 * 
+	 *
 	 * @param {number} dx X-coordinate of the translation.
 	 * @param {number} dy Y-coordinate of the translation.
 	 */
@@ -6436,10 +6865,17 @@
 	 * @param {number} dx X-coordinate of the translation.
 	 * @param {number} dy Y-coordinate of the translation.
 	 */
-	EditorUi.prototype.confirm = function(msg, okFn, cancelFn, okLabel, cancelLabel, closable)
+	/**
+	 * onClose runs for a dismissal that answered NEITHER button (eg.
+	 * Escape). Callers that leave state behind - a conflict flag, a
+	 * pending callback - must pass it, or a dismissed dialog strands
+	 * them silently.
+	 */
+	EditorUi.prototype.confirm = function(msg, okFn, cancelFn, okLabel, cancelLabel, closable, onClose)
 	{
 		msg = (msg != null) ? msg : '';
 		var resume = (this.spinner != null && this.spinner.pause != null) ? this.spinner.pause() : function() {};
+		var resumed = false;
 		var height = Math.min(220, Math.ceil(Math.max(1, msg.length) / 50) * 28);
 		
 		var dlg = new ConfirmDialog(this, msg, function()
@@ -6460,7 +6896,19 @@
 			}
 		}, okLabel, cancelLabel, null, null, null, null, height);
 		
-		this.showDialog(dlg.container, 340, 46 + height, true, closable);
+		this.showDialog(dlg.container, 340, 46 + height, true, closable,
+			(onClose != null) ? function()
+			{
+				// The buttons resume on their own; this only has to
+				// cover a dismissal that ran neither of them
+				if (!resumed)
+				{
+					resumed = true;
+					resume();
+				}
+
+				onClose();
+			} : null);
 		dlg.init();
 	};
 	
@@ -8743,9 +9191,12 @@
 			params.push('dark=' + darkMode);
 		}
 
-		// Uses current host for non-public GitLab and GitHub files
+		// Uses current host for non-public GitLab and GitHub files and for
+		// Microsoft 365 files, which sign in with the current host's Azure app.
+		// Copies need no sign-in and keep the viewer, which allows framing.
 		return ((lightbox && (url != null || (file != null &&
-			file.getMode() != App.MODE_GITHUB && file.getMode() != App.MODE_GITLAB))) ?
+			file.getMode() != App.MODE_GITHUB && file.getMode() != App.MODE_GITLAB &&
+			(ignoreFile || file.getMode() != App.MODE_M365)))) ?
 			EditorUi.lightboxHost : (((mxClient.IS_CHROMEAPP || EditorUi.isElectronApp ||
 			!(/.*\.draw\.io$/.test(window.location.hostname))) ?
 			EditorUi.drawHost : 'https://' + window.location.host))) + '/' +
@@ -10408,6 +10859,10 @@
 		   	{
 		   		err({message: mxResources.get('unknownError')});
 		   	}), null, true, (retina) ? 2 : 1, null, shadow, null, null, Editor.defaultBorder);
+		}
+		else if (!this.isRemoteExportEnabled())
+		{
+			err({message: mxResources.get('notAvailable')});
 		}
 		else
 		{
@@ -13016,6 +13471,106 @@
 	};
 
 	/**
+	 * Returns true if the given mermaid source is a swimlane-beta diagram.
+	 */
+	EditorUi.prototype.isMermaidSwimlane = function(data)
+	{
+		var type = this.getMermaidDiagramType(data);
+
+		return type == 'swimlane-beta' || type == 'swimlanebeta';
+	};
+
+	/**
+	 * Routes the edges of parsed swimlane-beta XML around the nodes with
+	 * libavoid and returns the routed XML. The native parser places the
+	 * nodes on mermaid's lane grid but emits unrouted orthogonal edges
+	 * (mermaid's own swimlane router is not ported), so a same-lane edge
+	 * would otherwise cut straight through the nodes between its
+	 * terminals. Decodes the XML into a hidden offscreen Graph, runs
+	 * LibavoidRouting.routeCells (the bundle initializes synchronously,
+	 * so window.Avoid is available whenever LibavoidRouting is loaded)
+	 * and encodes back. Returns the unrouted XML when libavoid is not
+	 * loaded or the routing fails.
+	 */
+	EditorUi.prototype.applyMermaidSwimlaneRouting = function(xml)
+	{
+		var Avoid = (typeof LibavoidRouting !== 'undefined' &&
+			typeof Graph !== 'undefined' && typeof window !== 'undefined') ?
+			window.Avoid : null;
+
+		if (Avoid == null)
+		{
+			return xml;
+		}
+
+		var container = document.createElement('div');
+		container.style.cssText =
+			'position:absolute;left:-99999px;top:-99999px;' +
+			'width:1200px;height:800px;visibility:hidden;';
+		document.body.appendChild(container);
+
+		var graph = null;
+		var result = xml;
+
+		try
+		{
+			graph = new Graph(container);
+			graph.foldingEnabled = false;
+			graph.setEnabled(false);
+			graph.setHtmlLabels(true);
+
+			var model = graph.getModel();
+			var doc = mxUtils.parseXml(xml);
+			var codec = new mxCodec(doc);
+			codec.decode(doc.documentElement, model);
+
+			var edges = model.filterDescendants(function(cell)
+			{
+				return model.isEdge(cell);
+			});
+
+			model.beginUpdate();
+
+			try
+			{
+				LibavoidRouting.routeCells(graph, Avoid, edges, null, true);
+			}
+			finally
+			{
+				model.endUpdate();
+			}
+
+			result = mxUtils.getXml(new mxCodec().encode(model));
+		}
+		catch (e)
+		{
+			// Falls back to the unrouted XML. Reported (message only, never
+			// the diagram) because a libavoid abort would otherwise silently
+			// turn every swimlane insert into an unrouted one.
+			EditorUi.logError('applyMermaidSwimlaneRouting: ' + e.message,
+				null, null, null, e);
+		}
+		finally
+		{
+			try
+			{
+				if (graph != null)
+				{
+					graph.destroy();
+				}
+			}
+			catch (e)
+			{
+				// ignore teardown errors
+			}
+
+			container.remove();
+		}
+
+		return result;
+	};
+
+	/**
 	 * Parses the given mermaid diagram and returns diagram XML.
 	 */
 	EditorUi.prototype.parseMermaidDiagram = function(data, config, success, error, parseErrorHandler)
@@ -13042,7 +13597,15 @@
 			{
 				var xml = mxMermaidToDrawio.parseText(data, this.getMermaidConfig(data, config));
 
-				if (xml != null)
+				// The parsers skip statements they do not recognize, so invalid
+				// input can convert to a model without cells. Report it rather
+				// than silently inserting or exporting nothing
+				if (xml != null && !/\s(vertex|edge)="1"/.test(xml))
+				{
+					onParseError(new Error('Nothing to draw: the diagram is empty ' +
+						'or its statements were not recognized'));
+				}
+				else if (xml != null)
 				{
 					// Flowchart-elk diagrams need an ElkLayout post-pass
 					// to match the mermaid-cli reference (the parser's
@@ -13051,6 +13614,12 @@
 					if (this.isMermaidElkFlowchart(data))
 					{
 						this.applyMermaidElkPostPass(xml, data, success);
+					}
+					else if (this.isMermaidSwimlane(data))
+					{
+						// The parser places swimlane nodes but leaves the
+						// edges unrouted; route them around the nodes.
+						success(this.applyMermaidSwimlaneRouting(xml));
 					}
 					else
 					{
@@ -13249,6 +13818,13 @@
 	/**
 	 * Parses the given PlantUML source with the native converter and returns
 	 * diagram XML via `success`. Loads the converter bundle on demand.
+	 *
+	 * `success` is called as (xml, warnings), where warnings is the converter's
+	 * list of user-facing strings for input it could not use (a dropped line, an
+	 * ignored directive). They are soft: the XML is complete and usable, so
+	 * callers that are user-initiated pass them to showPlantUmlWarnings, and
+	 * background callers ignore them. Always an array, empty for bundles
+	 * predating the warnings channel.
 	 */
 	EditorUi.prototype.parsePlantUmlDiagram = function(data, config, success, error)
 	{
@@ -13270,7 +13846,18 @@
 			{
 				try
 				{
-					success(mxPlantUmlToDrawio.parseText(data, config));
+					var xml = mxPlantUmlToDrawio.parseText(data, config);
+
+					// Soft diagnostics for lines the converter dropped or
+					// directives it ignored. Read directly after the parse so a
+					// later parse cannot overwrite them, and handed to the
+					// caller rather than shown here: the silent refresh paths
+					// (eg. refreshMermaidImage) must not raise a notice.
+					// Bundles older than the warnings channel have no
+					// lastWarnings, which yields an empty list.
+					success(xml, (typeof mxPlantUmlToDrawio.lastWarnings !== 'undefined' &&
+						mxPlantUmlToDrawio.lastWarnings != null) ?
+						mxPlantUmlToDrawio.lastWarnings.slice() : []);
 				}
 				catch (e)
 				{
@@ -13294,10 +13881,47 @@
 	 */
 	EditorUi.prototype.parsePlantUmlImage = function(text, success, error)
 	{
-		this.parsePlantUmlDiagram(text, null, mxUtils.bind(this, function(xml)
+		this.parsePlantUmlDiagram(text, null, mxUtils.bind(this, function(xml, warnings)
 		{
-			success(this.createMermaidImageXml(text, null, xml, null, null, 'plantUmlData'));
+			// The warnings are about the source, not the representation, so
+			// they pass through to the caller unchanged
+			success(this.createMermaidImageXml(text, null, xml, null, null,
+				'plantUmlData'), warnings);
 		}), error);
+	};
+
+	/**
+	 * Maximum number of PlantUML parse warnings listed by showPlantUmlWarnings
+	 * before the rest are summarized.
+	 */
+	EditorUi.prototype.maxPlantUmlWarnings = 10;
+
+	/**
+	 * Shows the given PlantUML parse warnings (see parsePlantUmlDiagram) in the
+	 * non-modal, auto-fading alert. The parse succeeded and the diagram is
+	 * already inserted or previewed, so this only informs: it must never block
+	 * or undo that, which is why it is not routed through handleError/showError.
+	 * No-op for an empty list, and where showAlert is unavailable.
+	 */
+	EditorUi.prototype.showPlantUmlWarnings = function(warnings)
+	{
+		if (warnings != null && warnings.length > 0 && this.showAlert != null)
+		{
+			var shown = warnings.slice(0, this.maxPlantUmlWarnings);
+
+			if (warnings.length > shown.length)
+			{
+				shown.push(mxResources.get('andNMore',
+					[warnings.length - shown.length]));
+			}
+
+			// showAlert writes its argument as HTML and the warnings quote the
+			// user's own source (the dropped line), so they are escaped here.
+			// The alert is styled white-space:pre-wrap, so the newlines break
+			// the lines without any markup of our own.
+			this.showAlert(mxUtils.htmlEntities(mxResources.get('plantUmlWarnings') +
+				'\n' + shown.join('\n')));
+		}
 	};
 
 	/**
@@ -14977,6 +15601,1653 @@
 	};
 
 	/**
+	 * Disconnects edges from detached terminal objects on the current
+	 * page after undo and redo in realtime mode: redoing a delete
+	 * replays only the changes recorded at delete time, so an edge
+	 * connected to the deleted cells AFTER that (eg. a remote insert
+	 * between undo and redo) keeps a terminal object the model no
+	 * longer contains - a reference diffs and clones cannot represent,
+	 * permanently diverging the model copies.
+	 */
+	EditorUi.prototype.sanitizeRealtimeTerminals = function()
+	{
+		var file = this.getCurrentFile();
+
+		if (file != null && file.isRealtime())
+		{
+			var model = this.editor.graph.model;
+			var stale = [];
+
+			var walk = function(cell)
+			{
+				if (cell.isEdge())
+				{
+					var src = cell.getTerminal(true);
+					var trg = cell.getTerminal(false);
+
+					if ((src != null && model.getCell(src.getId()) != src) ||
+						(trg != null && model.getCell(trg.getId()) != trg))
+					{
+						stale.push(cell);
+					}
+				}
+
+				var childCount = cell.getChildCount();
+
+				for (var i = 0; i < childCount; i++)
+				{
+					walk(cell.getChildAt(i));
+				}
+			};
+
+			if (model.root != null)
+			{
+				walk(model.root);
+			}
+
+			if (stale.length > 0)
+			{
+				// The repair must never enter the undo history: recorded,
+				// it becomes a phantom step (one user action suddenly
+				// needing two undos) and a later redo replays the
+				// disconnect (manual find - the planted point at the
+				// terminal's center was the sanitizer's signature in the
+				// diverged file)
+				var undoMgr = this.editor.undoManager;
+				var history = undoMgr.history.slice();
+				var nextAdd = undoMgr.indexOfNextAdd;
+
+				model.beginUpdate();
+				try
+				{
+					for (var i = 0; i < stale.length; i++)
+					{
+						for (var j = 0; j < 2; j++)
+						{
+							var source = (j == 0);
+							var term = stale[i].getTerminal(source);
+
+							if (term != null &&
+								model.getCell(term.getId()) != term)
+							{
+								var canonical = model.getCell(term.getId());
+
+								if (canonical != null)
+								{
+									// The id lives on as a DIFFERENT
+									// object (a patch replaced it, eg. a
+									// revive delivered through the save
+									// path): the user's connection is
+									// intact in intent - reconnect to
+									// the canonical object instead of
+									// severing it
+									model.setTerminal(stale[i],
+										canonical, source);
+								}
+								else
+								{
+									this.disconnectTerminal(stale[i],
+										source, model);
+								}
+							}
+						}
+					}
+				}
+				finally
+				{
+					model.endUpdate();
+					undoMgr.history = history;
+					undoMgr.indexOfNextAdd = nextAdd;
+					undoMgr.fireEvent(new mxEventObject(mxEvent.CLEAR));
+				}
+			}
+		}
+	};
+
+	/**
+	 * Execute-time repair for replayed model changes: the undo history
+	 * holds cell OBJECT references, but patches (remote saves, live
+	 * diffs, external merges) may have removed those objects or
+	 * replaced them with new objects of the same id. Instead of
+	 * dropping the edits (losing undo steps) or replaying stale
+	 * objects (duplicate births, dangling terminals), every execute
+	 * resolves its references FRESH against the current model:
+	 *
+	 * - the referenced object still lives: used unchanged
+	 * - its id is taken by a NEW object: redirected to the canonical
+	 *   object (a later remote undo re-adding the cell reconnects the
+	 *   replay to it - resolution happens per execution, never by
+	 *   mutating the recorded reference ids)
+	 * - the id is gone: TRANSIENT fallback for this execution only -
+	 *   a terminal becomes null plus a terminal point at the dead
+	 *   object's last absolute position (removed again when a later
+	 *   replay reconnects), a target parent becomes its nearest
+	 *   living ancestor (ids canonicalized) or the default layer,
+	 *   keeping the child's absolute position
+	 *
+	 * The recorded ids survive in change.repairIds, so repeated
+	 * undo/redo cycles keep resolving against the live world. The
+	 * wraps run for EVERY change execution including the first one
+	 * (model.add/setTerminal), where the live-reference fast path is
+	 * a single map lookup.
+	 */
+	var repairAbsoluteOrigin = function(cell)
+	{
+		var x = 0;
+		var y = 0;
+
+		while (cell != null && cell.getId() != '1' &&
+			cell.getId() != '0')
+		{
+			var geo = cell.getGeometry();
+
+			if (geo != null && !geo.relative)
+			{
+				x += geo.x;
+				y += geo.y;
+			}
+
+			cell = cell.getParent();
+		}
+
+		return {x: x, y: y};
+	};
+
+	// Root of the tree a cell currently hangs in (null if detached)
+	var repairRootOf = function(cell)
+	{
+		while (cell != null && cell.getParent() != null)
+		{
+			cell = cell.getParent();
+		}
+
+		return cell;
+	};
+
+	// Read-only id search in a foreign tree (no mxGraphModel wrapper:
+	// its cellAdded sweep renames colliding ids and would destroy the
+	// evidence this repair exists to handle)
+	var repairFindById = function(root, id)
+	{
+		if (root == null || id == null)
+		{
+			return null;
+		}
+
+		if (root.getId() == id)
+		{
+			return root;
+		}
+
+		var childCount = root.getChildCount();
+
+		for (var i = 0; i < childCount; i++)
+		{
+			var hit = repairFindById(root.getChildAt(i), id);
+
+			if (hit != null)
+			{
+				return hit;
+			}
+		}
+
+		return null;
+	};
+
+	// Runtime-only provenance. A remote page revival creates a new root,
+	// and a removed subtree no longer reaches its page root. Remember the
+	// owner BEFORE mutation, without putting metadata on serialized cells.
+	var repairPageContexts = new WeakMap();
+
+	var repairCapturePage = function(model, cell)
+	{
+		if (cell == null)
+		{
+			return null;
+		}
+
+		var ui = model.repairUi;
+		var root = repairRootOf(cell);
+
+		if (ui != null && ui.pages != null)
+		{
+			for (var i = 0; i < ui.pages.length; i++)
+			{
+				var page = ui.pages[i];
+
+				if (page.root == root || (page == ui.currentPage && root == model.root))
+				{
+					var context = {id: page.getId(), file: ui.getCurrentFile()};
+					repairPageContexts.set(cell, context);
+					return context;
+				}
+			}
+
+			while (cell != null)
+			{
+				var context = repairPageContexts.get(cell);
+
+				if (context != null && context.file == ui.getCurrentFile())
+				{
+					return context;
+				}
+
+				cell = cell.getParent();
+			}
+		}
+
+		return null;
+	};
+
+	var repairCurrentPage = function(model, context)
+	{
+		var ui = model.repairUi;
+
+		if (context != null && ui != null && ui.pages != null &&
+			context.file == ui.getCurrentFile())
+		{
+			for (var i = 0; i < ui.pages.length; i++)
+			{
+				if (ui.pages[i].getId() == context.id)
+				{
+					// Existing roots may be temporarily empty mid-replay.
+					// updatePageRoot would insert a layer into that state.
+					if (ui.pages[i].root == null)
+					{
+						ui.updatePageRoot(ui.pages[i]);
+					}
+
+					return ui.pages[i];
+				}
+			}
+		}
+
+		return null;
+	};
+
+	var repairTouchPage = function(model, context)
+	{
+		var page = repairCurrentPage(model, context);
+
+		if (page != null)
+		{
+			// CHANGE normally invalidates only the CURRENT page's XML.
+			// A history replay can mutate another page without selecting it.
+			page.needsUpdate = true;
+
+			if (page == model.repairUi.currentPage)
+			{
+				page.setDiagramModified(true);
+			}
+		}
+	};
+
+	var repairAdvance = function(change)
+	{
+		if (change.repairIntent != null)
+		{
+			change.repairIntent.next =
+				(change.repairIntent.next == 'undo') ? 'redo' : 'undo';
+		}
+	};
+
+	var repairResolve = function(model, contextCell, id, context)
+	{
+		if (id == null)
+		{
+			return null;
+		}
+
+		context = context || repairCapturePage(model, contextCell);
+
+		if (context != null)
+		{
+			var page = repairCurrentPage(model, context);
+
+			return (page == null) ? null : ((page.root == model.root) ?
+				model.getCell(id) : repairFindById(page.root, id));
+		}
+
+		// Temporary models have no document owner. Retain their existing
+		// tree-based resolution; content roots are detached subtrees.
+		var root = repairRootOf(contextCell);
+
+		if (root != null && root != model.root && root != contextCell &&
+			!root.isVertex() && !root.isEdge())
+		{
+			return repairFindById(root, id);
+		}
+
+		return model.getCell(id);
+	};
+
+	// Transient repair points are re-applied AFTER the whole edit
+	// replay: a sibling geometry replay of the same composite edit
+	// (eg. the drag-disconnect that stored the drop point) restores
+	// the pre-drag geometry AFTER the terminal replay planted the
+	// point - the edge then lost terminal AND point and vanished
+	// from the display (undo-stale case 11)
+	var repairPointQueue = [];
+
+	// Children restored into a parent that is still detached at their
+	// replay: whether that parent comes back is only known once the
+	// whole edit replayed (see the child change wrap and
+	// drainRepairParents)
+	var repairParentQueue = [];
+	var repairRestoreQueue = [];
+
+	// The rendered attachment point of the changing end BEFORE the
+	// edit applies (the view revalidates on endUpdate, so mid-edit it
+	// still shows the pre-edit rendering), in unscaled graph
+	// coordinates. This is the point the edge visually connected at -
+	// a transient point there keeps the edge looking exactly like
+	// before the terminal died; the terminal center is only the
+	// fallback. Needs the view: EditorUi.init back-references the
+	// graph on its model (temp models have none and fall back).
+	var repairAttachmentPoint = function(change)
+	{
+		var graph = (change.model != null) ?
+			change.model.repairGraph : null;
+		var state = (graph != null) ?
+			graph.view.getState(change.cell) : null;
+
+		if (state != null && state.absolutePoints != null &&
+			state.absolutePoints.length > 0)
+		{
+			var pt = state.absolutePoints[(change.source) ? 0 :
+				state.absolutePoints.length - 1];
+
+			if (pt != null)
+			{
+				var s = graph.view.scale;
+				var tr = graph.view.translate;
+
+				return new mxPoint(pt.x / s - tr.x, pt.y / s - tr.y);
+			}
+		}
+
+		return null;
+	};
+
+	// A replay must NEVER mint an id. When a removed subtree is
+	// restored, parentForCellChanged calls cellAdded, which walks the
+	// descendants and renames any whose id is already live (the
+	// id-collision loop) - the renamed copy then replicates as a
+	// genuinely new cell and the content exists twice (manual find:
+	// a peer moved a shape out of a container and undid that while
+	// this client undid its delete of the container; both undos are
+	// individually correct but contradict each other, and the model
+	// ended up with the shape inside AND outside). The live object is
+	// canonical - as it already is for the changed cell itself - so
+	// stale copies of live ids are dropped from the restored subtree.
+	// The subtree is detached at this point, so this mutates no model
+	// state and fires no events.
+	// Liveness is decided in the tree the subtree is being restored
+	// INTO, which is what context points at: a cross-page replay
+	// restores into a foreign page, where the current model's cell map
+	// knows nothing about the ids in question. Checking it there let a
+	// stale copy through, and the id then existed twice in that page -
+	// a state no diff can represent, so the clients' hashes disagree
+	// forever and the checksum reloads never heal it.
+	var repairPruneRevivedSubtree = function(model, cell, dropped, context)
+	{
+		for (var i = cell.getChildCount() - 1; i >= 0; i--)
+		{
+			var child = cell.getChildAt(i);
+			var id = child.getId();
+			var live = (id != null) ?
+				repairResolve(model, context, id) : null;
+
+			if (live != null && live != child)
+			{
+				child.removeFromParent();
+				dropped.push(id);
+			}
+			else
+			{
+				repairPruneRevivedSubtree(model, child, dropped, context);
+			}
+		}
+	};
+
+	var terminalChangeExecute = mxTerminalChange.prototype.execute;
+
+	mxTerminalChange.prototype.execute = function()
+	{
+		if (this.cell != null && this.model != null)
+		{
+			// Both replay intentions are frozen as ids at the first
+			// execution (the undo slot restores the pre-change
+			// terminal, the redo slot the applied one, alternating by
+			// step parity): execute's field swap hands previous the
+			// LIVE model value, so a remote change between replays
+			// would otherwise erase the recorded intention (a redo
+			// after a remote disconnect turned into a disconnect). A
+			// null intention stays a legitimate disconnect and is
+			// never reconstructed; the frozen objects only ever serve
+			// as a position estimate for the transient point.
+			var firstRun = !this.repairExecuted;
+
+			if (firstRun)
+			{
+				this.repairPage = repairCapturePage(this.model, this.cell);
+			}
+			else if (this.repairPage != null &&
+				repairCurrentPage(this.model, this.repairPage) == null)
+			{
+				// A cell replay never resurrects a missing page.
+				repairAdvance(this);
+				return;
+			}
+
+			if (!firstRun)
+			{
+				// The edge itself is resolved fresh too, for the same
+				// reason as its terminal: a save merge can replace the
+				// object under the same id, and reconnecting the dead
+				// one leaves the visible edge untouched
+				var canonicalEdge = repairResolve(this.model,
+					this.cell, this.cell.getId(), this.repairPage);
+
+				if (canonicalEdge != null)
+				{
+					this.cell = canonicalEdge;
+				}
+			}
+
+			if (!firstRun && this.repairIntent != null)
+			{
+				var slot = this.repairIntent.next;
+				var wantId = this.repairIntent.ids[slot];
+
+				if (wantId == null)
+				{
+					this.previous = null;
+				}
+				else
+				{
+					var resolved = repairResolve(this.model,
+						this.cell, wantId, this.repairPage);
+
+					if (resolved != null)
+					{
+						this.previous = resolved;
+					}
+					else
+					{
+						// Transient: point at the dead terminal's last
+						// absolute position; the intention stays
+						// frozen so a later replay reconnects when
+						// the id returns
+						var dead = this.repairIntent.objs[slot];
+						var edgeGeo = this.cell.getGeometry();
+
+						if (dead != null && edgeGeo != null)
+						{
+							// The frozen rendered attachment point wins
+							// (the edge keeps looking exactly like
+							// before the terminal died), the dead
+							// terminal's center is the fallback
+							var att = this.repairIntent.pts[slot];
+							var origin = repairAbsoluteOrigin(dead);
+							var geo = dead.getGeometry();
+							var px = (att != null) ? att.x :
+								origin.x + ((geo != null) ?
+									geo.width / 2 : 0);
+							var py = (att != null) ? att.y :
+								origin.y + ((geo != null) ?
+									geo.height / 2 : 0);
+							// Attachment and fallback positions are in graph
+							// coordinates; geometry terminal points (including
+							// the queued repair) are relative to the edge parent.
+							var edgeOrigin = repairAbsoluteOrigin(this.cell.getParent());
+							px -= edgeOrigin.x;
+							py -= edgeOrigin.y;
+							edgeGeo = edgeGeo.clone();
+							edgeGeo.setTerminalPoint(
+								new mxPoint(px, py), this.source);
+							this.cell.setGeometry(edgeGeo);
+							this.repairPoint = (this.repairPoint || {});
+							this.repairPoint[(this.source) ?
+								's' : 't'] = true;
+
+							// Survives sibling geometry replays of the
+							// same edit via the post-replay drain
+							repairPointQueue.push({cell: this.cell,
+								source: this.source, x: px, y: py});
+
+						}
+
+						this.previous = null;
+					}
+				}
+			}
+
+			// A reconnect through this replay removes the repair point
+			// of this end again
+			if (this.previous != null && this.repairPoint != null &&
+				this.repairPoint[(this.source) ? 's' : 't'])
+			{
+				var cleanGeo = this.cell.getGeometry();
+
+				if (cleanGeo != null)
+				{
+					cleanGeo = cleanGeo.clone();
+					cleanGeo.setTerminalPoint(null, this.source);
+					this.cell.setGeometry(cleanGeo);
+				}
+
+				delete this.repairPoint[(this.source) ? 's' : 't'];
+			}
+
+			terminalChangeExecute.apply(this, arguments);
+
+			if (!firstRun)
+			{
+				repairTouchPage(this.model, this.repairPage);
+			}
+
+			if (firstRun)
+			{
+				// After the first execute previous holds the pre-change
+				// terminal and terminal the applied one. The rendered
+				// attachment point of the pre-change end is frozen for
+				// the undo slot (the view still shows the pre-edit
+				// rendering mid-edit); the redo slot has no rendering
+				// yet and falls back to the terminal center.
+				this.repairIntent = {next: 'undo',
+					ids: {undo: (this.previous != null) ?
+							this.previous.getId() : null,
+						redo: (this.terminal != null) ?
+							this.terminal.getId() : null},
+					objs: {undo: this.previous, redo: this.terminal},
+					pts: {undo: repairAttachmentPoint(this),
+						redo: null}};
+
+			}
+			else if (this.repairIntent != null)
+			{
+				this.repairIntent.next =
+					(this.repairIntent.next == 'undo') ? 'redo' : 'undo';
+			}
+
+			this.repairExecuted = true;
+
+			return;
+		}
+
+		terminalChangeExecute.apply(this, arguments);
+	};
+
+	// Every property change swaps its field with the LIVE model value
+	// on execute, so whatever stands in the model between two replays
+	// becomes the recorded intention. Both writers exist here: the
+	// repairs above rebase geometries to keep a shape in place, and
+	// remote patches change the same properties concurrently. Without
+	// a freeze a replay then applies a value the user never chose -
+	// measured: after a peer restored a container, the redo put the
+	// shape inside it at its ABSOLUTE position, and a redo after a
+	// remote style change re-applied the REMOTE style.
+	//
+	// Both intentions are therefore frozen as VALUES at the first
+	// execution and alternate by step parity, exactly as for the
+	// terminal and child references above (which additionally have to
+	// resolve object identity, so they keep their own wraps).
+	var repairFreezeProperty = function(ctor, field)
+	{
+		if (ctor == null || ctor.prototype == null)
+		{
+			return;
+		}
+
+		var origExecute = ctor.prototype.execute;
+
+		ctor.prototype.execute = function()
+		{
+			if (this.cell != null && this.model != null)
+			{
+				var firstRun = !this.repairExecuted;
+
+				if (firstRun)
+				{
+					this.repairPage = repairCapturePage(this.model, this.cell);
+				}
+				else if (this.repairPage != null &&
+					repairCurrentPage(this.model, this.repairPage) == null)
+				{
+					repairAdvance(this);
+					return;
+				}
+
+				if (!firstRun)
+				{
+					// The changed cell itself is resolved fresh, as it
+					// already is for mxChildChange: a save merge can
+					// remove and re-insert a cell under the same id, and
+					// writing the frozen value to the dead object left
+					// the visible cell untouched while the history index
+					// still moved - the undo looked simply broken
+					var canonical = repairResolve(this.model,
+						this.cell, this.cell.getId(), this.repairPage);
+
+					if (canonical != null)
+					{
+						this.cell = canonical;
+					}
+				}
+
+				if (!firstRun && this.repairIntent != null)
+				{
+					this.previous = this.repairIntent.values[
+						this.repairIntent.next];
+				}
+
+				origExecute.apply(this, arguments);
+
+				if (!firstRun)
+				{
+					repairTouchPage(this.model, this.repairPage);
+				}
+
+				if (firstRun)
+				{
+					// After execute the field holds the applied value
+					// and previous the one from before this execution
+					this.repairIntent = {next: 'undo',
+						values: {undo: this.previous, redo: this[field]}};
+				}
+				else if (this.repairIntent != null)
+				{
+					this.repairIntent.next =
+						(this.repairIntent.next == 'undo') ?
+							'redo' : 'undo';
+				}
+
+				this.repairExecuted = true;
+
+				return;
+			}
+
+			origExecute.apply(this, arguments);
+		};
+	};
+
+	repairFreezeProperty(mxGeometryChange, 'geometry');
+	repairFreezeProperty(mxValueChange, 'value');
+	repairFreezeProperty(mxStyleChange, 'style');
+	repairFreezeProperty(mxVisibleChange, 'visible');
+	repairFreezeProperty(mxCollapseChange, 'collapsed');
+
+	// Preflight a composite in replay order before ANY geometry, terminal or
+	// custom sibling changes run. Only parent/children overlays are mutated;
+	// constructing a model around a live tree could rename colliding ids.
+	var repairHasParentCycle = function(edit, undo)
+	{
+		var parents = new Map();
+		var children = new Map();
+		var indices = new Map();
+		var roots = new Map();
+		var pages = new Map();
+		var pageRoots = new Map();
+		var selectedPages = new Map();
+		var rootFor = function(model)
+		{
+			return roots.has(model) ? roots.get(model) : model.root;
+		};
+		var pagesFor = function(ui)
+		{
+			if (!pages.has(ui))
+			{
+				pages.set(ui, (ui.pages || []).slice());
+			}
+
+			return pages.get(ui);
+		};
+		var selectedPage = function(ui)
+		{
+			return selectedPages.has(ui) ? selectedPages.get(ui) : ui.currentPage;
+		};
+		var pageFor = function(model, context)
+		{
+			var ui = model.repairUi;
+
+			if (context != null && ui != null && context.file == ui.getCurrentFile())
+			{
+				var list = pagesFor(ui);
+
+				for (var p = 0; p < list.length; p++)
+				{
+					if (list[p].getId() == context.id)
+					{
+						return list[p];
+					}
+				}
+			}
+
+			return null;
+		};
+		var pageRoot = function(ui, page)
+		{
+			if (!pageRoots.has(page))
+			{
+				var root = page.root;
+
+				if (root == null)
+				{
+					// Decode lazy pages privately. A rejected edit must not
+					// materialize or normalize any live page as a side effect.
+					var copy = new DiagramPage(page.node.cloneNode(true), page.getId());
+					ui.updatePageRoot(copy);
+					root = copy.root;
+				}
+
+				pageRoots.set(page, root);
+			}
+
+			return pageRoots.get(page);
+		};
+		var parentOf = function(cell)
+		{
+			return parents.has(cell) ? parents.get(cell) : cell.getParent();
+		};
+		var childrenOf = function(cell)
+		{
+			return children.has(cell) ? children.get(cell) : (cell.children || []);
+		};
+		var rootOf = function(cell)
+		{
+			while (cell != null && parentOf(cell) != null)
+			{
+				cell = parentOf(cell);
+			}
+
+			return cell;
+		};
+		var walk = function(cell, fn)
+		{
+			fn(cell);
+			var list = childrenOf(cell);
+
+			for (var i = 0; i < list.length; i++)
+			{
+				walk(list[i], fn);
+			}
+		};
+		var indexOf = function(root)
+		{
+			if (!indices.has(root))
+			{
+				var index = new Map();
+
+				if (root != null)
+				{
+					walk(root, function(cell)
+					{
+						if (!index.has(cell.getId()))
+						{
+							index.set(cell.getId(), cell);
+						}
+					});
+				}
+
+				indices.set(root, index);
+			}
+
+			return indices.get(root);
+		};
+		var capturePage = function(model, cell)
+		{
+			var ui = model.repairUi;
+			var root = rootOf(cell);
+
+			if (cell != null && ui != null)
+			{
+				var list = pagesFor(ui);
+
+				for (var p = 0; p < list.length; p++)
+				{
+					var page = list[p];
+					var knownRoot = pageRoots.has(page) ? pageRoots.get(page) : page.root;
+
+					if (knownRoot == root || (page == selectedPage(ui) && root == rootFor(model)))
+					{
+						return {id: page.getId(), file: ui.getCurrentFile()};
+					}
+				}
+
+				while (cell != null)
+				{
+					var context = repairPageContexts.get(cell);
+
+					if (context != null && context.file == ui.getCurrentFile())
+					{
+						return context;
+					}
+
+					cell = parentOf(cell);
+				}
+			}
+
+			return null;
+		};
+		var resolve = function(model, contextCell, id, context)
+		{
+			if (id == null)
+			{
+				return null;
+			}
+
+			context = context || capturePage(model, contextCell);
+
+			if (context != null)
+			{
+				var page = pageFor(model, context);
+				return (page == null) ? null : indexOf(pageRoot(model.repairUi, page)).get(id);
+			}
+
+			// Mirrors repairResolve's fallback for models without a page owner.
+			var root = rootOf(contextCell);
+			return indexOf((root != null && root != rootFor(model) &&
+				root != contextCell && !root.isVertex() && !root.isEdge()) ?
+				root : rootFor(model)).get(id);
+		};
+		var move = function(cell, parent)
+		{
+			var oldRoot = rootOf(cell);
+			var oldParent = parentOf(cell);
+
+			if (oldParent != null)
+			{
+				var list = childrenOf(oldParent).slice();
+				list.splice(mxUtils.indexOf(list, cell), 1);
+				children.set(oldParent, list);
+			}
+
+			parents.set(cell, parent);
+
+			if (parent != null)
+			{
+				var list = childrenOf(parent).slice();
+				list.push(cell);
+				children.set(parent, list);
+			}
+
+			var newRoot = rootOf(cell);
+
+			if (oldRoot != newRoot)
+			{
+				walk(cell, function(descendant)
+				{
+					var id = descendant.getId();
+
+					if (indices.has(oldRoot) && indices.get(oldRoot).get(id) == descendant)
+					{
+						indices.get(oldRoot).delete(id);
+					}
+
+					if (indices.has(newRoot))
+					{
+						indices.get(newRoot).set(id, descendant);
+					}
+				});
+
+				// A former orphan's index no longer describes a root.
+				if (parent != null)
+				{
+					indices.delete(cell);
+				}
+			}
+		};
+		var prune = function(model, cell, context)
+		{
+			var list = childrenOf(cell).slice();
+
+			for (var i = 0; i < list.length; i++)
+			{
+				var live = resolve(model, context, list[i].getId());
+
+				if (live != null && live != list[i])
+				{
+					move(list[i], null);
+				}
+				else
+				{
+					prune(model, list[i], context);
+				}
+			}
+		};
+
+		for (var i = undo ? edit.changes.length - 1 : 0;
+			i >= 0 && i < edit.changes.length; i += undo ? -1 : 1)
+		{
+			var change = edit.changes[i];
+
+			// Page switches and model-root changes can precede cell changes
+			// in one composite. Follow their root context without selecting
+			// a page or mutating the document during preflight.
+			if (change instanceof mxRootChange)
+			{
+				roots.set(change.model, change.previous);
+			}
+			else if (typeof SelectPage != 'undefined' && change instanceof SelectPage)
+			{
+				var ui = change.ui;
+
+				var list = pagesFor(ui);
+				var findPage = function(page)
+				{
+					for (var p = 0; page != null && p < list.length; p++)
+					{
+						if (list[p].getId() == page.getId())
+						{
+							return list[p];
+						}
+					}
+
+					return null;
+				};
+
+				if (change instanceof ChangePage)
+				{
+					var related = findPage(change.relatedPage);
+
+					if (change.index == null && related != null)
+					{
+						list.splice(mxUtils.indexOf(list, related), 1);
+					}
+					else if (change.index != null && related == null)
+					{
+						list.splice(change.index, 0, change.relatedPage);
+					}
+				}
+
+				if (!change.noSelect && change.page != null)
+				{
+					var destination = findPage(change.repairExecuted ?
+						(change.applied ? change.origin : change.page) : change.previousPage);
+
+					if (destination != null && destination != selectedPage(ui))
+					{
+						pageRoots.set(selectedPage(ui), rootFor(ui.editor.graph.model));
+						roots.set(ui.editor.graph.model, pageRoot(ui, destination));
+						selectedPages.set(ui, destination);
+					}
+				}
+			}
+
+			if (change instanceof mxChildChange && change.repairIntent != null)
+			{
+				var intent = change.repairIntent;
+				var slot = intent.next;
+				var targetPage = (change.repairParentPages != null) ?
+					change.repairParentPages[slot] : change.repairPage;
+
+				// Missing-page cell changes are individually inert. They must
+				// not reject valid siblings or simulate a detached-parent move.
+				if ((change.repairPage != null && pageFor(change.model, change.repairPage) == null) ||
+					(targetPage != null && pageFor(change.model, targetPage) == null))
+				{
+					continue;
+				}
+
+				var dead = intent.objs[slot];
+				var parent = (intent.ids[slot] == null) ? null :
+					(resolve(change.model, dead || change.child, intent.ids[slot], targetPage) || dead);
+				var child = change.child;
+
+				child = resolve(change.model, parent || child, child.getId(), change.repairPage) || child;
+
+				for (var ancestor = parent; ancestor != null; ancestor = parentOf(ancestor))
+				{
+					if (ancestor == child)
+					{
+						return true;
+					}
+				}
+
+				if (parent != null && rootOf(child) != rootFor(change.model))
+				{
+					prune(change.model, child, parent);
+				}
+
+				move(child, parent);
+			}
+		}
+
+		return false;
+	};
+
+	// A rejected operation and its opposite are both inert. Leaving each
+	// change's toggle untouched preserves frozen intentions AND custom
+	// changes with private replay state. Retrying the rejected direction
+	// preflights fresh, so a later peer move can make the operation legal.
+	var repairWrapEdit = function(name, undo)
+	{
+		var execute = mxUndoableEdit.prototype[name];
+
+		mxUndoableEdit.prototype[name] = function()
+		{
+			if (!(undo ? this.undone : this.redone))
+			{
+				if (this.repairSkippedDirection != null || repairHasParentCycle(this, undo))
+				{
+					this.repairSkippedDirection = (this.repairSkippedDirection != null) ?
+						null : name;
+					this.undone = undo;
+					this.redone = !undo;
+
+					// The undo manager emits its normal history event. There is
+					// no model edit to notify, invalidate or send to peers.
+					return;
+				}
+			}
+
+			return execute.apply(this, arguments);
+		};
+	};
+
+	repairWrapEdit('undo', true);
+	repairWrapEdit('redo', false);
+
+	var childChangeExecute = mxChildChange.prototype.execute;
+
+	mxChildChange.prototype.execute = function()
+	{
+		if (this.child != null && this.model != null)
+		{
+			// Both replay intentions are frozen at the first execution
+			// like in the terminal wrap (undo slot: pre-change parent
+			// and index, redo slot: applied parent and index): the
+			// field swap hands previous and previousIndex the LIVE
+			// values, so a remote reparent or reorder between replays
+			// would otherwise erase the recorded intention. A null
+			// parent intention stays a legitimate remove.
+			var firstRun = !this.repairExecuted;
+			var childId = this.child.getId();
+			var parentRepair = null;
+
+			if (firstRun)
+			{
+				this.repairPage = repairCapturePage(this.model, this.child) ||
+					repairCapturePage(this.model, this.previous);
+				this.repairParentPages = {
+					undo: repairCapturePage(this.model, this.child.getParent()) || this.repairPage,
+					redo: repairCapturePage(this.model, this.previous) || this.repairPage};
+
+				if (this.repairPage != null)
+				{
+					repairPageContexts.set(this.child, this.repairPage);
+				}
+			}
+			else if ((this.repairPage != null &&
+				repairCurrentPage(this.model, this.repairPage) == null) ||
+				(this.repairIntent != null && this.repairParentPages != null &&
+				this.repairParentPages[this.repairIntent.next] != null &&
+				repairCurrentPage(this.model, this.repairParentPages[this.repairIntent.next]) == null))
+			{
+				// Missing PAGE is distinct from a missing parent inside a
+				// living page: do not enter detached-parent fallback queues.
+				repairAdvance(this);
+				return;
+			}
+
+			var targetPage = (!firstRun && this.repairParentPages != null &&
+				this.repairIntent != null) ?
+				this.repairParentPages[this.repairIntent.next] :
+				((this.repairParentPages != null) ? this.repairParentPages.redo : this.repairPage);
+
+			if (!firstRun && this.repairIntent != null)
+			{
+				var slot = this.repairIntent.next;
+				var wantId = this.repairIntent.ids[slot];
+				this.previousIndex = this.repairIntent.indices[slot];
+
+				if (wantId == null)
+				{
+					this.previous = null;
+				}
+				else
+				{
+					// Resolved along the frozen parent's own chain: a
+					// living foreign tree (cross-page edit) yields its
+					// own object, never one of the current page
+					var dead = this.repairIntent.objs[slot];
+					var resolvedParent = repairResolve(this.model,
+						(dead != null) ? dead : this.child, wantId, targetPage);
+
+					if (resolvedParent != null)
+					{
+						this.previous = resolvedParent;
+						this.previousIndex = Math.min(this.previousIndex || 0,
+							this.model.getChildCount(resolvedParent));
+					}
+					else if (dead != null)
+					{
+						// The frozen parent is not in the document right
+						// now - but "now" is the middle of a replay. A
+						// composite edit restores its cells one change at
+						// a time, and a removal lists a container BEFORE
+						// the children that were taken out of it
+						// separately (delete with connections appends the
+						// internal edges, a collapsed group its hidden
+						// ones), so the undo restores such a child while
+						// its container is still detached and comes back
+						// with the NEXT change of the same edit.
+						// Substituting a living parent here moved those
+						// children into the default layer on every plain
+						// undo. The child therefore goes back into the
+						// frozen object, exactly as the unwrapped change
+						// did, and whether that object returned is decided
+						// once the whole edit replayed
+						// (drainRepairParents): a child still outside the
+						// document then moves to the nearest living
+						// ancestor or the first layer of its own tree,
+						// keeping its absolute position. The intention
+						// stays frozen so a later replay can still find
+						// the real parent if it comes back.
+						this.previous = dead;
+						this.previousIndex = Math.min(this.previousIndex || 0,
+							this.model.getChildCount(dead));
+
+						// The owning destination page decides the fallback,
+						// including a detached child restored while another
+						// page is current. Temporary models keep the old rule.
+						var contextPage = repairCurrentPage(this.model, targetPage);
+						var contextRoot = (contextPage != null) ?
+							contextPage.root : repairRootOf(this.child);
+
+						parentRepair = {change: this,
+							contextRoot: (contextRoot == this.child) ?
+								this.model.root : contextRoot};
+					}
+					else
+					{
+						this.previous = null;
+					}
+				}
+			}
+
+			// The child itself: an id taken by a new object redirects
+			// the replay to the canonical object (no duplicate birth).
+			// Its retained owning page follows successful cross-page
+			// moves and survives detachment or whole-page revival.
+			// Temporary models still use the resolved parent's tree.
+			if (!firstRun && childId != null)
+			{
+				var canonicalChild = repairResolve(this.model,
+					(this.previous != null) ? this.previous : this.child,
+					childId, this.repairPage);
+
+				if (canonicalChild != null && canonicalChild != this.child)
+				{
+					this.child = canonicalChild;
+				}
+			}
+
+			// Also defend callers that replay one change directly instead of
+			// going through mxUndoableEdit's composite preflight.
+			if (!firstRun && this.previous != null &&
+				this.model.isAncestor(this.child, this.previous))
+			{
+				if (this.repairIntent != null)
+				{
+					this.repairIntent.next = (this.repairIntent.next == 'undo') ?
+						'redo' : 'undo';
+				}
+
+				return;
+			}
+
+			if (parentRepair != null)
+			{
+				repairParentQueue.push(parentRepair);
+			}
+
+			// Restoring a removed subtree: stale copies of ids that are
+			// live elsewhere are dropped instead of being renamed into
+			// duplicates (see repairPruneRevivedSubtree)
+			if (!firstRun && this.previous != null &&
+				!this.model.contains(this.child))
+			{
+				var dropped = [];
+				repairPruneRevivedSubtree(this.model, this.child,
+					dropped, this.previous);
+
+				if (dropped.length > 0)
+				{
+					EditorUi.debug('mxChildChange.execute', [this],
+						'pruned stale copies of live ids', dropped);
+				}
+			}
+
+			var sourcePage = repairCurrentPage(this.model, this.repairPage);
+			var destinationPage = repairCurrentPage(this.model, targetPage);
+			var replayRoot = (sourcePage != null) ? sourcePage.root : this.model.root;
+			childChangeExecute.apply(this, arguments);
+
+			if (!firstRun)
+			{
+				repairTouchPage(this.model, this.repairPage);
+				repairTouchPage(this.model, targetPage);
+
+				if (this.parent != null && targetPage != null)
+				{
+					repairRestoreQueue.push({model: this.model, cell: this.child,
+						context: targetPage});
+				}
+			}
+
+			if (this.parent != null && destinationPage != null)
+			{
+				this.repairPage = targetPage;
+				repairPageContexts.set(this.child, targetPage);
+			}
+
+			// Mirrors the interactive removeCells semantics for
+			// REPLAYS: a replay that removes a cell must disconnect
+			// live edges pointing into the removed subtree - they are
+			// not part of the recorded edit when they connected only
+			// AFTER the original delete (eg. a peer's reconnect
+			// arriving between undo and redo) - and the opposite
+			// replay must reconnect them, or one undo restores the
+			// cell but leaves the edge dangling forever (manual find).
+			// Raw cell mutations on purpose: they travel with the next
+			// flush diff like the transient points, and a recorded
+			// disconnect would become a phantom undo step.
+			// After execute, parent holds the parent this execution
+			// APPLIED: null is a removal. A root walk was used before,
+			// which also matched an insert into a still detached parent
+			// (see the deferred relocation above) and severed edges the
+			// same edit had just legitimately restored. First executions
+			// are left alone as well: removeCells has already
+			// disconnected every edge that stays, an edge removed with
+			// its terminal dies with it, and severing those cost one
+			// full view validation per edge on the following undo.
+			if (this.parent == null && !firstRun)
+			{
+				// Removal replayed: capture and sever live inbound edges
+				var refs = [];
+				var self = this;
+
+				var collect = function(cell)
+				{
+					var edges = (cell.edges != null) ?
+						cell.edges.slice() : [];
+
+					for (var i = 0; i < edges.length; i++)
+					{
+						var edge = edges[i];
+						var edgeRoot = edge;
+
+						while (edgeRoot != null &&
+							edgeRoot.getParent() != null)
+						{
+							edgeRoot = edgeRoot.getParent();
+						}
+
+						if (edgeRoot != replayRoot)
+						{
+							continue;
+						}
+
+						for (var s = 0; s < 2; s++)
+						{
+							var source = (s == 0);
+
+							if (edge.getTerminal(source) == cell)
+							{
+								var geo = edge.getGeometry();
+								var prevPt = (geo != null) ?
+									geo.getTerminalPoint(source) : null;
+								refs.push({e: edge.getId(),
+									t: cell.getId(), s: source,
+									px: (prevPt != null) ? prevPt.x : null,
+									py: (prevPt != null) ? prevPt.y : null});
+								cell.removeEdge(edge, source);
+								edge.setTerminal(null, source);
+
+								if (geo != null && prevPt == null &&
+									cell.getGeometry() != null &&
+									!cell.getGeometry().relative)
+								{
+									// Same formula as the reference
+									// implementation in
+									// EditorUi.disconnectTerminal: the
+									// absolute origin ALREADY carries
+									// the terminal's own geo.x/geo.y
+									// (the walk starts at the cell), so
+									// adding them again put the dangling
+									// end at roughly twice the
+									// terminal's offset - broadcast to
+									// every client
+									var to = repairAbsoluteOrigin(cell);
+									var eo = repairAbsoluteOrigin(edge);
+									var tg = cell.getGeometry();
+									geo = geo.clone();
+									geo.setTerminalPoint(new mxPoint(
+										to.x + tg.width / 2 - eo.x,
+										to.y + tg.height / 2 - eo.y),
+										source);
+									edge.setGeometry(geo);
+								}
+
+								if (self.model.repairGraph != null)
+								{
+									repairPointQueue.push(
+										{cell: edge, refresh: true});
+								}
+							}
+						}
+					}
+
+					for (var i = 0; i < cell.getChildCount(); i++)
+					{
+						collect(cell.getChildAt(i));
+					}
+				};
+
+				collect(this.child);
+
+				// Assigned unconditionally: keeping the previous refs
+				// when this removal severed nothing made the next
+				// restore reconnect an edge a peer had legitimately
+				// disconnected in between, undoing their edit
+				this.repairEdgeRefs = refs;
+			}
+			else if (this.parent != null && this.repairEdgeRefs != null)
+			{
+				// Restore applied: reconnect what the removal severed
+				for (var i = 0; i < this.repairEdgeRefs.length; i++)
+				{
+					var ref = this.repairEdgeRefs[i];
+					var edge = repairResolve(this.model, this.child, ref.e, this.repairPage);
+					var term = repairResolve(this.model, this.child, ref.t, this.repairPage);
+
+					// The severed terminal is part of the restored subtree
+					// by construction; a subtree that went back into a
+					// still detached parent (see above) is not in the cell
+					// map yet, so it is searched directly
+					if (term == null)
+					{
+						term = repairFindById(this.child, ref.t);
+					}
+
+					if (edge != null && term != null &&
+						edge.getTerminal(ref.s) == null)
+					{
+						term.insertEdge(edge, ref.s);
+						edge.setTerminal(term, ref.s);
+						var geo = edge.getGeometry();
+
+						if (geo != null)
+						{
+							geo = geo.clone();
+							geo.setTerminalPoint((ref.px != null) ?
+								new mxPoint(ref.px, ref.py) : null, ref.s);
+							edge.setGeometry(geo);
+						}
+
+						repairPointQueue.push({cell: edge, refresh: true});
+					}
+				}
+			}
+
+			if (firstRun)
+			{
+				// After the first execute previous/previousIndex hold
+				// the pre-change values and parent/index the applied
+				// ones
+				this.repairIntent = {next: 'undo',
+					ids: {undo: (this.previous != null) ?
+							this.previous.getId() : null,
+						redo: (this.parent != null) ?
+							this.parent.getId() : null},
+					objs: {undo: this.previous, redo: this.parent},
+					indices: {undo: this.previousIndex,
+						redo: this.index}};
+			}
+			else if (this.repairIntent != null)
+			{
+				this.repairIntent.next =
+					(this.repairIntent.next == 'undo') ? 'redo' : 'undo';
+			}
+
+			this.repairExecuted = true;
+
+			return;
+		}
+
+		childChangeExecute.apply(this, arguments);
+	};
+
+	var editorUiUndo = EditorUi.prototype.undo;
+
+	// Relocates the children whose frozen parent never came back: at
+	// their replay the parent was detached (see the child change wrap)
+	// and now that the whole edit replayed it is known whether a later
+	// change of the same edit restored it. A child that is still outside
+	// its tree moves to the nearest living ancestor (by id, in the tree
+	// the edit belongs to) or that tree's first layer, keeping its
+	// absolute position - the transient fallback the replay used to
+	// apply on the spot, which lost every child whose container was
+	// restored by the very next change. Raw mutation like the transient
+	// points: it travels with the next flush diff, and a recorded move
+	// would become a phantom undo step. Returns true if the view needs
+	// a validation.
+	var drainRepairParents = function(ui)
+	{
+		var graph = ui.editor.graph;
+		var touched = false;
+
+		for (var i = 0; i < repairParentQueue.length; i++)
+		{
+			var entry = repairParentQueue[i];
+			var model = entry.change.model;
+			var child = entry.change.child;
+			var contextRoot = entry.contextRoot;
+
+			if (child == null || child.getParent() == null ||
+				model.isAncestor(contextRoot, child))
+			{
+				// Detached again by a later change, or back in the
+				// document: the parent was restored after all
+				continue;
+			}
+
+			var inOwnTree = (contextRoot == model.root);
+			var geo = child.getGeometry();
+			var absolute = null;
+
+			if (geo != null && !geo.relative)
+			{
+				absolute = repairAbsoluteOrigin(child.getParent());
+				absolute.x += geo.x;
+				absolute.y += geo.y;
+			}
+
+			var current = child.getParent();
+			var substitute = null;
+
+			while (current != null && substitute == null)
+			{
+				substitute = (current.getId() != null) ?
+					((inOwnTree) ? model.getCell(current.getId()) :
+					repairFindById(contextRoot, current.getId())) : null;
+				current = current.getParent();
+			}
+
+			if (substitute == null)
+			{
+				substitute = (contextRoot.getChildCount() > 0) ?
+					contextRoot.getChildAt(0) : contextRoot;
+			}
+
+			// Never under its own descendant (crafted ids): the model
+			// has no cycle check in add
+			if (substitute == null || model.isAncestor(child, substitute))
+			{
+				continue;
+			}
+
+			model.parentForCellChanged(child, substitute,
+				model.getChildCount(substitute));
+
+			if (absolute != null)
+			{
+				var origin = repairAbsoluteOrigin(substitute);
+				geo = geo.clone();
+				geo.x = absolute.x - origin.x;
+				geo.y = absolute.y - origin.y;
+				child.setGeometry(geo);
+			}
+
+			EditorUi.debug('drainRepairParents', [ui], 'relocated',
+				child.getId(), 'to', substitute.getId());
+
+			if (inOwnTree)
+			{
+				graph.view.invalidate(child, true, true);
+				touched = true;
+			}
+		}
+
+		repairParentQueue = [];
+
+		return touched;
+	};
+
+	// An intentionally restored edge carries terminal objects from its
+	// original tree. Resolve them after every sibling restoration, so a
+	// separately restored endpoint can return later in the same edit.
+	var drainRepairRestores = function()
+	{
+		for (var i = 0; i < repairRestoreQueue.length; i++)
+		{
+			var entry = repairRestoreQueue[i];
+			var page = repairCurrentPage(entry.model, entry.context);
+
+			if (page == null || !entry.model.isAncestor(page.root, entry.cell))
+			{
+				continue;
+			}
+
+			var visit = function(cell)
+			{
+				if (cell.isEdge())
+				{
+					for (var s = 0; s < 2; s++)
+					{
+						var source = (s == 0);
+						var terminal = cell.getTerminal(source);
+						var canonical = (terminal != null) ? repairResolve(entry.model,
+							cell, terminal.getId(), entry.context) : null;
+
+						if (canonical != null && canonical != terminal)
+						{
+							terminal.removeEdge(cell, source);
+							canonical.insertEdge(cell, source);
+							repairPointQueue.push({cell: cell, refresh: true});
+						}
+					}
+				}
+
+				for (var c = 0; c < cell.getChildCount(); c++)
+				{
+					visit(cell.getChildAt(c));
+				}
+			};
+
+			visit(entry.cell);
+		}
+
+		repairRestoreQueue = [];
+	};
+
+	// Re-applies the transient repair points planted during the replay
+	// (only for ends that are STILL open and lost their point - a later
+	// replay of the edit may have reconnected the end legitimately).
+	// The drain runs AFTER the replay's view validation, so every
+	// patched edge is refreshed explicitly: the direct mutation fires
+	// no model event and the edge otherwise keeps its stale rendering
+	// (invisible open end on this client, visible on the peers that
+	// receive the point as a regular patch - the models converged but
+	// the screens did not, the manual find). The states are cleared per
+	// edge and validated ONCE at the end: a graph.refresh per entry
+	// made the undo of a large delete cost one full view validation
+	// per severed edge (measured: 13s for 1000 cells).
+	var drainRepairPoints = function(ui, touched)
+	{
+		var graph = ui.editor.graph;
+
+		for (var i = 0; i < repairPointQueue.length; i++)
+		{
+			var entry = repairPointQueue[i];
+
+			// Refresh-only entries from the replay edge repair (the
+			// terminal mutation is already done, raw)
+			if (!entry.refresh)
+			{
+				if (entry.cell.getTerminal(entry.source) != null)
+				{
+					continue;
+				}
+
+				var geo = entry.cell.getGeometry();
+
+				if (geo != null &&
+					geo.getTerminalPoint(entry.source) == null)
+				{
+					geo = geo.clone();
+					geo.setTerminalPoint(
+						new mxPoint(entry.x, entry.y), entry.source);
+					entry.cell.setGeometry(geo);
+				}
+			}
+
+			graph.view.clear(entry.cell, false);
+			touched = true;
+		}
+
+		repairPointQueue = [];
+
+		if (touched)
+		{
+			// What graph.refresh(cell) did per entry, once for all
+			graph.view.validate();
+			graph.sizeDidChange();
+			graph.fireEvent(new mxEventObject(mxEvent.REFRESH));
+		}
+	};
+
+	EditorUi.prototype.undo = function()
+	{
+		repairPointQueue = [];
+		repairParentQueue = [];
+		repairRestoreQueue = [];
+		editorUiUndo.apply(this, arguments);
+		this.healCurrentPage();
+		var touched = drainRepairParents(this);
+		drainRepairRestores();
+		this.sanitizeRealtimeTerminals();
+		drainRepairPoints(this, touched);
+	};
+
+	var editorUiRedo = EditorUi.prototype.redo;
+
+	EditorUi.prototype.redo = function()
+	{
+		repairPointQueue = [];
+		repairParentQueue = [];
+		repairRestoreQueue = [];
+		editorUiRedo.apply(this, arguments);
+		this.healCurrentPage();
+		var touched = drainRepairParents(this);
+		drainRepairRestores();
+		this.sanitizeRealtimeTerminals();
+		drainRepairPoints(this, touched);
+	};
+
+	/**
 	 * Initializes the UI.
 	 */
 	var editorUiInit = EditorUi.prototype.init;
@@ -14986,6 +17257,13 @@
 
 		var ui = this;
 		var graph = this.editor.graph;
+
+		// Back-reference for the undo repair's attachment-point capture
+		// (temp models eg. for exports have none and fall back to the
+		// terminal center)
+		graph.model.repairGraph = graph;
+		// Page provenance belongs to the editor's document, not cell XML.
+		graph.model.repairUi = ui;
 
 		// Live obstacle-avoiding routing for edges flagged libavoidRouting=1
 		// (re-route on insert / reconnect / connected-shape move). Guarded on the
@@ -15295,7 +17573,7 @@
 	    		// insert paths
 	    		var config = isGroup ? obj.config : null;
 
-	    		ui.parsePlantUmlDiagram(text, config, function(xml)
+	    		ui.parsePlantUmlDiagram(text, config, function(xml, warnings)
 	    		{
 	    			ui.spinner.stop();
 
@@ -15353,6 +17631,11 @@
 	    				{
 	    					graph.getModel().endUpdate();
 	    				}
+
+	    				// Reports what the converter could not use, once the
+	    				// apply succeeded: the cell keeps the new content. A
+	    				// failed apply reports its own error instead
+	    				ui.showPlantUmlWarnings(warnings);
 	    			}
 	    			catch (e)
 	    			{
@@ -15367,10 +17650,14 @@
 				if (ui.spinner.spin(document.body, mxResources.get('loading')))
 				{
 					ui.parsePlantUmlDiagram(text, isGroup ? obj.config : null,
-						function(xml)
+						function(xml, warnings)
 					{
 						ui.spinner.stop();
 						ui.showPreviewTooltip(xml, evt);
+
+						// Reports what the converter could not use, after the
+						// preview is up: the tooltip stays open
+						ui.showPlantUmlWarnings(warnings);
 					}, function(e)
 					{
 						ui.spinner.stop();
@@ -16360,14 +18647,14 @@
 					    	
 					    	if ((/\.(gif|jpg|jpeg|tiff|png|svg)$/i).test(uri))
 							{
-				    			this.loadImage(decodeURIComponent(uri), mxUtils.bind(this, function(img)
+				    			this.loadImage(mxUtils.safeDecodeURIComponent(uri), mxUtils.bind(this, function(img)
 				    			{
 				    				var w = Math.max(1, img.width);
 			    					var h = Math.max(1, img.height);
 			    					var maxSize = this.maxImageSize;
 
 				    				var s = Math.min(1, Math.min(maxSize / Math.max(1, w)), maxSize / Math.max(1, h));
-				    				graph.insertImage(decodeURIComponent(uri), w * s, h * s);
+				    				graph.insertImage(mxUtils.safeDecodeURIComponent(uri), w * s, h * s);
 				    			}));
 							}
 							else
@@ -16665,7 +18952,7 @@
 					    }
 				    	else if (uri != null && (/\.(gif|jpg|jpeg|tiff|png|svg)$/i).test(uri))
 						{
-			    			this.loadImage(decodeURIComponent(uri), mxUtils.bind(this, function(img)
+			    			this.loadImage(mxUtils.safeDecodeURIComponent(uri), mxUtils.bind(this, function(img)
 			    			{
 			    				var w = Math.max(1, img.width);
 		    					var h = Math.max(1, img.height);
@@ -17159,6 +19446,18 @@
 		textInput.setAttribute('autocorrect', 'off');
 		textInput.setAttribute('autocapitalize', 'off');
 		textInput.setAttribute('spellcheck', 'false');
+
+		// Keeps the virtual keyboard out of the way on touch devices. Chromium on
+		// Android reacts to the focus of an editable element by showing the soft
+		// keyboard and, if a hardware keyboard is attached, by asynchronously
+		// scrolling the focused element into view. This moved the diagram to the
+		// top left corner whenever Ctrl was pressed on a tablet with a physical
+		// keyboard. inputmode="none" disables both (see also installTypingShim).
+		if (this.isVirtualKeyboardDevice())
+		{
+			textInput.setAttribute('inputmode', 'none');
+		}
+
 		textInput.style.textRendering = 'optimizeSpeed';
 		textInput.style.fontFamily = 'monospace';
 		textInput.style.wordBreak = 'break-all';
@@ -17168,7 +19467,7 @@
 		textInput.style.whiteSpace = 'nowrap';
 		textInput.style.overflow = 'hidden';
 		textInput.style.display = 'block';
-		textInput.style.fontSize = '1';
+		textInput.style.fontSize = '1px';
 		textInput.style.zIndex = '-1';
 		textInput.style.resize = 'none';
 		textInput.style.outline = 'none';
@@ -17214,8 +19513,8 @@
 
 						graph.container.appendChild(textInput);
 						restoreFocus = true;
-						
-						textInput.focus();
+
+						textInput.focus({preventScroll: true});
 						document.execCommand('selectAll', false, null);
 
 						// Workaround for Safari 16 scroll after CMD key press
@@ -18674,7 +20973,11 @@
 	{
 		className = (className != null) ? className : 'geButton';
 		var menu = this.menus.get(key);
-		var elt = this.menubar.addMenu(mxResources.get(key), menu.funct, null, clickFn);
+		var elt = this.menubar.addMenu(mxResources.get(key), mxUtils.bind(this, function(popupMenu, parent)
+		{
+			menu.funct.apply(this, arguments);
+			this.menus.appendPluginMenuItems(key, popupMenu, parent);
+		}), null, clickFn);
 		
 		elt.className = className;
 		elt.setAttribute('title', mxResources.get(key));
@@ -18992,10 +21295,11 @@
 		{
 			var menu = this.menus.get(id);
 			
-			var elt = this.createMenuElement(label, mxUtils.bind(this, function()
+			var elt = this.createMenuElement(label, mxUtils.bind(this, function(popupMenu, parent)
 			{
 				// Allows extensions of menu.functid
 				menu.funct.apply(this, arguments);
+				this.menus.appendPluginMenuItems(id, popupMenu, parent);
 			}));
 			
 			elt.setAttribute('title', label);
@@ -20611,12 +22915,15 @@
 						mxUtils.getTextContent(elt) : elt.innerText);
 				}
 
-				// Workaround for junk after XML in VM
+				// Workaround for junk after URL-encoded XML in VM. Decoded XML is never
+				// cut: a %3E inside a label or link would end the XML there, and the
+				// broken XML was then pasted into the label and link of the selected
+				// cell, doubling in size on every paste [DID-20192]
 				try
 				{
 					var idx = xml.lastIndexOf('%3E');
 					
-					if (idx >= 0 && idx < xml.length - 3)
+					if (xml.substring(0, 3) == '%3C' && idx >= 0 && idx < xml.length - 3)
 					{
 						xml = xml.substring(0, idx + 3);
 					}
@@ -20632,7 +22939,7 @@
 					var spans = elt.getElementsByTagName('span');
 					var tmp = (spans != null && spans.length > 0) ? 
 						mxUtils.trim(decodeURIComponent(spans[0].textContent)) :
-						decodeURIComponent(xml);
+						((xml.charAt(0) == '<') ? xml : decodeURIComponent(xml));
 							
 					if (tmp && (this.isCompatibleString(tmp) || 
 						tmp.substring(0, 20).replace(/\s/g, '').indexOf('{"isProtected":') == 0))
@@ -21466,7 +23773,7 @@
 					if (!args.shadows)
 					{
 						css += 'g[style*="filter: drop-shadow("] {\n' +
-							'  filter: none !important;{\n' +
+							'  filter: none !important;\n' +
 							'}\n';
 					}
 
@@ -21641,7 +23948,7 @@
 						if (Graph.isCssFontUrl(fontUrl))
 						{
 							pv.wnd.document.writeln('<link rel="stylesheet" href="' +
-								mxUtils.htmlEntities(fontUrl) +
+								mxUtils.htmlEntities(Graph.rewriteGoogleFontUrl(fontUrl)) +
 								'" charset="UTF-8" type="text/css">');
 						}
 						else
@@ -22710,6 +25017,95 @@
 	};
 
 	/**
+	 * Returns a validated copy of the given viewbox, or null. A viewbox is
+	 * {x, y, width, height} in graph (model) coordinates plus an optional
+	 * border in screen pixels; a JSON string is accepted too. This is the
+	 * object used by the viewbox URL parameter, the embed protocol's load
+	 * option and its viewbox action, so all three take the same value.
+	 * Rejects anything that would feed NaN or a zero size into fitWindow.
+	 */
+	EditorUi.parseViewBox = function(value)
+	{
+		try
+		{
+			if (typeof value === 'string')
+			{
+				value = JSON.parse(value);
+			}
+
+			if (value != null && typeof value === 'object')
+			{
+				var x = parseFloat(value.x);
+				var y = parseFloat(value.y);
+				var w = parseFloat(value.width);
+				var h = parseFloat(value.height);
+				var b = (value.border != null && value.border !== '') ?
+					parseFloat(value.border) : null;
+
+				if (isFinite(x) && isFinite(y) && isFinite(w) && isFinite(h) &&
+					w > 0 && h > 0 && (b == null || (isFinite(b) && b >= 0)))
+				{
+					return {x: x, y: y, width: w, height: h, border: b};
+				}
+			}
+		}
+		catch (e)
+		{
+			// ignore invalid JSON
+		}
+
+		return null;
+	};
+
+	/**
+	 * Returns the parsed viewbox URL parameter, or null if it is absent or
+	 * invalid (see EditorUi.parseViewBox).
+	 */
+	EditorUi.getViewBoxParam = function()
+	{
+		var vb = null;
+
+		if (urlParams['viewbox'] != null)
+		{
+			try
+			{
+				vb = EditorUi.parseViewBox(decodeURIComponent(urlParams['viewbox']));
+			}
+			catch (e)
+			{
+				// malformed percent-encoding
+			}
+
+			if (vb == null)
+			{
+				console.error('Ignoring invalid viewbox URL parameter');
+			}
+		}
+
+		return vb;
+	};
+
+	/**
+	 * Shows the given viewbox (see EditorUi.parseViewBox) in the graph
+	 * container. Regular fitWindow only zooms in chromeless mode (no
+	 * scrollbars to pan), so that mode goes through fitBoundsCssTransform
+	 * like the viewbox animation step does.
+	 */
+	EditorUi.prototype.applyViewBox = function(vb)
+	{
+		var graph = this.editor.graph;
+
+		if (graph.useCssTransforms)
+		{
+			graph.fitBoundsCssTransform(vb, vb.border);
+		}
+		else
+		{
+			graph.fitWindow(vb, vb.border);
+		}
+	};
+
+	/**
 	 * Adds the buttons for embedded mode.
 	 */
 	EditorUi.prototype.createLoadMessage = function(eventName)
@@ -22924,24 +25320,65 @@
 	 * Structural childLayouts (tables, stacks/pools, racks) are never
 	 * replaced by a layout run.
 	 */
-	EditorUi.prototype.getSelectedLayoutContainer = function()
+	EditorUi.prototype.getSelectedLayoutContainers = function()
 	{
 		var graph = this.editor.graph;
-		var cell = (graph.getSelectionCount() == 1) ?
-			graph.getSelectionCell() : null;
+		var cells = graph.getSelectionCells();
+		var result = [];
 
-		if (cell != null && graph.model.isVertex(cell))
+		for (var i = 0; i < cells.length; i++)
 		{
-			var childLayout = graph.getCellStyle(cell)['childLayout'];
-
-			if (childLayout != null && childLayout != 'tableLayout' &&
-				childLayout != 'stackLayout' && childLayout != 'rack')
+			if (graph.model.isVertex(cells[i]))
 			{
-				return cell;
+				var childLayout = graph.getCellStyle(cells[i])['childLayout'];
+
+				if (childLayout != null && childLayout != 'tableLayout' &&
+					childLayout != 'stackLayout' && childLayout != 'rack')
+				{
+					result.push(cells[i]);
+				}
+				else
+				{
+					// Any other selected vertex keeps the legacy one-shot run
+					return [];
+				}
 			}
 		}
 
-		return null;
+		return result;
+	};
+
+	/**
+	 * Rewrites the childLayout of every selected layout container (see
+	 * getSelectedLayoutContainers) to the given spec in one undoable edit
+	 * via setContainerChildLayout and returns true, or returns false when
+	 * the selection holds no layout container so the caller runs its
+	 * one-shot layout instead.
+	 */
+	EditorUi.prototype.applyLayoutToSelectedContainers = function(spec)
+	{
+		var containers = this.getSelectedLayoutContainers();
+
+		if (containers.length == 0)
+		{
+			return false;
+		}
+
+		var model = this.editor.graph.model;
+		model.beginUpdate();
+		try
+		{
+			for (var i = 0; i < containers.length; i++)
+			{
+				this.setContainerChildLayout(containers[i], spec);
+			}
+		}
+		finally
+		{
+			model.endUpdate();
+		}
+
+		return true;
 	};
 
 	/**
@@ -23039,9 +25476,21 @@
 						config.resizeLayoutRoot = true;
 					}
 
-					if (entry.layout == 'elkLayered' && config.extractIsolated == null)
+					if (entry.layout == 'elkLayered')
 					{
-						config.extractIsolated = false;
+						if (config.extractIsolated == null)
+						{
+							config.extractIsolated = false;
+						}
+
+						// Model order breaks crossing-minimization ties so
+						// inserts don't reshuffle the branches (see
+						// Menus.layoutContainers).
+						if (config['elk.layered.considerModelOrder.strategy'] == null)
+						{
+							config['elk.layered.considerModelOrder.strategy'] =
+								Menus.flowModelOrder;
+						}
 					}
 
 					// The manager's re-runs are deliberately non-enforcing for
@@ -23167,17 +25616,13 @@
 				{
 					editorUi.lastLayoutSpec = list;
 
-					// A single selected layout container takes the spec as its
-					// new childLayout instead of a one-shot run (same rule as
-					// the Arrange > Layout menu items).
-					var container = (retargetSelection) ?
-						editorUi.getSelectedLayoutContainer() : null;
-
-					if (container != null && Array.isArray(list) &&
-						list.length > 0)
+					// Selected layout containers take the spec as their new
+					// childLayout instead of a one-shot run (same rule as the
+					// Arrange > Layout menu items).
+					if (retargetSelection && Array.isArray(list) &&
+						list.length > 0 &&
+						editorUi.applyLayoutToSelectedContainers(list))
 					{
-						editorUi.setContainerChildLayout(container, list);
-
 						if (done != null)
 						{
 							done();
@@ -23480,6 +25925,15 @@
 		var lastData = null;
 		var embedShadowPages = null;
 
+		// Serializes the current diagram for the host. Defined outside the
+		// message handler because the merge, patch and getDiff actions call
+		// it synchronously while that handler is still dispatching.
+		var getData = mxUtils.bind(this, function()
+		{
+			return (urlParams['pages'] != '0' || (this.pages != null && this.pages.length > 1)) ?
+				this.getFileData(true) : mxUtils.getXml(this.editor.getGraphXml());
+		});
+
 		// Forward host-claimed keyboard chords (e.g. Ctrl+P) to the embedding app
 		// so it can run its own commands. Reads Editor.passThroughKeys, set via
 		// the configure config.
@@ -23605,7 +26059,15 @@
 						// Accepts a custom-layout array or any shorthand
 						// accepted by resolveLayoutList (preset names,
 						// 'libavoid'), same as the load "layout" option.
-						this.executeLayoutSpec(data.layouts);
+						// Reports completion with the common state fields so
+						// the host can follow up with a fit or viewbox action
+						// once the cells have moved.
+						this.executeLayoutSpec(data.layouts, mxUtils.bind(this, function()
+						{
+							var msg = this.createLoadMessage('layout');
+							msg.message = data;
+							parent.postMessage(JSON.stringify(msg), '*');
+						}));
 
 						return;
 					}
@@ -23862,6 +26324,24 @@
 
 						return;
 					}
+					else if (data.action == 'viewbox')
+					{
+						// Same object as the viewbox URL parameter and the
+						// load option (see EditorUi.parseViewBox); an invalid
+						// value leaves the view unchanged but still replies
+						var vb = EditorUi.parseViewBox(data.viewbox);
+
+						if (vb != null)
+						{
+							this.applyViewBox(vb);
+						}
+
+						var msg = this.createLoadMessage('viewbox');
+						msg.message = data;
+						parent.postMessage(JSON.stringify(msg), '*');
+
+						return;
+					}
 					else if (data.action == 'fullscreenChanged')
 					{
 						var scrollState = null;
@@ -24027,7 +26507,25 @@
 										{
 											theme = Editor.isDarkMode() ? 'dark' : 'light';
 										}
-										
+
+										// Reduces scale for very large diagrams so that the export
+										// stays within maxCanvasExportArea and generating the
+										// image cannot crash the browser tab by running out
+										// of memory
+										if (data.width == null && this.maxCanvasExportArea > 0)
+										{
+											var b = graph.getGraphBounds();
+											var border = (data.border != null) ? data.border : 0;
+											var w = Math.ceil(b.width / graph.view.scale) + 2 * border;
+											var h = Math.ceil(b.height / graph.view.scale) + 2 * border;
+											var s = (data.scale != null) ? data.scale : 1;
+
+											if (w * h * s * s > this.maxCanvasExportArea)
+											{
+												data.scale = Math.sqrt(this.maxCanvasExportArea / (w * h));
+											}
+										}
+
 										this.editor.exportToCanvas(mxUtils.bind(this, function(canvas)
 										{
 											processUri(canvas.toDataURL('image/png'));
@@ -24047,6 +26545,10 @@
 									}
 
 									graphReady();
+								}
+								else if (!this.isRemoteExportEnabled())
+								{
+									processUri(null);
 								}
 								else
 								{
@@ -24347,7 +26849,30 @@
 
 						this.embedExitPoint = null;
 
-						if (data.scale != null)
+						// viewbox: shows the given diagram region after loading
+						// (same {x, y, width, height, border} object as the
+						// viewbox URL parameter, see EditorUi.parseViewBox).
+						// Takes precedence over scale and fit and over the
+						// page's stored initial view. The URL parameter is the
+						// fallback when the message carries none of the three
+						// view options, so a host can set the initial view in
+						// the iframe URL alone (jgraph/drawio#4763).
+						var viewbox = EditorUi.parseViewBox(data.viewbox);
+
+						if (viewbox == null && data.viewbox == null &&
+							data.scale == null && data.fit == null)
+						{
+							viewbox = EditorUi.getViewBoxParam();
+						}
+
+						if (viewbox != null)
+						{
+							afterLoad = mxUtils.bind(this, function()
+							{
+								this.applyViewBox(viewbox);
+							});
+						}
+						else if (data.scale != null)
 						{
 							var customScale = data.scale;
 							var scaleBorder = (data.scaleBorder != null) ?
@@ -24773,12 +27298,6 @@
 					this.handleError(e);
 				}
 			}
-						
-			var getData = mxUtils.bind(this, function()
-			{
-				return (urlParams['pages'] != '0' || (this.pages != null && this.pages.length > 1)) ?
-					this.getFileData(true): mxUtils.getXml(this.editor.getGraphXml());
-			});
 			
 			var doLoad = mxUtils.bind(this, function(data, evt)
 			{
@@ -25169,18 +27688,12 @@
 					{
 						var list = JSON.parse(newValue);
 
-						// A single selected layout container takes the list as
-						// its new childLayout instead of a one-shot run (only
-						// for arrays — other parsed JSON keeps the legacy
-						// one-shot path and its error behavior).
-						var container = this.getSelectedLayoutContainer();
-
-						if (container != null && Array.isArray(list) &&
-							list.length > 0)
-						{
-							this.setContainerChildLayout(container, list);
-						}
-						else
+						// Selected layout containers take the list as their new
+						// childLayout instead of a one-shot run (only for
+						// arrays — other parsed JSON keeps the legacy one-shot
+						// path and its error behavior).
+						if (!(Array.isArray(list) && list.length > 0 &&
+							this.applyLayoutToSelectedContainers(list)))
 						{
 							this.executeLayouts(this.editor.graph.createLayouts(list));
 						}
@@ -26930,6 +29443,10 @@
 							editorUi.exportImage(s, false, true,
 								false, false, b, true, false, 'jpeg', grid);
 						}
+					}
+					else if (!editorUi.isRemoteExportEnabled())
+					{
+						editorUi.handleError({message: mxResources.get('notAvailable')});
 					}
 					else 
 					{

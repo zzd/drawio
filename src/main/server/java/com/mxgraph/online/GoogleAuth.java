@@ -71,6 +71,9 @@ abstract public class GoogleAuth extends AbsAuth
 		{
 			URL obj = new URL("https://www.googleapis.com/oauth2/v2/userinfo?alt=json");
 			con = (HttpURLConnection) obj.openConnection();
+
+			Utils.setTimeouts(con);
+
 			con.setRequestProperty("Authorization", "Bearer " + accessToken);
 			con.setRequestProperty("User-Agent", "draw.io");
 			int status = con.getResponseCode();
@@ -139,11 +142,11 @@ abstract public class GoogleAuth extends AbsAuth
 			
 			if (tokens.size() > 0)
             {
-                addCookie(tokenCookieName, String.join(SEPARATOR, tokens), TOKEN_COOKIE_AGE, cookiePath, response);
+                addCookie(tokenCookieName, String.join(SEPARATOR, tokens), TOKEN_COOKIE_AGE, getCookiePath(request), response);
             }
             else
             {
-                deleteCookie(tokenCookieName, cookiePath, response);
+                deleteCookie(tokenCookieName, getCookiePath(request), response);
             }
 		}
 	}

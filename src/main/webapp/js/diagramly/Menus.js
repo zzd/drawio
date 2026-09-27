@@ -33,6 +33,10 @@
 	// keeps the legacy margins if transparentBounds is ever toggled off.
 	// The ELK entries use the JSON childLayout form and run through the
 	// layout-manager path; see CLAUDE.md "ELK childLayout containers".
+	// ELK considerModelOrder strategy of the flow (elkLayered) containers:
+	// model order breaks crossing-minimization ties and never adds crossings.
+	Menus.flowModelOrder = 'NODES_AND_EDGES';
+
 	Menus.layoutContainers = (function()
 	{
 		var elkChildLayout = function(layout, config)
@@ -72,15 +76,22 @@
 		var topPad = '[top=40,left=20,bottom=20,right=20]';
 		var leftPad = '[top=20,left=40,bottom=20,right=20]';
 
+		// Flow containers keep the model order where crossing minimization
+		// has no preference (Menus.flowModelOrder), so a shape added to a
+		// branch stays where it was dropped instead of the branches being
+		// reshuffled on every insert — the layered counterpart of the
+		// geometry-based sibling order of the tree containers.
 		return {
 			horizontalFlow: entry(true, 460, 150, 'containerType=tree;' +
 				elkChildLayout('elkLayered', {'elk.direction': 'RIGHT',
 					'elk.layered.spacing.nodeNodeBetweenLayers': '50',
+					'elk.layered.considerModelOrder.strategy': Menus.flowModelOrder,
 					'elk.padding': leftPad, edgeStyle: 'orthogonalEdgeStyle',
 					corners: 'rounded', extractIsolated: false})),
 			verticalFlow: entry(false, 270, 280, 'containerType=tree;' +
 				elkChildLayout('elkLayered', {'elk.direction': 'DOWN',
 					'elk.layered.spacing.nodeNodeBetweenLayers': '50',
+					'elk.layered.considerModelOrder.strategy': Menus.flowModelOrder,
 					'elk.padding': topPad, edgeStyle: 'orthogonalEdgeStyle',
 					corners: 'rounded', extractIsolated: false})),
 			// edgeNode = half of nodeNode centers the shared tree-edge channel
@@ -121,6 +132,20 @@
 		if (item != null)
 		{
 			item.firstChild.nextSibling.appendChild(this.createHelpLink(href));
+		}
+	};
+
+	/**
+	 * Adds the collaboration items for the current file as one section.
+	 */
+	Menus.prototype.addCollaborationItems = function(menu, parent)
+	{
+		var file = this.editorUi.getCurrentFile();
+
+		if (file != null && file.isRealtimeEnabled() && file.isRealtimeSupported())
+		{
+			this.addMenuItems(menu, ['-', 'showRemoteCursors', 'shareCursor',
+				'bringEveryoneToMe', 'presentToEveryone'], parent);
 		}
 	};
 
@@ -286,6 +311,19 @@
 		
 		showRemoteCursorsAction.setToggleAction(true);
 		showRemoteCursorsAction.setSelectedCallback(function() { return editorUi.isShowRemoteCursors(); });
+		
+		editorUi.actions.addAction('bringEveryoneToMe', function()
+		{
+			editorUi.bringEveryoneToMe();
+		});
+
+		var presentToEveryoneAction = editorUi.actions.addAction('presentToEveryone', function()
+		{
+			editorUi.togglePresenting();
+		});
+
+		presentToEveryoneAction.setToggleAction(true);
+		presentToEveryoneAction.setSelectedCallback(function() { return editorUi.isPresenting(); });
 		
 		var pointAction = editorUi.actions.addAction('points', function()
 		{
@@ -640,7 +678,7 @@
 		editorUi.actions.put('exportPdf', new Action('formatPdf' + '...', function()
 		{
 			editorUi.showPrintDialog(mxResources.get('formatPdf'),
-				(!EditorUi.isElectronApp && (editorUi.isOffline() || editorUi.printPdfExport)) ?
+				(!EditorUi.isElectronApp && editorUi.isPrintPdfExport()) ?
 					null : mxUtils.bind(this, function(preview, args)
 					{
 						var pageCount = (editorUi.pages != null) ? editorUi.pages.length : 1;
@@ -902,8 +940,7 @@
 				}
 				
 				graph.copyCellStyles([cell], keys, values,
-					editorUi.copiedStyle, editorUi.copiedStyle,
-					null, null, null, true);
+					editorUi.copiedStyle, editorUi.copiedStyle);
 			}
 		}, null, null,  Editor.altKey + '+C');
 
@@ -998,7 +1035,7 @@
 						}
 					}), true, defaultEditable, format, true);
 			}
-			else if (!editorUi.isOffline() && (!mxClient.IS_IOS || !navigator.standalone))
+			else if (editorUi.isRemoteExportEnabled() && (!mxClient.IS_IOS || !navigator.standalone))
 			{
 				editorUi.showRemoteExportDialog(mxResources.get('export'), null, mxUtils.bind(this,
 					function(ignoreSelection, editable, transparent, scale, border)
@@ -1702,13 +1739,10 @@
 			{
 				editorUi.tryAndHandle(mxUtils.bind(this, function()
 				{
-					// A single selected layout container takes circle as its new
+					// Selected layout containers take circle as their new
 					// childLayout (same value as Insert > Layout > Circle).
-					var container = editorUi.getSelectedLayoutContainer();
-
-					if (container != null)
+					if (editorUi.applyLayoutToSelectedContainers('circleLayout'))
 					{
-						editorUi.setContainerChildLayout(container, 'circleLayout');
 						return;
 					}
 
@@ -1773,14 +1807,11 @@
 							editorUi.lastLayoutSpec = [{layout: 'mxParallelEdgeLayout',
 								config: {spacing: layout.spacing, checkOverlap: true}}];
 
-							// A single selected layout container takes the run
-							// as its new childLayout instead of a one-shot run.
-							var container = editorUi.getSelectedLayoutContainer();
-
-							if (container != null)
+							// Selected layout containers take the run as their
+							// new childLayout instead of a one-shot run.
+							if (editorUi.applyLayoutToSelectedContainers(
+								editorUi.lastLayoutSpec))
 							{
-								editorUi.setContainerChildLayout(container,
-									editorUi.lastLayoutSpec);
 								return;
 							}
 
@@ -3165,7 +3196,7 @@
 			}
 			
 			// Disabled for standalone mode in iOS because new tab cannot be closed
-			else if (!editorUi.isOffline() && (!mxClient.IS_IOS || !navigator.standalone))
+			else if (editorUi.isRemoteExportEnabled() && (!mxClient.IS_IOS || !navigator.standalone))
 			{
 				this.addMenuItems(menu, ['exportPng', 'exportJpg'], parent);
 			}
@@ -3177,13 +3208,13 @@
 
 			this.addMenuItems(menu, ['exportSvg', '-'], parent);
 			
-			// Redirects export to PDF to print in Chrome App
-			if (editorUi.isOffline() || editorUi.printPdfExport)
+			// Redirects export to PDF to print if no export service is available
+			if (editorUi.isPrintPdfExport())
 			{
 				this.addMenuItems(menu, ['exportPdf'], parent);
 			}
 			// Disabled for standalone mode in iOS because new tab cannot be closed
-			else if (!editorUi.isOffline() && (!mxClient.IS_IOS || !navigator.standalone))
+			else if (!mxClient.IS_IOS || !navigator.standalone)
 			{
 				this.addMenuItems(menu, ['exportPdf'], parent);
 			}
@@ -3606,7 +3637,8 @@
 			
 			if (file != null)
 			{
-				if (file.constructor == LocalFile && file.fileHandle != null)
+				if (file.constructor == LocalFile && file.fileHandle != null &&
+					typeof window.showSaveFilePicker === 'function')
 				{
 					editorUi.showSaveFilePicker(mxUtils.bind(editorUi, function(fileHandle, desc)
 					{
@@ -4663,14 +4695,6 @@
 					}, parent);
 				}
 				
-				if (editorUi.isModeReady(App.MODE_GITLAB))
-				{
-					menu.addItem(mxResources.get('gitlab') + '...', null, function()
-					{
-						editorUi.showLibraryDialog(null, null, null, null, App.MODE_GITLAB);
-					}, parent);
-				}
-
 				if (editorUi.isModeReady(App.MODE_TRELLO))
 				{
 					menu.addItem(mxResources.get('trello') + '...', null, function()
@@ -4974,20 +4998,16 @@
 		
 		viewPanelsMenu.funct = function(menu, parent)
 		{
-			var file = editorUi.getCurrentFile();
 			editorUi.menus.addMenuItems(menu, ['toggleShapes', 'format', 'ruler', '-',
-				'findReplace', 'layers', 'tags', 'outline', '-'], parent);
+				'findReplace', 'layers', 'tags', 'outline'], parent);
 
+			// Comments opens a window so it shares the section with the panels
 			if (editorUi.commentsSupported())
 			{
-				editorUi.menus.addMenuItems(menu, ['-', 'comments'], parent);
-			}
-			
-			if (file != null && file.isRealtimeEnabled() && file.isRealtimeSupported())
-			{
-				editorUi.menus.addMenuItems(menu, ['-', 'showRemoteCursors', 'shareCursor'], parent);
+				editorUi.menus.addMenuItems(menu, ['comments'], parent);
 			}
 
+			editorUi.menus.addCollaborationItems(menu, parent);
 			editorUi.menus.addMenuItems(menu, ['-', 'fullscreen'], parent);
 		};
 
@@ -4996,7 +5016,6 @@
 		{
 			if (Editor.currentTheme == 'simple')
 			{
-				var file = editorUi.getCurrentFile();
 				editorUi.menus.addMenuItems(menu, ['toggleShapes', 'format'], parent);
 	
 				if (editorUi.isPageMenuVisible())
@@ -5017,18 +5036,15 @@
 				}
 				
 				editorUi.menus.addMenuItems(menu, ['-', 'findReplace',
-					'layers', 'tags', 'outline', '-'], parent);
+					'layers', 'tags', 'outline'], parent);
 				
+				// Comments opens a window so it shares the section with the panels
 				if (editorUi.commentsSupported())
 				{
 					editorUi.menus.addMenuItems(menu, ['comments'], parent);
 				}
 				
-				if (file != null && file.isRealtimeEnabled() && file.isRealtimeSupported())
-				{
-					this.addMenuItems(menu, ['showRemoteCursors'], parent);
-				}
-
+				this.addCollaborationItems(menu, parent);
 				this.addMenuItems(menu, ['-', 'fullscreen'], parent);
 			}
 			else
@@ -5255,9 +5271,10 @@
 				Editor.currentTheme == 'sketch' ||
 				Editor.currentTheme == 'min')
 			{
-				if (editorUi.isThemeMenuVisible())
+				if ((urlParams['embed'] != '1' || urlParams['atlas'] == '1') &&
+					urlParams['extAuth'] != '1' && urlParams['embedInline'] != '1')
 				{
-					editorUi.menus.addSubmenu('theme', menu, parent);
+					editorUi.menus.addSubmenu('appearance', menu, parent);
 				}
 				
 				if (langMenu != null && (urlParams['embed'] != '1' || urlParams['lang'] == null))
@@ -5265,10 +5282,9 @@
 					editorUi.menus.addSubmenu('language', menu, parent);
 				}
 				
-				if ((urlParams['embed'] != '1' || urlParams['atlas'] == '1') &&
-					urlParams['extAuth'] != '1' && urlParams['embedInline'] != '1')
+				if (editorUi.isThemeMenuVisible())
 				{
-					editorUi.menus.addSubmenu('appearance', menu, parent);
+					editorUi.menus.addSubmenu('theme', menu, parent);
 				}
 
 				menu.addSeparator(parent);
@@ -5278,16 +5294,12 @@
 				editorUi.menus.addMenuItems(menu, ['-', 'collapseExpand',
 					'animations', 'tooltips'], parent);
 
-				var file = editorUi.getCurrentFile();
-
 				if (Editor.currentTheme != 'simple')
 				{
-					if (file != null && file.isRealtimeEnabled() && file.isRealtimeSupported())
-					{
-						this.addMenuItems(menu, ['showRemoteCursors'], parent);
-					}
-
 					editorUi.menus.addMenuItems(menu, ['ruler'], parent);
+
+					// Collaboration items are in the view menu in the simple theme
+					this.addCollaborationItems(menu, parent);
 				}
 
 				if (EditorUi.isElectronApp)
@@ -5307,9 +5319,9 @@
 			}
 			else
 			{
-				if (editorUi.isThemeMenuVisible())
+				if (urlParams['embed'] != '1' || urlParams['atlas'] == '1')
 				{
-					this.addSubmenu('theme', menu, parent);
+					editorUi.menus.addSubmenu('appearance', menu, parent);
 				}
 
 				if (urlParams['embed'] != '1' || urlParams['lang'] == null)
@@ -5317,9 +5329,9 @@
 					this.addSubmenu('language', menu, parent);
 				}
 				
-				if (urlParams['embed'] != '1' || urlParams['atlas'] == '1')
+				if (editorUi.isThemeMenuVisible())
 				{
-					editorUi.menus.addSubmenu('appearance', menu, parent);
+					this.addSubmenu('theme', menu, parent);
 				}
 
 				if (EditorUi.isElectronApp)
@@ -5341,17 +5353,17 @@
 				
 				if (urlParams['embed'] != '1')
 				{
-					var file = editorUi.getCurrentFile();
-
-					if (file != null && file.isRealtimeEnabled() && file.isRealtimeSupported())
-					{
-						this.addMenuItems(menu, ['showRemoteCursors', 'shareCursor'], parent);
-					}
-
 					this.addMenuItems(menu, ['autosave'], parent);
 				}
 
-				this.addMenuItems(menu, ['collapseExpand', '-'], parent);
+				this.addMenuItems(menu, ['collapseExpand'], parent);
+
+				if (urlParams['embed'] != '1')
+				{
+					this.addCollaborationItems(menu, parent);
+				}
+
+				this.addMenuItems(menu, ['-'], parent);
 				this.addSubmenu('diagramLanguage', menu, parent);
 				this.addMenuItems(menu, ['editDiagram', '-'], parent);
 

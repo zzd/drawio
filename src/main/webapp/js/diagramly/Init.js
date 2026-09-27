@@ -32,7 +32,10 @@ window.DRAWIO_BASE_URL = window.DRAWIO_BASE_URL || ((/.*\.draw\.io$/.test(window
 window.DRAWIO_SERVER_URL = window.DRAWIO_SERVER_URL || window.location.origin +
 	window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) + '/';
 window.DRAWIO_LIGHTBOX_URL = window.DRAWIO_LIGHTBOX_URL || 'https://viewer.diagrams.net';
-window.EXPORT_URL = window.EXPORT_URL || 'https://convert.diagrams.net/node/export';
+// Defaults only if unset so that a pre-configuration can set null to disable
+// server-side export (see EditorUi.isRemoteExportEnabled)
+window.EXPORT_URL = (typeof window.EXPORT_URL === 'undefined') ?
+	'https://convert.diagrams.net/node/export' : window.EXPORT_URL;
 window.DRAW_MATH_URL = window.DRAW_MATH_URL || 'math4/es5';
 window.VSS_CONVERT_URL = window.VSS_CONVERT_URL || 'https://convert.diagrams.net/VsdConverter/api/converter';
 window.REALTIME_URL = window.REALTIME_URL || window.DRAWIO_SERVER_URL + 'cache';
@@ -391,20 +394,10 @@ window.uiTheme = window.uiTheme || (function()
 		}
 	}
 	
-	// Customizes export URL
-	var ex = urlParams['export'];
-
-	if (ex != null)
-	{
-		ex = decodeURIComponent(ex);
-		
-		if (ex.substring(0, 7) != 'http://' &&  ex.substring(0, 8) != 'https://')
-		{
-			ex = 'http://' + ex;
-		}
-		
-		EXPORT_URL = ex;
-	}
+	// The export service is not taken from the URL. The export request carries
+	// the diagram, so a link that picked the service would send the diagram to
+	// whoever wrote the link as soon as the user exported [GHSA-ff67-v9r9-6877].
+	// A deployment sets window.EXPORT_URL in PreConfig.js, which loads first.
 
 	// Customizes gitlab URL
 	var glUrl = urlParams['gitlab'];
@@ -477,6 +470,7 @@ if (urlParams['offline'] == '1' || urlParams['demo'] == '1' ||
 	urlParams['gh'] = '0';
 	urlParams['gl'] = '0';
 	urlParams['tr'] = '0';
+	urlParams['ms365'] = '0';
 }
 
 // Do not insert code between above and below blocks
@@ -488,6 +482,7 @@ if (window.location.hostname == 'se.diagrams.net')
 	urlParams['gh'] = '0';
 	urlParams['gl'] = '0';
 	urlParams['tr'] = '0';
+	urlParams['ms365'] = '0';
 	urlParams['plugins'] = '0';
 	urlParams['mode'] = 'google';
 	urlParams['lockdown'] = '1'; // Do not want to apply lockdown true to above block

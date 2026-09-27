@@ -901,7 +901,8 @@ EditorUi = function(editor, container, lightbox)
 				graph.copyCellStyles(evt.getProperty('cells'),
 					evt.getProperty('keys'), evt.getProperty('values'),
 					graph.currentVertexStyle, graph.currentEdgeStyle,
-					vertexStyleIgnored, edgeStyleIgnored, evt.getProperty('edgeLabel'));
+					vertexStyleIgnored, edgeStyleIgnored, evt.getProperty('edgeLabel'),
+					force);
 			}
 
 			if (this.toolbar != null)
@@ -1489,7 +1490,8 @@ EditorUi.prototype.findCommonProperties = function(cell, properties, addAll, sst
 					{
 						var name = nodes[i].getAttribute('color');
 
-						if (!mxUtils.isValidColor(name) && !handledKeys[name] &&
+						// A node without a color attribute defines no custom property
+						if (name != null && !mxUtils.isValidColor(name) && !handledKeys[name] &&
 							name != 'fill' && name != 'stroke' && name != 'font')
 						{
 							handledKeys[name] = true;
@@ -2486,7 +2488,9 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 			graph.snap(Math.round(y / graph.view.scale) - graph.view.translate.y - h));
 	};
 	
-	if (cells != null && cells.length > 0)
+	// The entries are styled and rendered with the sidebar's scratch graph,
+	// so a chromeless editor without a sidebar has no shape picker
+	if (cells != null && cells.length > 0 && this.sidebar != null)
 	{
 		var ui = this;
 		var graph = this.editor.graph;
@@ -2968,6 +2972,20 @@ EditorUi.prototype.onKeyPress = function(evt)
 };
 
 /**
+ * Returns true if focusing an editable element on this device is expected to
+ * engage the virtual keyboard (Android and iOS tablets, other multi-touch
+ * devices). Hidden editable elements that only exist to capture keystrokes or
+ * clipboard events from a physical keyboard use this to add inputmode="none",
+ * which keeps the soft keyboard and its side effects (viewport resize, scroll
+ * of the focused element into view) out of the way.
+ */
+EditorUi.prototype.isVirtualKeyboardDevice = function()
+{
+	return mxClient.IS_ANDROID || mxClient.IS_IOS ||
+		('ontouchstart' in document.documentElement && navigator.maxTouchPoints > 1);
+};
+
+/**
  * Creates and installs a hidden textarea ("typing shim") that stays focused
  * when a cell is selected but not being edited. Because the OS sees an editable
  * element with focus, it properly engages IME from the very first keystroke.
@@ -2988,8 +3006,7 @@ EditorUi.prototype.installTypingShim = function()
 	// Suppress virtual keyboard on touch devices (Android/iOS tablets).
 	// The shim is for capturing keystrokes from physical keyboards and IME;
 	// on touch-only devices focusing a textarea triggers the soft keyboard.
-	if (mxClient.IS_ANDROID || mxClient.IS_IOS ||
-		('ontouchstart' in document.documentElement && navigator.maxTouchPoints > 1))
+	if (this.isVirtualKeyboardDevice())
 	{
 		shim.setAttribute('inputmode', 'none');
 	}
@@ -3500,6 +3517,10 @@ EditorUi.prototype.getImageForEdgeStyle = function(style)
 	{
 		result = Format.entityImage.src;
 	}
+	else if (es == 'sequenceEdgeStyle')
+	{
+		result = Format.sequenceImage.src;
+	}
 	else if (es == 'elbowEdgeStyle')
 	{
 		result = (mxUtils.getValue(style, mxConstants.STYLE_ELBOW, null) == 'vertical') ?
@@ -3791,7 +3812,45 @@ EditorUi.prototype.initCanvas = function()
 	   	{
 	   		mxEvent.removeListener(window, 'resize', autoscaleResize);
 	   	});
-	   	
+
+		// Refits when the container gets its first usable size. The window resize
+		// listener above keeps the current scale, so a viewer that was loaded into
+		// a collapsed or hidden container never fits itself when it is revealed
+		// [jgraph/drawio-dev#647]
+		if (typeof ResizeObserver !== 'undefined' && graph.container != null)
+		{
+			var isEmptyContainer = function()
+			{
+				return graph.container.offsetWidth == 0 || graph.container.offsetHeight == 0;
+			};
+
+			var wasEmpty = isEmptyContainer();
+
+			var containerObserver = new ResizeObserver(mxUtils.bind(this, function()
+			{
+				var empty = isEmptyContainer();
+
+				if (wasEmpty && !empty)
+				{
+					if (graph.isLightboxView())
+					{
+						this.lightboxFit();
+					}
+
+					this.chromelessResize();
+				}
+
+				wasEmpty = empty;
+			}));
+
+			containerObserver.observe(graph.container);
+
+			this.destroyFunctions.push(function()
+			{
+				containerObserver.disconnect();
+			});
+		}
+
 		this.editor.addListener('resetGraphView', mxUtils.bind(this, function()
 		{
 			this.chromelessResize(true);
@@ -3878,7 +3937,8 @@ EditorUi.prototype.initCanvas = function()
 			{
 				var backUrl = Graph.sanitizeLink(toolbarConfig.backBtn.url);
 
-				if (backUrl != null)
+				// Same-origin only as the URL comes from a URL parameter
+				if (backUrl != null && Graph.isSameOrigin(backUrl))
 				{
 					addButton(mxUtils.bind(this, function(evt)
 					{
@@ -4160,6 +4220,12 @@ EditorUi.prototype.initCanvas = function()
 			{
 				var refreshUrl = (toolbarConfig.refreshBtn.url == null) ? null :
 					Graph.sanitizeLink(toolbarConfig.refreshBtn.url);
+
+				// Same-origin only as the URL comes from a URL parameter
+				if (refreshUrl != null && !Graph.isSameOrigin(refreshUrl))
+				{
+					refreshUrl = null;
+				}
 
 				addButton(mxUtils.bind(this, function(evt)
 				{
@@ -6025,7 +6091,9 @@ EditorUi.prototype.updateActionStates = function()
 		graph.isValidRoot(ss.cells[0]));
 	this.actions.get('copyData').setEnabled(ss.cells.length == 1);
 	this.actions.get('copyAsText').setEnabled(ss.cells.length == 1);
-	this.actions.get('editLink').setEnabled(ss.cells.length == 1);
+	// Edit Link writes to every editable cell in the selection, like
+	// Edit Style — same URL or custom action on a group of shapes.
+	this.actions.get('editLink').setEnabled(ss.cells.length > 0);
 	this.actions.get('editStyle').setEnabled(ss.cells.length > 0);
 	this.actions.get('editTooltip').setEnabled(ss.cells.length == 1);
 	this.actions.get('editNote').setEnabled(ss.cells.length == 1);
@@ -7470,53 +7538,6 @@ EditorUi.prototype.createKeyHandler = function(editor)
 		graphFireMouseEvent.apply(this, arguments);
 	};
 
-	// Helper function to center the given cells in the viewport if they are
-	// not fully visible, so that a selection that is moved or resized with
-	// the cursor keys stays in view
-	function scrollCellsToVisible(cells)
-	{
-		var handler = graph.graphHandler;
-		var c = graph.container;
-		var b = null;
-
-		if (handler != null && handler.first != null)
-		{
-			if (handler.bounds != null)
-			{
-				// Cells are not moved until the change is committed so the
-				// pending preview offset is added to the start bounds
-				b = mxRectangle.fromRectangle(handler.bounds);
-				b.x += handler.currentDx;
-				b.y += handler.currentDy;
-			}
-		}
-		else
-		{
-			b = graph.view.getBounds(cells);
-		}
-
-		if (b != null && c != null &&
-			(b.x < c.scrollLeft || b.y < c.scrollTop ||
-			b.x + b.width > c.scrollLeft + c.clientWidth ||
-			b.y + b.height > c.scrollTop + c.clientHeight))
-		{
-			var t = graph.view.translate;
-			var tr = new mxPoint(t.x, t.y);
-
-			if (graph.scrollRectToVisible(new mxRectangle(
-				b.getCenterX() - t.x - c.clientWidth / 2,
-				b.getCenterY() - t.y - c.clientHeight / 2,
-				c.clientWidth, c.clientHeight)))
-			{
-				// Triggers an update via the view's event source
-				var tr2 = new mxPoint(t.x, t.y);
-				graph.view.translate.x = tr.x;
-				graph.view.translate.y = tr.y;
-				graph.view.setTranslate(tr2.x, tr2.y);
-			}
-		}
-	};
-
 	// Helper function to move cells with the cursor keys
 	function nudge(keyCode, stepSize, resize)
 	{
@@ -7648,8 +7669,6 @@ EditorUi.prototype.createKeyHandler = function(editor)
 						}
 					}
 				}
-
-				scrollCellsToVisible(cells);
 			}
 		}
 	};

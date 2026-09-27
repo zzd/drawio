@@ -86,10 +86,10 @@
 							  'Database', 'Desktop App Streaming', 'Developer Tools', 'Game Development', 'Internet of Things', 'IoT Things', 'IoT Resources', 'Machine Learning', 'Management Tools',
 							  'Media Services', 'Migration', 'Mobile Services', 'Network Content Delivery', 'Security Identity Compliance', 'Storage'];
 	
-	Sidebar.prototype.aws4 = ['Arrows', 'General Resources', 'Illustrations', 'Groups', 'Analytics', 'Application Integration', 'AR VR', 'Artificial Intelligence', 'Cloud Financial Management', 'Blockchain', 
+	Sidebar.prototype.aws4 = ['Arrows', 'General Resources', 'Illustrations', 'Groups', 'Analytics', 'Application Integration', 'Artificial Intelligence', 'Cloud Financial Management', 'Blockchain',
 							  'Business Applications', 'Compute', 'Contact Center', 'Containers', 'Customer Enablement', 'Customer Engagement',
-							  'Database', 'Developer Tools', 'End User Computing', 'Front End Web Mobile', 'Games', 'Internet of Things', 'IoT Things', 'IoT Resources', 'Management Governance',
-							  'Media Services', 'Migration Modernization', 'Network Content Delivery', 'Quantum Technologies', 'Robotics', 'Satellite', 'Serverless', 'Security Identity Compliance', 'Storage'];
+							  'Database', 'Developer Tools', 'End User Computing', 'Front End Web Mobile', 'Games', 'Internet of Things', 'Management Governance',
+							  'Media Services', 'Migration Modernization', 'Network Content Delivery', 'Quantum Technologies', 'Satellite', 'Serverless', 'Security Identity Compliance', 'Storage'];
 
 	Sidebar.prototype.office = ['Clouds', 'Communications', 'Concepts', 'Databases', 'Devices', 'Security', 'Servers', 'Services', 'Sites', 'Users'];
 	Sidebar.prototype.openstack = ['Blue', 'Grey', 'Green', 'Red'];
@@ -165,6 +165,7 @@
            	                           {id: 'aws4b', prefix: 'aws4b', libs: Sidebar.prototype.aws4b},
            	                           {id: 'sap', prefix: 'sap', libs: Sidebar.prototype.sap},
            	                           {id: 'aws4', prefix: 'aws4', libs: Sidebar.prototype.aws4},
+           	                           {id: 'aws4r', libs: ['aws4r']},
            	                           {id: 'pid', prefix: 'pid', libs: Sidebar.prototype.pids},
            	                           {id: 'cisco', prefix: 'cisco', libs: Sidebar.prototype.cisco},
            	                           {id: 'cisco_safe', prefix: 'cisco_safe', libs: Sidebar.prototype.cisco_safe},
@@ -176,6 +177,7 @@
            	                           {id: 'floorplan', libs: ['floorplan']},
            	                           {id: 'bootstrap', libs: ['bootstrap']},
            	                           {id: 'atlassian', libs: ['atlassian']},
+           	                           {id: 'atlassian2', prefix: 'atlassian2', libs: ['Apps', 'Work Types', 'Logos']},
 	                                   {id: 'fluid_power', libs: ['fluid_power']},
 	                                   {id: 'gmdl', prefix: 'gmdl', libs: Sidebar.prototype.gmdl},
            	                           {id: 'archimate4', prefix: 'archimate4', libs: Sidebar.prototype.archimate4},
@@ -509,7 +511,8 @@
             			{title: mxResources.get('software'),
             			entries: [{title: 'Active Directory', id: 'active_directory', image: IMAGE_PATH + '/sidebar-active_directory.png'},
 								{title: mxResources.get('android'), id: 'android', image: IMAGE_PATH + '/sidebar-android.png'},
-								{title: 'Atlassian', id: 'atlassian', image: IMAGE_PATH + '/sidebar-atlassian.png'},
+								{title: 'Atlassian', id: 'atlassian2', image: IMAGE_PATH + '/sidebar-atlassian2.png'},
+								{title: 'Atlassian (legacy)', id: 'atlassian', image: IMAGE_PATH + '/sidebar-atlassian.png'},
 								{title: mxResources.get('bootstrap'), id: 'bootstrap', image: IMAGE_PATH + '/sidebar-bootstrap.png'},
 								{title: 'C4', id: 'c4', image: IMAGE_PATH + '/sidebar-c4.png'},
 								{title: 'Data Flow Diagram', id: 'dfd', image: IMAGE_PATH + '/sidebar-dfd.png'},
@@ -526,6 +529,7 @@
 								{title: 'AWS17', id: 'aws3', image: IMAGE_PATH + '/sidebar-aws3.png'},
 								{title: 'AWS18', id: 'aws4b', image: IMAGE_PATH + '/sidebar-aws4b.png'},
 								{title: 'AWS ' + year, id: 'aws4', image: IMAGE_PATH + '/sidebar-aws4.png'},
+								{title: 'AWS (retired)', id: 'aws4r', image: IMAGE_PATH + '/sidebar-aws4r.png'},
 								// TODO: Add isometric containers  		                          
 								{title: mxResources.get('aws3d'), id: 'aws3d', image: IMAGE_PATH + '/sidebar-aws3d.png'},
 								{title: mxResources.get('azure'), id: 'azure2', image: IMAGE_PATH + '/sidebar-azure.png'},
@@ -1288,7 +1292,7 @@
 				
 				if (tags.length > 1)
 				{
-					var key = tags[0].toLowerCase().replace(' ', '_');
+					var key = tags[0].toLowerCase().replace(/ /g, '_');
 					var value = mxUtils.trim(tags.slice(1, tags.length).join(' ').toLowerCase());
 					
 					if (value.length > 0)
@@ -1584,6 +1588,7 @@
 		this.addActiveDirectoryPalette();
 		this.addAndroidPalette();
 		this.addAtlassianPalette();
+		this.addAtlassian2Palette();
 		this.addBootstrapPalette();
 		this.addDFDPalette();
 		this.addErPalette();
@@ -1600,6 +1605,7 @@
 		this.addAWS3Palette();
 		this.addAWS4bPalette();
 		this.addAWS4Palette();
+		this.addAWS4RetiredPalette();
 		this.addAWS3DPalette();
 		this.addAzurePalette();
 		this.addAzure2Palette();
@@ -1945,7 +1951,7 @@
 	 * versions where only the latest library of a family should be
 	 * suggested (all remain available via More Shapes and search).
 	 */
-	Sidebar.prototype.libraryChipExcluded = ['uml', 'aws3', 'aws4b', 'cisco',
+	Sidebar.prototype.libraryChipExcluded = ['uml', 'aws3', 'aws4b', 'aws4r', 'cisco',
 		'network', 'citrix', 'gcp2', 'archimate'];
 
 	/**
@@ -1957,7 +1963,7 @@
 	 * shape that matches the search terms better still ranks first. The
 	 * default UML library is not demoted as it is enabled by default.
 	 */
-	Sidebar.prototype.librarySearchWeights = {aws3: -2, aws4b: -1,
+	Sidebar.prototype.librarySearchWeights = {aws3: -2, aws4b: -1, aws4r: -1,
 		azure: -1, cisco: -1, citrix: -1, gcp2: -1, network: -1,
 		veeam: -1, archimate: -1};
 

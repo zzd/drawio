@@ -14,7 +14,7 @@
 		{
 			load: [(window.opener.urlParams['math-output'] == 'html') ?
 				'output/chtml' : 'output/svg', 'input/tex',
-				'input/asciimath', 'ui/safe'],
+				'input/asciimath', 'ui/safe', '[tex]/html'],
 			paths: {
 				'fonts': window.opener.DRAW_MATH_URL + '/fonts',
 				'mathjax-tex': window.opener.DRAW_MATH_URL + '/fonts/mathjax-tex-font',
@@ -33,11 +33,38 @@
 			{
 				MathJax.startup.defaultReady();
 
+				// Hardens ui/safe in this window's MathJax, see Editor.js
+				if (window.opener != null && window.opener.Editor != null &&
+					window.opener.Editor.patchMathJaxSafeFilters != null)
+				{
+					window.opener.Editor.patchMathJaxSafeFilters(MathJax);
+				}
+
 				MathJax.startup.promise.then(function()
 				{
 					if (window.IMMEDIATE_PRINT)
 					{
-						window.print();
+						// Waits for the stylesheets, images and fonts of this
+						// window as in the non-math path (PrintDialog.printPreview)
+						try
+						{
+							if (window.opener != null && window.opener.PrintDialog != null &&
+								window.opener.PrintDialog.waitForResources != null)
+							{
+								window.opener.PrintDialog.waitForResources(window, function()
+								{
+									window.print();
+								}, window.opener.PrintDialog.printTimeout);
+							}
+							else
+							{
+								window.print();
+							}
+						}
+						catch (e)
+						{
+							window.print();
+						}
 					}
 				});
 			}

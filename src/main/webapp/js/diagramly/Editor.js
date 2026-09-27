@@ -397,30 +397,30 @@
 	Editor.aiActions = ['createPublic', 'create', 'update', 'assist'];
 
 	/**
-	 * Specifies the ChatGPT API key. Default is null.
+	 * Specifies the ChatGPT API key. Default is null. The API keys and the
+	 * endpoint below are configuration-only (see Editor.configure) and must
+	 * never be taken from URL parameters: a link could then point a request
+	 * that carries the user's stored key, prompt and diagram at an endpoint
+	 * of the sender's choosing, or make the user's prompts and diagrams go
+	 * to the sender's own account via an injected key.
 	 */
-	Editor.gptApiKey = (urlParams['gpt-api-key'] != null) ?
-		decodeURIComponent(urlParams['gpt-api-key']) : null;
+	Editor.gptApiKey = null;
 
 	/**
 	 * Specifies the Gemini API key. Default is null.
 	 */
-	Editor.geminiApiKey = (urlParams['gemini-api-key'] != null) ?
-		decodeURIComponent(urlParams['gemini-api-key']) : null;
+	Editor.geminiApiKey = null;
 
 	/**
-	 * Specifies the Gemini API key. Default is null.
+	 * Specifies the Claude API key. Default is null.
 	 */
-	Editor.claudeApiKey = (urlParams['claude-api-key'] != null) ?
-		decodeURIComponent(urlParams['claude-api-key']) : null;
+	Editor.claudeApiKey = null;
 
 	/**
 	 * Specifies the ChatGPT endpoint URL. Default is
 	 * 'https://api.openai.com/v1/chat/completions'.
 	 */
-	Editor.gptUrl = (urlParams['gpt-url'] != null) ?
-		decodeURIComponent(urlParams['gpt-url']) :
-		'https://api.openai.com/v1/chat/completions';
+	Editor.gptUrl = 'https://api.openai.com/v1/chat/completions';
 	
 	/**
 	 * Available AI configurations.
@@ -2449,18 +2449,29 @@
 		// Extracts Subject or Embedded file attachment from PDF 1.7
 		if (f.substring(0, 8) == '%PDF-1.7')
 		{
+			// Hostile files may contain many tokens without a stream or
+			// many streams that fail to inflate, so the stream keyword is
+			// only searched within the object's dictionary header and the
+			// number of failing inflate attempts is limited
+			var headerSize = 2048;
+			var maxAttempts = 8;
+
 			// Checks all occurrences as the first may be the /EmbeddedFiles
 			// name tree entry in the document catalog rather than the
 			// /Type /EmbeddedFile stream object with the attached diagram
 			var blockStart = f.indexOf('EmbeddedFile');
+			var attempts = 0;
 
-			while (blockStart > -1)
+			while (blockStart > -1 && attempts < maxAttempts)
 			{
-				var streamStart = f.indexOf('stream', blockStart) + 9; //the start of the stream [skipping header check]
-				var fileInfo = f.substring(blockStart, streamStart);
+				var header = f.substring(blockStart, blockStart + headerSize);
+				var rel = header.indexOf('stream');
+				var mime = header.indexOf('application#2Fvnd.jgraph.mxfile');
 
-				if (fileInfo.indexOf('application#2Fvnd.jgraph.mxfile') > 0)
+				if (rel > -1 && mime > 0 && mime < rel + 9)
 				{
+					attempts++;
+					var streamStart = blockStart + rel + 9; //the start of the stream [skipping header check]
 					var streamEnd = f.indexOf('endstream', streamStart - 1);
 
 					try
@@ -2478,10 +2489,20 @@
 			}
 
 			var last = f.indexOf('/ObjStm');
+			var failures = 0;
 
-			while (last > 0)
+			while (last > 0 && failures < maxAttempts)
 			{
-				var streamStart = f.indexOf('stream', last) + 9; //the start of the stream [skipping header check]
+				var rel = f.substring(last, last + headerSize).indexOf('stream');
+
+				if (rel < 0)
+				{
+					last = f.indexOf('/ObjStm', last + 1);
+
+					continue;
+				}
+
+				var streamStart = last + rel + 9; //the start of the stream [skipping header check]
 				var streamEnd = f.indexOf('endstream', streamStart - 1);
 				
 				function hex_to_ascii(hex)
@@ -2524,6 +2545,7 @@
 				catch (e)
 				{
 					// Continue to next object stream
+					failures++;
 				}
 
 				last = f.indexOf('/ObjStm', last + 1);
@@ -2831,6 +2853,7 @@
 			if (config.defaultFonts != null)
 			{
 				Menus.prototype.defaultFonts = config.defaultFonts
+				Editor.addAllowedFontUrls(config.defaultFonts);
 			}
 
 			if (config.presetColors != null)
@@ -3159,6 +3182,7 @@
 			{
 				Menus.prototype.defaultFonts = config.customFonts.
 					concat(Menus.prototype.defaultFonts);
+				Editor.addAllowedFontUrls(config.customFonts);
 			}
 			
 			if (config.customPresetColors != null)
@@ -3454,7 +3478,7 @@
 			if (config.autosaveDelay != null)
 			{
 				var val = parseInt(config.autosaveDelay);
-				
+
 				if (!isNaN(val) && val > 0)
 				{
 					DrawioFile.prototype.autosaveDelay = val;
@@ -4042,6 +4066,35 @@
 	};
 
 	/**
+	 * Allows the given font URL to point at the local filesystem. Only for
+	 * URLs that come from the configuration, see Graph.isValidFontUrl.
+	 */
+	Editor.addAllowedFontUrl = function(url)
+	{
+		if (typeof url === 'string' && url.length > 0)
+		{
+			Graph.allowedFontUrls[url] = true;
+		}
+	};
+
+	/**
+	 * Allows the font URLs in a configured font list (customFonts, defaultFonts).
+	 */
+	Editor.addAllowedFontUrls = function(fonts)
+	{
+		if (Array.isArray(fonts))
+		{
+			for (var i = 0; i < fonts.length; i++)
+			{
+				if (fonts[i] != null && typeof fonts[i] === 'object')
+				{
+					Editor.addAllowedFontUrl(fonts[i].fontUrl);
+				}
+			}
+		}
+	};
+
+	/**
 	 * Adds the global fontCss configuration.
 	 */
 	Editor.configureFontCss = function(fontCss)
@@ -4049,6 +4102,22 @@
 		if (fontCss != null)
 		{
 			Editor.prototype.fontCss = fontCss;
+
+			// The configured font CSS is trusted, so its URLs are allowed
+			// even where they point at local files
+			var urls = fontCss.split('url(');
+
+			for (var i = 1; i < urls.length; i++)
+			{
+				var end = urls[i].indexOf(')');
+
+				if (end > 0)
+				{
+					Editor.addAllowedFontUrl(Editor.trimCssUrl(
+						urls[i].substring(0, end)));
+				}
+			}
+
 			var t = document.getElementsByTagName('script')[0];
 			
 			if (t != null && t.parentNode != null)
@@ -4417,39 +4486,53 @@
 	
 	/**
 	 * Hardens the URL filter in MathJax's ui/safe extension, which decides the
-	 * scheme with /^\s*([a-z\n\r]+):/i and strips only newlines. Browsers ignore
-	 * tab, LF and CR inside a URL, so java<TAB>script:... is not recognised as a
-	 * scheme, falls into the "no scheme, treat as relative" branch and is passed
-	 * through unchanged, then reaches the browser as javascript:. This is the
-	 * same bypass as mathjax/MathJax#2885, whose fix covered LF and CR but not
-	 * tab. Patched here rather than in math4 so the vendored MathJax stays
-	 * unmodified and the fix survives the next MathJax update.
+	 * scheme with /^\s*([a-z\n\r]+):/i and strips only newlines. A character
+	 * the regex does not know about defeats the match entirely, so the scheme
+	 * reads as empty and the URL takes the "no scheme, treat as relative"
+	 * branch, which passes it through untouched. Anything that removes that
+	 * character later then re-forms the scheme: browsers ignore tab, LF and CR
+	 * inside a URL, and zapGremlins drops U+FFFF, U+FFFE and unpaired
+	 * surrogates when the SVG is serialized, so java<TAB>script:... and
+	 * java<U+FFFF>script:... both reach the output as javascript:. The tab
+	 * form is mathjax/MathJax#2885, whose fix covered LF and CR but not tab.
+	 *
+	 * The URL is checked in the form it will have in the serialized output and
+	 * that form is what is returned, so no gap is left between the string the
+	 * scheme check approved and the string written to the href for a later
+	 * normalisation to work in. Patched here rather than in math4 so the
+	 * vendored MathJax stays unmodified and the fix survives the next MathJax
+	 * update.
 	 */
 	Editor.safeMathJaxFilterUrl = function(safe, url)
 	{
-		// Normalises the way the URL parser does before reading the scheme
-		var normalized = url.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+/, '');
+		// Normalises the way the URL parser and the XML serializer do
+		// before reading the scheme
+		var normalized = Graph.zapGremlins(url).replace(/[\t\n\r]/g, '').
+			replace(/^[\u0000-\u0020]+/, '');
 		var protocol = (normalized.match(/^([a-z][a-z0-9+.\-]*):/i) || [null, ''])[1].toLowerCase();
 		var allow = safe.allow.URLs;
 
 		return (allow === 'all' || (allow === 'safe' &&
-			(safe.options.safeProtocols[protocol] || !protocol))) ? url : null;
+			(safe.options.safeProtocols[protocol] || !protocol))) ? normalized : null;
 	};
 
 	// Marker so the patch can be reapplied without stacking wrappers
 	Editor.safeMathJaxFilterUrl.drawioPatched = true;
 
-	Editor.patchMathJaxUrlFilter = function()
+	Editor.patchMathJaxUrlFilter = function(mathJax)
 	{
-		if (typeof MathJax === 'undefined')
+		mathJax = (mathJax != null) ? mathJax :
+			((typeof MathJax !== 'undefined') ? MathJax : null);
+
+		if (mathJax == null)
 		{
 			return;
 		}
 
 		// Shared method table, used by documents created from here on
-		var methods = (MathJax._ != null && MathJax._.ui != null &&
-			MathJax._.ui.safe != null && MathJax._.ui.safe.SafeMethods != null) ?
-			MathJax._.ui.safe.SafeMethods.SafeMethods : null;
+		var methods = (mathJax._ != null && mathJax._.ui != null &&
+			mathJax._.ui.safe != null && mathJax._.ui.safe.SafeMethods != null) ?
+			mathJax._.ui.safe.SafeMethods.SafeMethods : null;
 
 		if (methods != null && methods.filterURL != null &&
 			!methods.filterURL.drawioPatched)
@@ -4460,7 +4543,7 @@
 		// Safe copies the table into filterMethods in its constructor and
 		// sanitizeNode calls that copy, so a document that already exists
 		// still holds the unpatched function and must be updated separately
-		var doc = (MathJax.startup != null) ? MathJax.startup.document : null;
+		var doc = (mathJax.startup != null) ? mathJax.startup.document : null;
 
 		if (doc != null && doc.safe != null && doc.safe.filterMethods != null &&
 			doc.safe.filterMethods.filterURL != null &&
@@ -4468,6 +4551,110 @@
 		{
 			doc.safe.filterMethods.filterURL = Editor.safeMathJaxFilterUrl;
 		}
+	};
+
+	/**
+	 * Stops the TeX \data macro writing arbitrary data attributes into the
+	 * output. MathJax's ui/safe extension is supposed to do this: it documents
+	 * dataPattern, /^data-mjx-/, as the guard on data attribute names. But the
+	 * filter is only wired up for MathML input, where Safe.mmlAttribute maps any
+	 * data-* name onto filterData through an explicit "data-" prefix check. On
+	 * the TeX path Safe.sanitizeNode looks the whole attribute name up in
+	 * filterAttributes, whose only data key is the literal string "data-", so no
+	 * data-* name can ever match and filterData is dead code. \data{name=value}
+	 * therefore writes any attribute it likes, with only the name checked for
+	 * characters that would break the markup, and those attributes are added
+	 * after Graph.sanitizeHtml has run, so DOMPurify never sees them. A host page
+	 * that reads data-* as instructions then executes the value: Confluence AUI
+	 * renders data-aui-notification-info as HTML. Unfixed upstream as of MathJax
+	 * 4.1.3 and reported as GHSA-3cc2-fjw8-2fjq, so it is patched here rather
+	 * than in math4, like the URL filter above.
+	 *
+	 * The filter is applied inside the \data macro rather than in sanitizeNode
+	 * because MathJax puts its own data attributes on the tree for TeX input,
+	 * data-latex on nearly every node plus a long tail (data-latex-item,
+	 * data-break-align, data-vertical-align, data-frame, data-frame-styles,
+	 * data-array-padding, data-padding, data-width-includes-label,
+	 * data-braketbar, data-cramped, ...) that varies by package. Filtering the
+	 * tree would mean maintaining an allowlist of those names and would silently
+	 * drop MathJax's own output whenever the list fell behind. Scoping the swap
+	 * to the macro means only names \data itself supplies are ever tested, so
+	 * normal math cannot be affected however MathJax changes internally.
+	 */
+	Editor.safeMathJaxDataMacro = function(nodeUtil, macro, parser, name)
+	{
+		var setAttribute = nodeUtil.setAttribute;
+
+		// \data parses its content argument before setting any attribute, so the
+		// swap is only live around this one macro and never sees MathJax's own
+		// writes. TeX parsing is synchronous, so restoring in finally is safe.
+		nodeUtil.setAttribute = function(node, attr, value)
+		{
+			if (typeof attr === 'string' && attr.substring(0, 5) === 'data-' &&
+				!attr.match(Editor.safeMathJaxDataPattern))
+			{
+				return;
+			}
+
+			return setAttribute.apply(this, arguments);
+		};
+
+		try
+		{
+			return macro.apply(this, [parser, name]);
+		}
+		finally
+		{
+			nodeUtil.setAttribute = setAttribute;
+		}
+	};
+
+	// Matches the documented ui/safe default for data attribute names
+	Editor.safeMathJaxDataPattern = /^data-mjx-/;
+
+	Editor.patchMathJaxDataMacro = function(mathJax)
+	{
+		mathJax = (mathJax != null) ? mathJax :
+			((typeof MathJax !== 'undefined') ? MathJax : null);
+
+		var tex = (mathJax != null && mathJax._ != null &&
+			mathJax._.input != null) ? mathJax._.input.tex : null;
+
+		if (tex == null || tex.MapHandler == null || tex.NodeUtil == null)
+		{
+			return;
+		}
+
+		// [tex]/html is preloaded in initMath so the macro exists before the
+		// first typeset. With a caller-supplied config it may be autoloaded
+		// later instead, hence the retry on every render from doMathJaxRender
+		var map = tex.MapHandler.MapHandler.getMap('html_macros');
+		var macro = (map != null && map.lookup != null) ? map.lookup('data') : null;
+
+		if (macro == null || macro._func == null || macro._func.drawioPatched)
+		{
+			return;
+		}
+
+		var nodeUtil = tex.NodeUtil['default'];
+		var original = macro._func;
+
+		var fn = function(parser, name)
+		{
+			return Editor.safeMathJaxDataMacro(nodeUtil, original, parser, name);
+		};
+
+		fn.drawioPatched = true;
+		macro._func = fn;
+	};
+
+	/**
+	 * Hardens the ui/safe extension before the first typeset.
+	 */
+	Editor.patchMathJaxSafeFilters = function(mathJax)
+	{
+		Editor.patchMathJaxUrlFilter(mathJax);
+		Editor.patchMathJaxDataMacro(mathJax);
 	};
 
 	/**
@@ -4502,7 +4689,7 @@
 			
 			Editor.doMathJaxRender = function(container)
 			{
-				Editor.patchMathJaxUrlFilter();
+				Editor.patchMathJaxSafeFilters();
 
 				// Disables automatic line breaking for inline math to
 				// avoid unwanted breaks in narrow label containers
@@ -4566,7 +4753,7 @@
 				{
 					load: [(urlParams['math-output'] == 'html') ?
 						'output/chtml' : 'output/svg', 'input/tex',
-						'input/asciimath', 'ui/safe'],
+						'input/asciimath', 'ui/safe', '[tex]/html'],
 					paths: {
 						'fonts': DRAW_MATH_URL + '/fonts'
 					}
@@ -8550,6 +8737,53 @@
 	Graph.customFontElements = Object.create(null);
 
 	/**
+	 * Font URLs that are allowed to point at the local filesystem. Populated
+	 * from the configuration (customFonts, defaultFonts, fontCss) by
+	 * Editor.addAllowedFontUrl. Null prototype as the keys are URLs.
+	 */
+	Graph.allowedFontUrls = Object.create(null);
+
+	/**
+	 * Returns true if the given font URL may be loaded. Font URLs come from
+	 * untrusted diagram content: a cell style's fontSource, a label's
+	 * data-font-src attribute and the file's extFonts attribute all end up
+	 * here. The desktop app resolves file:// URLs and absolute paths through
+	 * the main process, so an unchecked font URL is a read of an arbitrary
+	 * local file whose bytes are then embedded in the export. Only http(s),
+	 * data: and relative URLs are accepted, plus the local paths named in the
+	 * configuration.
+	 */
+	Graph.isValidFontUrl = function(url)
+	{
+		if (typeof url !== 'string' || url.length == 0)
+		{
+			return false;
+		}
+
+		if (Graph.allowedFontUrls[url])
+		{
+			return true;
+		}
+
+		// The check must run on the string the URL parser will see, not the
+		// raw one: leading and trailing C0 controls and spaces are stripped
+		// and tab, LF and CR are removed anywhere in the URL, so " file:..."
+		// and "file<tab>:..." would otherwise read as relative URLs here and
+		// still be fetched as file: URLs. Spaces inside the URL are kept as
+		// they are legal in a relative path.
+		var test = url.replace(/^[\x00-\x20]+/, '').replace(
+			/[\x00-\x20]+$/, '').replace(/[\t\n\r]/g, '');
+
+		// Anything with a scheme other than http(s) and data: is refused,
+		// which covers file: and Windows drive letters (C:\...), and so is
+		// anything starting with a slash or backslash, which covers absolute
+		// paths (/etc/passwd), UNC paths and protocol-relative URLs. What is
+		// left is relative URLs, which resolve against the app itself.
+		return /^https?:\/\//i.test(test) || /^data:/i.test(test) ||
+			(!/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(test) && !/^[\\\/]/.test(test));
+	};
+
+	/**
 	 * Returns true if the given font URL references a Google font.
 	 */
 	Graph.isGoogleFontUrl = function(url)
@@ -8642,7 +8876,7 @@
 	 */
 	Graph.addFont = function(name, url, callback, elementLookup)
 	{
-		if (name != null && name.length > 0 && url != null && url.length > 0)
+		if (name != null && name.length > 0 && Graph.isValidFontUrl(url))
 		{
 			elementLookup = (elementLookup != null) ?
 				elementLookup : Graph.customFontElements;
@@ -9418,21 +9652,30 @@
 	Graph.prototype.getCustomFonts = function(lookup)
 	{
 		lookup = (lookup != null) ? lookup : Graph.customFontElements;
-		var fonts = this.extFonts;
+		var fonts = [];
 
-		if (fonts != null)
+		// This is the single funnel for embedExtFonts and getExtFontCss, which
+		// fetch the font and inline it in the export, so the fonts that came
+		// from the file (extFonts) are filtered here too
+		if (this.extFonts != null)
 		{
-			fonts = fonts.slice();
-		}
-		else
-		{
-			fonts = [];
+			for (var i = 0; i < this.extFonts.length; i++)
+			{
+				if (Graph.isValidFontUrl(this.extFonts[i].url))
+				{
+					fonts.push(this.extFonts[i]);
+				}
+			}
 		}
 
 		for (var key in lookup)
 		{
 			var font = lookup[key];
-			fonts.push({name: font.name, url: font.url});
+
+			if (Graph.isValidFontUrl(font.url))
+			{
+				fonts.push({name: font.name, url: font.url});
+			}
 		}
 
 		return fonts;
@@ -10346,65 +10589,109 @@
 					state.style[key] = value;
 				}
 
-				// `apply` reads styled props into the shape's cached
-				// fields; `redraw` repaints. Same pair the regular
-				// `setCellStyles` path uses inside its endUpdate hook.
-				if (state.shape != null)
-				{
-					state.shape.apply(state);
-					state.shape.redraw();
-				}
-
-				if (state.text != null)
-				{
-					state.text.apply(state);
-					state.text.redraw();
-				}
+				this.redrawTransientStyle(state);
 			}
 		}
 	};
 
 	/**
-	 * Transient style toggle — flips a key between `defaultValue` and its
-	 * opposite (typically '0' ↔ '1') on each cell's state.style without
-	 * model mutation. Same revert-on-refresh semantics as
-	 * setCellStylesTransient.
+	 * Repaints a state after its state.style was mutated transiently — the
+	 * same resetStyles + configure + redraw sequence mxCellRenderer runs for
+	 * a model style change, so a removed key falls back to its default (a
+	 * bare shape.apply keeps the previously painted field value, e.g. a
+	 * toggled-off strokeWidth stayed at 10).
 	 */
-	Graph.prototype.toggleCellStylesTransient = function(key, defaultValue, cells)
+	Graph.prototype.redrawTransientStyle = function(state)
 	{
-		if (defaultValue == null) defaultValue = '0';
+		if (state.shape != null)
+		{
+			state.shape.resetStyles();
+			this.cellRenderer.configureShape(state);
+			state.shape.redraw();
+		}
 
+		if (state.text != null)
+		{
+			state.text.resetStyles();
+			state.text.apply(state);
+			state.text.valign = this.getVerticalAlign(state);
+			state.text.redraw();
+		}
+	};
+
+	/**
+	 * Returns the next style value for a toggleStyle step. With an explicit
+	 * `value` the key flips between `value` and `defaultValue` (null removes
+	 * the key so the stylesheet default applies — "strokeWidth 10" toggles
+	 * 10 ↔ default, "fontStyle 2" italic ↔ plain). Without `value` it is the
+	 * legacy boolean toggle: anything but a missing, empty, zero or 'false'
+	 * value counts as on and flips to '0', otherwise '1'. (The old
+	 * `truthy ? 0 : 1` test treated the string '0' as on, so a toggle on a
+	 * missing key wrote 0 and never turned anything on.)
+	 */
+	Graph.nextToggleStyleValue = function(current, value, defaultValue)
+	{
+		if (value != null && value !== '')
+		{
+			return (current != null && String(current) == String(value)) ?
+				defaultValue : value;
+		}
+
+		return (current != null && current !== '' && current != 0 &&
+			current !== 'false') ? '0' : '1';
+	};
+
+	/**
+	 * Model-mutating toggle for the toggleStyle action — see
+	 * Graph.nextToggleStyleValue for the value semantics. Like
+	 * mxGraph.toggleCellStyles, the first cell decides the target state for
+	 * all cells so a toggle link moves every cell in lockstep; `defaultValue`
+	 * is what a missing key counts as.
+	 */
+	Graph.prototype.toggleCellStyleValues = function(key, value, defaultValue, cells)
+	{
+		if (cells != null && cells.length > 0)
+		{
+			var current = mxUtils.getValue(this.getCurrentCellStyle(cells[0]),
+				key, defaultValue);
+			this.setCellStyles(key, Graph.nextToggleStyleValue(
+				current, value, defaultValue), cells);
+		}
+	};
+
+	/**
+	 * Transient style toggle — flips a key between `value` and
+	 * `defaultValue` (or '0' ↔ '1' without a value, see
+	 * Graph.nextToggleStyleValue) on each cell's state.style without model
+	 * mutation. Same revert-on-refresh semantics as setCellStylesTransient.
+	 */
+	Graph.prototype.toggleCellStylesTransient = function(key, defaultValue, cells, value)
+	{
 		for (var i = 0; i < cells.length; i++)
 		{
 			var state = this.view.getState(cells[i]);
 
 			if (state != null && state.style != null)
 			{
-				// Match the model-mutating mxGraph.toggleCellStyles
-				// semantics: truthy current → 0, falsy → 1 (so the key
-				// flips between '0' and '1' across repeated calls).
 				// Unlike the model path — which reads the first cell's
 				// style and applies the same value to all cells — this
 				// path toggles each cell independently, which matches
 				// what users intuitively expect from a multi-select
 				// toggle. The model path keeps its legacy semantics
 				// when invoked via `transient: false`.
-				var next = (mxUtils.getValue(state.style, key,
-					defaultValue)) ? '0' : '1';
+				var next = Graph.nextToggleStyleValue(mxUtils.getValue(
+					state.style, key, defaultValue), value, defaultValue);
 
-				state.style[key] = next;
-
-				if (state.shape != null)
+				if (next == null || next === '')
 				{
-					state.shape.apply(state);
-					state.shape.redraw();
+					delete state.style[key];
+				}
+				else
+				{
+					state.style[key] = next;
 				}
 
-				if (state.text != null)
-				{
-					state.text.apply(state);
-					state.text.redraw();
-				}
+				this.redrawTransientStyle(state);
 			}
 		}
 	};
@@ -10700,19 +10987,22 @@
 					if (action.toggleStyle != null && action.toggleStyle.key != null)
 					{
 						var toggleStyleCells = this.getCellsForAction(action.toggleStyle, true);
-						var defValue = (action.toggleStyle.defaultValue != null) ?
-							action.toggleStyle.defaultValue : '0';
+						// `value` toggles key ↔ value/defaultValue, without it the
+						// legacy boolean toggle runs (Graph.nextToggleStyleValue).
+						var toggleValue = action.toggleStyle.value;
+						var defValue = (action.toggleStyle.defaultValue !== '') ?
+							action.toggleStyle.defaultValue : null;
 
 						if (!isTransient(action.toggleStyle))
 						{
 							beginUpdate();
-							this.toggleCellStyles(action.toggleStyle.key,
-								defValue, toggleStyleCells);
+							this.toggleCellStyleValues(action.toggleStyle.key,
+								toggleValue, defValue, toggleStyleCells);
 						}
 						else
 						{
 							this.toggleCellStylesTransient(action.toggleStyle.key,
-								defValue, toggleStyleCells);
+								defValue, toggleStyleCells, toggleValue);
 						}
 					}
 
@@ -11190,6 +11480,23 @@
 		// every descendant at render time.
 		merge(layerCells ? this.getLayerCells(action.layers) :
 			this.getCellsForLayers(action.layers));
+
+		// `descendants` adds every descendant of the resolved cells, looked
+		// up at execution time like `layers`, so an effect on a group or
+		// container reaches its contents — a group's own shape is invisible,
+		// so without it the effect shows nothing — including children added
+		// after the action was written, which an explicit list cannot
+		// follow. Without the flag only the listed cells are affected, so a
+		// container's frame can still be faded on its own.
+		if (action.descendants === true)
+		{
+			var listed = union.slice();
+
+			for (var i = 0; i < listed.length; i++)
+			{
+				merge(this.model.getDescendants(listed[i]));
+			}
+		}
 
 		// Final step: subtract every cell in `excludeCells` from the
 		// union. `'*'` in the exclude list means "exclude everything",
@@ -11894,6 +12201,7 @@
 	mxStencilRegistry.libraries['eip'] = [SHAPES_PATH + '/mxEip.js', STENCIL_PATH + '/eip.xml'];
 	mxStencilRegistry.libraries['networks'] = [SHAPES_PATH + '/mxNetworks.js', STENCIL_PATH + '/networks.xml'];
 	mxStencilRegistry.libraries['networks2'] = [SHAPES_PATH + '/mxNetworks2.js', STENCIL_PATH + '/networks2.xml'];
+	mxStencilRegistry.libraries['atlassian2'] = [SHAPES_PATH + '/mxAtlassian2.js', STENCIL_PATH + '/atlassian2.xml'];
 	mxStencilRegistry.libraries['aws3d'] = [SHAPES_PATH + '/mxAWS3D.js', STENCIL_PATH + '/aws3d.xml'];
 	mxStencilRegistry.libraries['aws4'] = [SHAPES_PATH + '/mxAWS4.js', STENCIL_PATH + '/aws4.xml'];
 	mxStencilRegistry.libraries['aws4b'] = [SHAPES_PATH + '/mxAWS4.js', STENCIL_PATH + '/aws4.xml'];
@@ -13233,20 +13541,40 @@
 
 	/**
 	 * Snapshots the DOM opacity of every cell referenced by any step so
-	 * stop() and the next loop iteration can restore it exactly.
+	 * stop() and the next loop iteration can restore it exactly. An existing
+	 * snapshot is extended, not replaced: nodes already recorded keep their
+	 * first value, so a dialog preview session that snapshots again for
+	 * steps added or retargeted since it started restores those cells too
+	 * instead of leaving them faded (Kym, 2026-09-02).
 	 */
 	Editor.AnimationPlayer.prototype.snapshotOpacity = function()
 	{
 		var cells = this.collectReferencedCells();
 		var nodes = this.graph.getNodesForCells(cells);
-		this.snapshot = [];
+		var recorded = new Set();
+
+		if (this.snapshot == null)
+		{
+			this.snapshot = [];
+		}
+		else
+		{
+			for (var i = 0; i < this.snapshot.length; i++)
+			{
+				recorded.add(this.snapshot[i].node);
+			}
+		}
 
 		for (var i = 0; i < nodes.length; i++)
 		{
-			this.snapshot.push({
-				node: nodes[i],
-				opacity: nodes[i].style.opacity
-			});
+			if (!recorded.has(nodes[i]))
+			{
+				recorded.add(nodes[i]);
+				this.snapshot.push({
+					node: nodes[i],
+					opacity: nodes[i].style.opacity
+				});
+			}
 		}
 	};
 
@@ -13376,7 +13704,17 @@
 				return;
 			}
 
-			self.snapshotOpacity();
+			// A caller that seeded a snapshot owns the restore: the dialog's
+			// Preview button seeds an empty one so the restore-on-done below
+			// is a no-op and the canvas stays at the final state until Reset
+			// (the session snapshot restores it). Snapshotting here anyway
+			// undid every opacity effect the moment the last step finished.
+			// The loop restore nulls the snapshot, so a looping player still
+			// snapshots afresh on each pass.
+			if (self.snapshot == null)
+			{
+				self.snapshotOpacity();
+			}
 
 			runStep(0, function()
 			{

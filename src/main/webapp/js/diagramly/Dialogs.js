@@ -232,11 +232,6 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 		{
 			addLogo(IMAGE_PATH + '/github-logo.svg', mxResources.get('github'), App.MODE_GITHUB, 'gitHub');
 		}
-
-		if (editorUi.gitLab != null)
-		{
-			addLogo(IMAGE_PATH + '/gitlab-logo.svg', mxResources.get('gitlab'), App.MODE_GITLAB, 'gitLab');
-		}
 	};
 	
 	div.appendChild(buttons);
@@ -1454,7 +1449,7 @@ var ParseDialog = function(editorUi, title, defaultType)
 			// demand), so the dialog stays open until it succeeds (see okBtn).
 			if (editorUi.spinner.spin(document.body, mxResources.get('inserting')))
 			{
-				var insertPlantUml = mxUtils.bind(this, function(insertXml)
+				var insertPlantUml = mxUtils.bind(this, function(insertXml, warnings)
 				{
 					editorUi.spinner.stop();
 					editorUi.hideDialog();
@@ -1474,6 +1469,10 @@ var ParseDialog = function(editorUi, title, defaultType)
 					}
 
 					graph.scrollCellToVisible(graph.getSelectionCell());
+
+					// Reports what the converter could not use, after the
+					// insert is complete: the diagram stays inserted
+					editorUi.showPlantUmlWarnings(warnings);
 				});
 
 				var onPlantUmlError = mxUtils.bind(this, function(e)
@@ -1492,9 +1491,9 @@ var ParseDialog = function(editorUi, title, defaultType)
 				}
 				else
 				{
-					editorUi.parsePlantUmlDiagram(text, null, mxUtils.bind(this, function(xml)
+					editorUi.parsePlantUmlDiagram(text, null, mxUtils.bind(this, function(xml, warnings)
 					{
-						insertPlantUml(mxPlantUmlToDrawio.wrapGroup(xml, text, null));
+						insertPlantUml(mxPlantUmlToDrawio.wrapGroup(xml, text, null), warnings);
 					}), onPlantUmlError);
 				}
 			}
@@ -2146,7 +2145,14 @@ var ParseDialog = function(editorUi, title, defaultType)
 				else
 				{
 					editorUi.parsePlantUmlDiagram(textarea.value, null,
-						showPreview, onError);
+						function(xml, warnings)
+					{
+						showPreview(xml);
+
+						// Reports what the converter could not use, after the
+						// preview is up: the tooltip stays open
+						editorUi.showPlantUmlWarnings(warnings);
+					}, onError);
 				}
 			}
 		});
@@ -4244,8 +4250,8 @@ var SaveDialog = function(editorUi, title, saveFn, disabledModes, data, mimeType
 	{
 		var option = null;
 
-		// Dropbox storage is deprecated, no longer offered as a save target
-		if (mode != App.MODE_DROPBOX &&
+		// Dropbox and GitLab storage are deprecated, no longer offered as save targets
+		if (mode != App.MODE_DROPBOX && mode != App.MODE_GITLAB &&
 			(disabledModes == null || mxUtils.indexOf(disabledModes, mode) < 0) &&
 			(folderPickerMode == null || mode == folderPickerMode) &&
 			(enabledModes == null || mxUtils.indexOf(enabledModes, mode) >= 0))
@@ -4472,7 +4478,6 @@ var SaveDialog = function(editorUi, title, saveFn, disabledModes, data, mimeType
 		}
 
 		addStorageEntry(App.MODE_GITHUB, null, null, null, null, 'pick');
-		addStorageEntry(App.MODE_GITLAB, null, null, null, null, 'pick');
 
 		addStorageEntry(App.MODE_TRELLO);
 
@@ -4946,16 +4951,6 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 			addLogo(IMAGE_PATH + '/github-logo.svg', mxResources.get('github'), App.MODE_GITHUB, 'gitHub');
 		}
 		
-		if (editorUi.gitLab != null)
-		{
-			var gitLabOption = document.createElement('option');
-			gitLabOption.setAttribute('value', App.MODE_GITLAB);
-			mxUtils.write(gitLabOption, mxResources.get('gitlab'));
-			serviceSelect.appendChild(gitLabOption);
-
-			addLogo(IMAGE_PATH + '/gitlab-logo.svg', mxResources.get('gitlab'), App.MODE_GITLAB, 'gitLab');
-		}
-
 		if (typeof window.TrelloClient === 'function')
 		{
 			var trelloOption = document.createElement('option');
@@ -5904,7 +5899,7 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 				actionValue = newValue;
 				fn(newValue, LinkDialog.selectedDocs,
 					(newWindowCheckbox.checked) ? linkTarget : null);
-			});
+			}, editorUi.editor.graph.getSelectionCells());
 		});
 		editActionBtn.className = 'geBtn';
 
@@ -6340,30 +6335,76 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
  * user can freely select cells in the canvas while editing the action.
  *
  * The CustomActionDialog calls `onSave(newValue)` with a fully-encoded
- * `data:action/json,...` URL when the user clicks Save. If the user
- * cancels (closes without saving), nothing happens — the cell keeps
- * whatever link it had before Edit Link was opened.
+ * `data:action/json,...` URL when the user clicks Save, or with the empty
+ * string when the last action was deleted — the callers read that as
+ * "remove the link". If the user cancels (closes without saving), nothing
+ * happens — the cell keeps whatever link it had before Edit Link was
+ * opened.
  */
-LinkDialog.editCustomAction = function(editorUi, currentValue, onSave)
+LinkDialog.editCustomAction = function(editorUi, currentValue, onSave, cells)
 {
 	editorUi.hideDialog();
 
-	// Reuse an already-open action editor instead of stacking a duplicate.
-	// The reference is cleared on close (below), so a fresh Edit later opens
-	// a new dialog bound to the current cell.
-	if (editorUi.actionWindow != null && editorUi.actionWindow.window != null &&
-		editorUi.actionWindow.window.isVisible())
+	var open = function()
 	{
-		editorUi.actionWindow.window.setVisible(true);
-		editorUi.actionWindow.window.activate();
-		return;
+		editorUi.actionWindow = new CustomActionDialog(editorUi, currentValue, onSave);
+		editorUi.actionWindow.cells = cells;
+
+		// The reference is cleared on close, so a fresh Edit later opens a
+		// new dialog bound to the current cell.
+		editorUi.actionWindow.window.addListener('hide', function()
+		{
+			editorUi.actionWindow = null;
+		});
+	};
+
+	var current = editorUi.actionWindow;
+
+	if (current != null && current.window != null && current.window.isVisible())
+	{
+		// Edit… again for the same cells: bring the open editor back instead
+		// of stacking a duplicate.
+		if (LinkDialog.sameCells(current.cells, cells))
+		{
+			current.window.setVisible(true);
+			current.window.activate();
+			return;
+		}
+
+		// Another cell's link: the open editor is bound to the other cell's
+		// save callback, so refocusing it would save the edits onto the wrong
+		// cell (and silently dropped this Insert/Edit). Close it through its
+		// unsaved-changes prompt and open a fresh one for these cells — if the
+		// user keeps the open editor, nothing else happens.
+		if (current.requestClose != null)
+		{
+			current.requestClose(open);
+			return;
+		}
 	}
 
-	editorUi.actionWindow = new CustomActionDialog(editorUi, currentValue, onSave);
-	editorUi.actionWindow.window.addListener('hide', function()
+	open();
+};
+
+/**
+ * Returns true if both arrays hold the same cells in the same order.
+ */
+LinkDialog.sameCells = function(a, b)
+{
+	if (a == null || b == null || a.length != b.length)
 	{
-		editorUi.actionWindow = null;
-	});
+		return false;
+	}
+
+	for (var i = 0; i < a.length; i++)
+	{
+		if (a[i] != b[i])
+		{
+			return false;
+		}
+	}
+
+	return true;
 };
 
 /**
@@ -6441,6 +6482,13 @@ function installCustomActionStyles()
 		'.geSelChipAll{background:light-dark(var(--mention-background-color), var(--dark-mention-background-color));',
 			'border-color:light-dark(#a3c4f8,#2a5aa8);',
 			'color:light-dark(var(--mention-color), var(--dark-mention-color))}',
+		// Chip whose list names cells or layers that no longer exist in
+		// the diagram — same amber as geAnimationFieldWarn, and kept on
+		// hover, which would otherwise swap in the strong border.
+		'.geSelChip.geSelChipWarn,.geSelChip.geSelChipWarn:hover{',
+			'border-color:light-dark(#e6a700,#ffcc4d);',
+			'box-shadow:0 0 0 1px light-dark(rgba(230,167,0,0.25),',
+			'rgba(255,204,77,0.25))}',
 		'.geSelChipTags{padding:2px 6px;gap:3px}',
 		// Disclosure caret on chips that open a popover
 		'.geSelChipExpandable::after{content:"";display:inline-block;',
@@ -6614,7 +6662,49 @@ function installCustomActionStyles()
 		'.geAnimationStepSelected{background:',
 			'light-dark(color-mix(in srgb, var(--focus-color) 6%, transparent), color-mix(in srgb, var(--dark-focus-color) 10%, transparent))}',
 		'.geAnimationStepActive.geAnimationStepSelected{background:',
-			'light-dark(color-mix(in srgb, var(--focus-color) 16%, transparent), color-mix(in srgb, var(--dark-focus-color) 28%, transparent))}'
+			'light-dark(color-mix(in srgb, var(--focus-color) 16%, transparent), color-mix(in srgb, var(--dark-focus-color) 28%, transparent))}',
+
+		// Placeholders in the animation / action dialog. The browser
+		// default is a translucent take on the text color, which in dark
+		// mode sits close enough to a real value that the hint reads as
+		// a configured one (Kym, 2026-09-18) — pin it to the faint text
+		// color and italicize it so a hint never looks like a value.
+		'.geAnimationDialog input::placeholder,',
+		'.geAnimationDialog textarea::placeholder{',
+			'color:light-dark(var(--faint-text-color), var(--dark-faint-text-color));',
+			'opacity:1;font-style:italic}',
+
+		// Dimmed step list while the animation is disabled — the steps
+		// stay editable and previewable (that's the point of the
+		// switch), but the dialog has to show at a glance that nothing
+		// will autoplay (Kym, 2026-09-18).
+		'.geAnimationDisabledArea{opacity:0.55}',
+
+		// Brief pulse on the step toolbar buttons (Copy / Paste /
+		// Duplicate / Delete) to confirm the click. Copy needs it because
+		// it leaves no visible trace — its only other feedback is the
+		// Paste button going from disabled to enabled, which says nothing
+		// when the clipboard was already filled; the other three pulse
+		// too so the group reacts uniformly.
+		'@keyframes geAnimationBtnFlash{',
+			'0%{background-color:light-dark(color-mix(in srgb, var(--focus-color) 45%, transparent), color-mix(in srgb, var(--dark-focus-color) 55%, transparent));',
+			'border-color:light-dark(var(--focus-color), var(--dark-focus-color))}',
+			'100%{background-color:transparent;',
+			'border-color:light-dark(var(--field-border-color), var(--dark-field-border-color))}}',
+		'.geAnimationBtnFlash{animation:geAnimationBtnFlash .5s ease-out}',
+
+		// Color swatch next to a style value whose key names a color.
+		// Sized like the inline inputs next to it; the color itself is
+		// set inline (a light-dark pair as a diagonal split).
+		'.geAnimationColorSwatch{width:22px;height:22px;flex:0 0 22px}',
+
+		// Marks a required field that is still empty (the style key of a
+		// Set / Toggle Style step, which does nothing without one). The
+		// inputs carry an inline border, hence the !important.
+		'.geAnimationFieldWarn{',
+			'border-color:light-dark(#e6a700,#ffcc4d) !important;',
+			'box-shadow:0 0 0 1px light-dark(rgba(230,167,0,0.25),',
+			'rgba(255,204,77,0.25))}'
 	].join('');
 
 	var style = document.createElement('style');
@@ -6700,7 +6790,7 @@ SelectorChips.create = function(graph, editorUi)
 
 	// Renders a chip that opens a menu popover with the available
 	// actions: Use Selection, All Cells (when wildcard is allowed),
-	// Show on Canvas, Reset. The chip displays a self-describing count
+	// Show on Canvas, None. The chip displays a self-describing count
 	// like "5 cells" / "5 Excluded", or just the bare noun when
 	// empty ("cells" / "Excluded") — no separate label needed.
 	// `opts.singularKey` / `opts.pluralKey` pick the noun (defaults
@@ -6750,34 +6840,81 @@ SelectorChips.create = function(graph, editorUi)
 			return Array.isArray(v) && v.length > 0;
 		};
 
+		// IDs in the list that no longer resolve to a cell — the cells
+		// were deleted after the step was written (or the list came from
+		// another diagram). The engine skips them silently, so the chip
+		// says how many of its entries are dead.
+		var missingIds = function()
+		{
+			var v = getValue();
+			var missing = [];
+
+			if (Array.isArray(v) && !isWildcard())
+			{
+				for (var i = 0; i < v.length; i++)
+				{
+					if (v[i] !== '*' && graph.getModel().getCell(v[i]) == null)
+					{
+						missing.push(v[i]);
+					}
+				}
+			}
+
+			return missing;
+		};
+
 		var updateChip = function()
 		{
 			var v = getValue();
-			var count = (Array.isArray(v) && !isWildcard()) ? v.length : 0;
+			var missing = missingIds();
+			var count = (Array.isArray(v) && !isWildcard()) ?
+				v.length - missing.length : 0;
+			// Caller-provided suffix (the cells chip appends "+ Descendants"
+			// while the descendants toggle is on) so the state shows on the
+			// chip, not only as a checkmark in its menu.
+			var suffix = (typeof opts.suffix == 'function') ? (opts.suffix() || '') : '';
 			chip.textContent = '';
-			chip.classList.remove('geSelChipEmpty', 'geSelChipAll');
+			chip.classList.remove('geSelChipEmpty', 'geSelChipAll', 'geSelChipWarn');
 			chip.title = '';
 
 			if (isWildcard())
 			{
 				chip.classList.add('geSelChipAll');
-				mxUtils.write(chip, mxResources.get('allCells'));
+				mxUtils.write(chip, mxResources.get('allCells') + suffix);
 			}
-			else if (count == 0)
+			else if (count == 0 && missing.length == 0)
 			{
 				// Empty: call-to-action verb ("Select"), no leading "0"
 				// — invites a click without shouting "you have nothing
 				// here".
 				chip.classList.add('geSelChipEmpty');
 				mxUtils.write(chip,
-					mxResources.get(emptyKey, null, emptyFallback));
+					mxResources.get(emptyKey, null, emptyFallback) + suffix);
 			}
 			else
 			{
-				mxUtils.write(chip, count + ' ' + (count == 1 ?
+				// Counts only the cells that still exist; dead entries are
+				// called out separately ("2 cells, 3 deleted") so a step
+				// whose cells were all deleted reads "0 cells, 4 deleted"
+				// instead of looking configured. "Deleted" rather than
+				// "missing" — that is what happened to them (tester,
+				// 2026-09-21).
+				var text = count + ' ' + (count == 1 ?
 					mxResources.get(singularKey, null, singularFallback) :
-					mxResources.get(pluralKey, null, pluralFallback)));
-				chip.title = v.join('\n');
+					mxResources.get(pluralKey, null, pluralFallback));
+
+				if (missing.length > 0)
+				{
+					chip.classList.add('geSelChipWarn');
+					text += ', ' + mxResources.get('nDeleted',
+						[missing.length], '{1} deleted');
+				}
+
+				mxUtils.write(chip, text + suffix);
+				chip.title = v.map(function(id)
+				{
+					return (missing.indexOf(id) >= 0) ? id + ' (?)' : id;
+				}).join('\n');
 			}
 		};
 
@@ -6860,10 +6997,34 @@ SelectorChips.create = function(graph, editorUi)
 					}
 				});
 
+				// Drops the dead entries. Offered rather than done on its
+				// own: the cells may come back through undo or paste, and
+				// the step's other settings are worth keeping either way.
+				if (missingIds().length > 0)
+				{
+					items.push({
+						label: mxResources.get('removeDeletedCells',
+							null, 'Remove deleted cells'),
+						onClick: function()
+						{
+							var missing = missingIds();
+							var kept = getValue().filter(function(id)
+							{
+								return missing.indexOf(id) < 0;
+							});
+							setValue((kept.length > 0) ? kept : null);
+							updateChip();
+						}
+					});
+				}
+
 				items.push({separator: true});
 
 				items.push({
-					label: mxResources.get('reset'),
+					// "None" — the counterpart of "All cells" above.
+					// "Reset" suggested restoring a default, while this
+					// clears the target (Kym, 2026-09-18).
+					label: mxResources.get('none'),
 					danger: true,
 					onClick: function()
 					{
@@ -6990,12 +7151,12 @@ SelectorChips.create = function(graph, editorUi)
 		var updateChip = function()
 		{
 			var v = getValue();
-			var count = Array.isArray(v) ? v.length : 0;
+			var total = Array.isArray(v) ? v.length : 0;
 			chip.textContent = '';
-			chip.classList.remove('geSelChipEmpty');
+			chip.classList.remove('geSelChipEmpty', 'geSelChipWarn');
 			chip.title = '';
 
-			if (count == 0)
+			if (total == 0)
 			{
 				chip.classList.add('geSelChipEmpty');
 				mxUtils.write(chip,
@@ -7003,13 +7164,13 @@ SelectorChips.create = function(graph, editorUi)
 			}
 			else
 			{
-				mxUtils.write(chip, count + ' ' + (count == 1 ?
-					mxResources.get('layer') :
-					mxResources.get('layers')));
-
 				// Hover title with resolved layer names — same UX as the
-				// tags chip, which lists tag values on hover.
+				// tags chip, which lists tag values on hover. A layer that
+				// was deleted since the step was written counts as missing
+				// (the engine resolves nothing for it) and is called out
+				// on the chip like a dead cell on the cells chip.
 				var names = [];
+				var missing = 0;
 				var model = graph.getModel();
 				for (var i = 0; i < v.length; i++)
 				{
@@ -7019,8 +7180,26 @@ SelectorChips.create = function(graph, editorUi)
 						var n = graph.convertValueToString(cell);
 						names.push((n != null && n !== '') ? n : v[i]);
 					}
-					else names.push(v[i]);
+					else
+					{
+						names.push(v[i] + ' (?)');
+						missing++;
+					}
 				}
+
+				var count = total - missing;
+				var text = count + ' ' + (count == 1 ?
+					mxResources.get('layer') :
+					mxResources.get('layers'));
+
+				if (missing > 0)
+				{
+					chip.classList.add('geSelChipWarn');
+					text += ', ' + mxResources.get('nDeleted',
+						[missing], '{1} deleted');
+				}
+
+				mxUtils.write(chip, text);
 				chip.title = names.join('\n');
 			}
 		};
@@ -7270,8 +7449,17 @@ SelectorChips.create = function(graph, editorUi)
 	// handle the empty case.
 	function openLayerPicker(anchor, getValue, onChange)
 	{
-		var current = (Array.isArray(getValue()) ? getValue() : []).slice();
 		var allLayers = getAllLayers();
+
+		// The picker lists the diagram's layers, so an ID whose layer was
+		// deleted has no row to uncheck. It is left out of the working
+		// list instead: the next change commits what the checkboxes show,
+		// and opening the picker without touching anything keeps the
+		// stored list as is.
+		var current = (Array.isArray(getValue()) ? getValue() : []).filter(function(id)
+		{
+			return allLayers.some(function(layer) { return layer.id == id; });
+		});
 
 		var body = document.createElement('div');
 
@@ -7567,6 +7755,8 @@ SelectorChips.create = function(graph, editorUi)
 		// visible chip yet).
 		openTagPicker: openTagPicker,
 		openLayerPicker: openLayerPicker,
+		openPopover: openPopover,
+		openMenuPopover: openMenuPopover,
 		closePopover: function() {
 			if (openPopover._open != null) openPopover._open.close();
 		}
@@ -7649,6 +7839,17 @@ var CustomActionDialog = function(editorUi, currentValue, onSave)
 		initial: initial,
 		save: function(data)
 		{
+			// No actions left — the link has nothing to do, so remove it
+			// from the cell instead of writing an empty payload, which
+			// would leave the link text and the link decoration behind
+			// (Kym, 2026-09-18). Every showLinkDialog callback treats the
+			// empty string as "remove the link".
+			if (data.steps == null || data.steps.length == 0)
+			{
+				onSave('');
+				return;
+			}
+
 			// Strip empty title to keep the JSON tight.
 			var out = {actions: data.steps};
 			if (data.title) out.title = data.title;
@@ -7733,16 +7934,35 @@ CustomActionDialog.SCHEMAS = {
 		         {name: 'opacity',  type: 'number', min: 0, max: 100, step: 10,
 			placeholder: '100', width: 50, label: '%',
 			titleKey: 'opacity', title: 'Opacity'}]},
+	// `styleKey: true` adds the style-key datalist and the "use selected
+	// cells" picker to the key field (createStyleKeyPicker in AnimationDialog).
+	// The placeholders prompt for the field ("Enter style key...",
+	// "Value") rather than showing an example pair — an example reads as
+	// a value that is already set, so a step with an empty key looked
+	// configured (Kym, 2026-09-18). `colorValue` adds a color swatch to
+	// the field while the key names a color.
 	style:       {label: 'Set Style',     icon: '🎨', selector: true, allowLayers: true,
-		fields: [{name: 'key',   type: 'text', placeholder: 'flowAnimation',
-			width: 90, label: '', title: 'Key'},
-		         {name: 'value', type: 'text', placeholder: '1',
-			width: 50, label: '', title: 'Value'}]},
+		fields: [{name: 'key',   type: 'text', placeholderKey: 'enterStyleKey',
+			placeholder: 'Enter style key...', width: 90, label: '',
+			titleKey: 'property', title: 'Key', styleKey: true},
+		         {name: 'value', type: 'text', placeholderKey: 'value',
+			placeholder: 'Value', width: 50, label: '',
+			titleKey: 'value', title: 'Value', colorValue: true}]},
+	// Toggles key between value and defaultValue (an empty default removes
+	// the key so the stylesheet default applies); with value left empty the
+	// legacy 0 ↔ 1 boolean toggle runs (Graph.nextToggleStyleValue).
 	toggleStyle: {label: 'Toggle Style',  icon: '🔀', selector: true, allowLayers: true,
-		fields: [{name: 'key',          type: 'text', placeholder: 'flowAnimation',
-			width: 90, label: '', title: 'Key'},
-		         {name: 'defaultValue', type: 'text', placeholder: '0',
-			width: 50, label: '', title: 'Default value'}]},
+		fields: [{name: 'key',          type: 'text', placeholderKey: 'enterStyleKey',
+			placeholder: 'Enter style key...', width: 90, label: '',
+			titleKey: 'property', title: 'Key', styleKey: true},
+		         {name: 'value',        type: 'text', placeholderKey: 'value',
+			placeholder: 'Value', width: 50, label: '',
+			titleKey: 'value', title: 'Value', colorValue: true},
+		         // An empty default removes the key rather than writing a
+		         // 0, so the placeholder must not name a value either.
+		         {name: 'defaultValue', type: 'text', placeholderKey: 'default',
+			placeholder: 'Default', width: 50, label: '',
+			titleKey: 'default', title: 'Default value', colorValue: true}]},
 	flow:        {label: 'Flow',          icon: '➡', selector: true, allowLayers: true,
 		fields: [{name: 'start', type: 'select', options: [
 			{value: '', label: '(toggle)'},
@@ -7826,7 +8046,9 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 	errorNode.style.borderRadius = '8px';
 	errorNode.style.left = '50%';
 	errorNode.style.top = '50%';
-	errorNode.style.whiteSpace = 'nowrap';
+	errorNode.style.width = 'max-content';
+	errorNode.style.maxWidth = '80%';
+	errorNode.style.boxSizing = 'border-box';
 	errorNode.style.transform = 'translate(-50%, -50%)';
 	errorNode.style.background = 'inherit';
 	errorNode.style.border = '1px solid';
@@ -8181,6 +8403,17 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 							editorUi.spinner.stop();
 							restoreBtn.removeAttribute('disabled');
 							editorUi.replaceFileData(currentXml);
+
+							// A restore in a realtime session must flow
+							// like a local change or the sync keeps the
+							// pre-restore state (the stale own pages then
+							// made the next cleanup revert legitimate
+							// peer edits from the screen)
+							if (file.sync != null)
+							{
+								file.sync.fileRestored();
+							}
+
 							editorUi.hideDialog();
 						}, function(resp)
 						{
@@ -8332,6 +8565,7 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 					{
 						spinner.stop();
 						errorNode.innerText = '';
+						errorNode.style.display = 'none';
 						var doc = mxUtils.parseXml(xml);
 						var node = editorUi.editor.extractGraphModel(doc.documentElement, true);
 
@@ -8507,6 +8741,7 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 							errorNode.innerText = '';
 							mxUtils.write(fileInfo, mxResources.get('errorLoadingFile'));
 							mxUtils.write(errorNode, mxResources.get('errorLoadingFile'));
+							errorNode.style.display = 'inline-block';
 						}
 					};
 					
@@ -8531,6 +8766,7 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 							fileInfo.innerText = mxResources.get('loading') + '...';
 							container.style.backgroundColor = graph.defaultPageBackgroundColor;
 							errorNode.innerText = '';
+							errorNode.style.display = 'none';
 							graph.getModel().clear();
 							
 							restoreBtn.setAttribute('disabled', 'disabled');
@@ -8566,12 +8802,23 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 								}
 				   			}, function(err)
 				   			{
-				   				spinner.stop();
-								pageSelect.style.display = 'none';
-								pageSelect.innerText = '';
-				   				fileInfo.innerText = '';
-								mxUtils.write(fileInfo, mxResources.get('errorLoadingFile'));
-								mxUtils.write(errorNode, mxResources.get('errorLoadingFile'));
+								if (currentRev == item)
+								{
+									spinner.stop();
+									pageSelect.style.display = 'none';
+									pageSelect.innerText = '';
+									fileInfo.innerText = '';
+									errorNode.innerText = '';
+									mxUtils.write(fileInfo, mxResources.get('errorLoadingFile'));
+
+									// Shown in the preview with the cause where the
+									// provider names one (eg. a revision the user may
+									// not download)
+									mxUtils.write(errorNode, mxResources.get('errorLoadingFile') +
+										((err != null && typeof err.message == 'string') ?
+										': ' + err.message : ''));
+									errorNode.style.display = 'inline-block';
+								}
 				   			});
 
 							mxEvent.consume(evt);
@@ -9190,6 +9437,18 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 	
 	function testMeta(re, cell, search)
 	{
+		//Plain search matches the full ID only since short search terms
+		//would otherwise match most generated IDs
+		if (cell.id != null)
+		{
+			var id = String(cell.id).toLowerCase();
+
+			if ((re == null && id == search) || (re != null && re.test(id)))
+			{
+				return true;
+			}
+		}
+
 		if (typeof cell.value === 'object' && cell.value.attributes != null)
 		{
 			var attrs = cell.value.attributes;
@@ -12448,6 +12707,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	};
 
 	var div = document.createElement('div');
+	div.className = 'geAnimationDialog';
 	div.style.cssText = 'padding:18px;box-sizing:border-box;height:100%;' +
 		'display:flex;flex-direction:column;font-size:13px;overflow:hidden;' +
 		'color:light-dark(var(--strong-text-color), var(--dark-strong-text-color))';
@@ -12623,6 +12883,27 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		'color:light-dark(var(--strong-text-color), var(--dark-strong-text-color))';
 	div.appendChild(list);
 
+	// Reflects the Disabled checkbox in the rest of the dialog: the step
+	// list is dimmed and Loop is switched off and greyed, so an animation
+	// that won't play can't be mistaken for one that will — the lone
+	// checkbox was too easy to overlook (Kym, 2026-09-18). The steps stay
+	// editable and previewable, which is the point of the off-switch.
+	var updateDisabledState = function()
+	{
+		if (disabledCheckbox == null) return;
+
+		var off = disabledCheckbox.checked;
+		stepList.classList.toggle('geAnimationDisabledArea', off);
+		list.classList.toggle('geAnimationDisabledArea', off);
+
+		if (loopCheckbox != null)
+		{
+			loopCheckbox.disabled = off;
+			loopLabel.classList.toggle('geAnimationDisabledArea', off);
+			loopLabel.style.cursor = (off) ? 'default' : 'pointer';
+		}
+	};
+
 	// Inline validation message for advanced (raw JSON) mode. Shown when the
 	// textarea fails to parse so an invalid edit is visibly rejected instead
 	// of being silently dropped — parseAnimationData now throws on malformed
@@ -12766,6 +13047,8 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			disabledCheckbox.checked = (data.enabled == null) ? false :
 				!data.enabled;
 		}
+
+		updateDisabledState();
 	};
 
 	loadFromContext();
@@ -12799,6 +13082,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		{
 			data.enabled = !disabledCheckbox.checked;
 			list.value = JSON.stringify(data, null, 2);
+			updateDisabledState();
 			setDirty(true);
 		});
 	}
@@ -13013,6 +13297,11 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 				layerNames.join(', '));
 		}
 
+		if (sel.descendants === true)
+		{
+			parts.push(mxResources.get('descendants'));
+		}
+
 		return parts.join(', ') || '—';
 	};
 
@@ -13058,6 +13347,15 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	// Step selection + copy/paste/duplicate [jgraph/drawio#5672]
 	// ============================================================
 
+	// Selector objects whose `cells` list was seeded from the canvas
+	// selection when the step was added, rather than picked deliberately.
+	// Switching such a step to layers or tags replaces the seed instead of
+	// adding to it — the union is what the engine does, but nobody asks
+	// for it by changing the target right after adding the step (Kym,
+	// 2026-09-18). Any explicit edit of the cells chip drops the mark, so
+	// a list the user set themselves is never taken away.
+	var seededSelectors = new WeakSet();
+
 	// Indices into data.steps of the rows whose selection checkbox is
 	// on. Structural mutations clear the indices (delete, reorder,
 	// Delete All, raw-JSON edits, page switch; paste/duplicate re-select
@@ -13080,6 +13378,27 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		b.disabled = !enabled;
 		b.style.opacity = (enabled) ? '' : '0.3';
 		b.style.cursor = (enabled) ? 'pointer' : 'default';
+	};
+
+	// Pulses a toolbar button once; called by all four step edit actions
+	// (button click and keyboard shortcut alike). Copy is otherwise
+	// silent whenever the clipboard already held something — the Paste
+	// button is enabled either way, so nothing on screen said the copy
+	// happened (Kym, 2026-09-18).
+	var flashEditButton = function(b)
+	{
+		if (b == null) return;
+
+		b.classList.remove('geAnimationBtnFlash');
+
+		// Reading a layout property flushes the class removal, so
+		// re-adding it below starts a new pulse instead of continuing
+		// the finished one (which would show nothing). The read is done
+		// in the condition so the compiler can't drop it as unused.
+		if (b.offsetWidth >= 0)
+		{
+			b.classList.add('geAnimationBtnFlash');
+		}
 	};
 
 	var updateEditButtons = function()
@@ -13145,6 +13464,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		}
 
 		updateEditButtons();
+		flashEditButton(copyBtnRef);
 	};
 
 	// Inserts clones of the given steps at the given index and selects
@@ -13182,6 +13502,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		var at = (order.length > 0) ?
 			order[order.length - 1] + 1 : data.steps.length;
 		insertSteps(clip, at);
+		flashEditButton(pasteBtnRef);
 	};
 
 	// Duplicate: copy of the selected block inserted right behind it,
@@ -13199,6 +13520,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		}
 
 		insertSteps(steps, order[order.length - 1] + 1);
+		flashEditButton(duplicateBtnRef);
 	};
 
 	// Delete: removes the selected steps. This is the only way to delete
@@ -13217,6 +13539,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		selectedSteps.clear();
 		selectionAnchor = null;
 		refresh();
+		flashEditButton(deleteBtnRef);
 	};
 
 	// ============================================================
@@ -13442,6 +13765,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			};
 		};
 
+		var cellsBind = bind('cells');
 		var tagsBind = bind('tags');
 		var tagsGetMode = function()
 		{
@@ -13461,6 +13785,54 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		};
 
 		var layersBind = bind('layers');
+
+		// Switching the step's target: a cell list that was only seeded
+		// from the canvas selection when the step was added is dropped in
+		// favor of the layers / tags picked here, so the target changes
+		// instead of growing (see seededSelectors). A cell list the user
+		// picked themselves is kept — cells + layers is a union the
+		// engine supports, and re-adding cells afterwards never clears
+		// the layers.
+		var takeOverSeededCells = function(value)
+		{
+			if (!Array.isArray(value) || value.length == 0) return;
+
+			var sel = data.steps[idx][key];
+
+			if (sel != null && typeof sel == 'object' &&
+				seededSelectors.has(sel))
+			{
+				seededSelectors['delete'](sel);
+				delete sel.cells;
+			}
+		};
+
+		var layersSet = function(value)
+		{
+			takeOverSeededCells(value);
+			layersBind.set(value);
+		};
+
+		var tagsSet = function(value)
+		{
+			takeOverSeededCells(value);
+			tagsBind.set(value);
+		};
+
+		// Any deliberate edit of the cell list settles the question —
+		// from here on cells, layers and tags stack up as the engine
+		// resolves them.
+		var cellsSet = function(value)
+		{
+			var sel = data.steps[idx][key];
+
+			if (sel != null && typeof sel == 'object')
+			{
+				seededSelectors['delete'](sel);
+			}
+
+			cellsBind.set(value);
+		};
 
 		// "Select layers" shows for every cell-targeting action (allowLayers
 		// in SCHEMAS); the layer resolves to its contained cells at playback.
@@ -13484,7 +13856,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 				onClick: function(chipEl)
 				{
 					selectorChips.openLayerPicker(chipEl,
-						layersBind.get, layersBind.set);
+						layersBind.get, layersSet);
 				}
 			});
 		}
@@ -13497,7 +13869,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			onClick: function(chipEl)
 			{
 				selectorChips.openTagPicker(chipEl,
-					tagsBind.get, tagsBind.set,
+					tagsBind.get, tagsSet,
 					tagsGetMode, tagsSetMode);
 			}
 		});
@@ -13538,20 +13910,51 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			}
 		});
 
+		// Toggle for `descendants`: the action also targets everything
+		// inside the resolved cells, looked up when it runs (see
+		// Graph.getCellsForAction) — so an effect on a group or container
+		// reaches its contents and follows children added later, which an
+		// explicit list cannot. Off, only the listed cells are affected.
+		var hasDescendants = function()
+		{
+			var s = data.steps[idx][key];
+			return s != null && typeof s == 'object' && s.descendants === true;
+		};
+
+		extraItems.push({
+			label: mxResources.get('descendants'),
+			active: hasDescendants(),
+			onClick: function()
+			{
+				var s = data.steps[idx][key];
+				if (!s || typeof s != 'object')
+				{
+					s = data.steps[idx][key] = {};
+				}
+				if (s.descendants === true) delete s.descendants;
+				else s.descendants = true;
+				refresh();
+			}
+		});
+
 		// Cells chip — hosts "Select layers" (when supported), "Select
-		// by tags", and "Exclude selected cells" so the secondary
-		// chips stay hidden until populated.
-		var cellsBind = bind('cells');
+		// by tags", "Exclude selected cells" and the descendants toggle so
+		// the secondary chips stay hidden until populated.
 		wrap.appendChild(selectorChips.cellListField('',
-			cellsBind.get, cellsBind.set,
-			{allowWildcard: true, extraMenuItems: extraItems}));
+			cellsBind.get, cellsSet,
+			{allowWildcard: true, extraMenuItems: extraItems,
+			 suffix: function()
+			 {
+				return (hasDescendants()) ?
+					' + ' + mxResources.get('descendants') : '';
+			 }}));
 
 		// Layers chip only when populated.
 		var layersValue = layersBind.get();
 		if (Array.isArray(layersValue) && layersValue.length > 0)
 		{
 			wrap.appendChild(selectorChips.layerListField('',
-				layersBind.get, layersBind.set));
+				layersBind.get, layersSet));
 		}
 
 		// Tags chip only when populated.
@@ -13559,7 +13962,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		if (Array.isArray(tagsValue) && tagsValue.length > 0)
 		{
 			wrap.appendChild(selectorChips.tagListField('',
-				tagsBind.get, tagsBind.set,
+				tagsBind.get, tagsSet,
 				{getMode: tagsGetMode, setMode: tagsSetMode}));
 		}
 
@@ -13659,6 +14062,40 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		row.appendChild(action);
 	};
 
+	// True when a selector names a target that resolves to no cell at
+	// all: its cells were deleted, its layers are gone or empty, no cell
+	// carries its tags, or the exclude list swallows the whole selection.
+	// Resolved through the engine's own call so the verdict matches
+	// playback. An unset target is left alone — the empty chip already
+	// shows that one.
+	var resolvesToNothing = function(sel)
+	{
+		if (sel == null || typeof sel != 'object') return false;
+
+		var hasTarget = ['cells', 'tags', 'layers'].some(function(k)
+		{
+			return Array.isArray(sel[k]) && sel[k].length > 0;
+		});
+
+		return hasTarget && graph.getCellsForAction(sel, true).length == 0;
+	};
+
+	// Warning glyph behind the action label of a step that would run
+	// without any visible effect (see resolvesToNothing). The step stays:
+	// its cells may come back through undo or paste, and its other
+	// settings are worth keeping either way. U+FE0E keeps the glyph
+	// monochrome, like the immediate toggle's icons.
+	var appendNoEffectMarker = function(row)
+	{
+		var mark = document.createElement('span');
+		mark.style.cssText = 'flex:0 0 auto;font-size:13px;line-height:1;' +
+			'color:light-dark(#e6a700,#ffcc4d);cursor:help';
+		mark.title = mxResources.get('stepNoEffect', null,
+			'No effect: this step matches no cells in the diagram');
+		mxUtils.write(mark, '⚠︎');
+		row.appendChild(mark);
+	};
+
 	var appendTargetLabel = function(row, sel)
 	{
 		var target = document.createElement('span');
@@ -13696,9 +14133,137 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		return null;
 	};
 
+	// Returns the given value if the browser reads it as a color, else
+	// null. Style values come from the diagram, so nothing goes into a
+	// `background` shorthand unchecked: an arbitrary string could close
+	// the gradient below and add a url() layer, which would be fetched.
+	// Assigning to `color` accepts colors only, including light-dark().
+	var colorProbe = document.createElement('span');
+
+	var asColor = function(value)
+	{
+		colorProbe.style.color = '';
+		colorProbe.style.color = value;
+
+		return (colorProbe.style.color != '') ? value : null;
+	};
+
 	// Renders one schema field into the step row. Mirrors appendField in
 	// CustomActionDialog but uses the AnimationDialog's inline styling so
 	// the row layout stays tight and consistent with existing step types.
+	// Style-key fields (Set Style / Toggle Style, `styleKey: true` in the
+	// schema): a datalist of the common style keys named by their Format
+	// panel labels, and a "use selected cells" button that lists the
+	// selected cell's own style entries — picking one fills in the key and
+	// the value, so nobody has to look the key up via Edit Style.
+	var styleKeyList = null;
+
+	var fillStyleKeyList = function()
+	{
+		while (styleKeyList.firstChild != null)
+		{
+			styleKeyList.removeChild(styleKeyList.firstChild);
+		}
+
+		for (var i = 0; i < AnimationDialog.STYLE_KEYS.length; i++)
+		{
+			var entry = AnimationDialog.STYLE_KEYS[i];
+			var opt = document.createElement('option');
+			opt.value = entry.key;
+
+			var label = (typeof entry.label == 'function') ? entry.label() :
+				mxResources.get(entry.label, null, entry.fallback);
+
+			// Browsers render the label as a second line under the value,
+			// so a label that is just the prettified key (opacity /
+			// Opacity, textOpacity / Text Opacity) doubles every entry for
+			// no gain (Kym, 2026-09-18). Keep it only where it adds
+			// something the key doesn't say — another word (strokeWidth /
+			// Linewidth) or a translation.
+			if (AnimationDialog.normalizeStyleLabel(label) !=
+				AnimationDialog.normalizeStyleLabel(entry.key))
+			{
+				opt.label = label;
+			}
+
+			styleKeyList.appendChild(opt);
+		}
+	};
+
+	var getStyleKeyListId = function()
+	{
+		if (styleKeyList == null)
+		{
+			styleKeyList = document.createElement('datalist');
+			styleKeyList.id = 'geStyleKeys' + (++AnimationDialog.styleKeyListCount);
+			fillStyleKeyList();
+			div.appendChild(styleKeyList);
+			staticRefreshers.push(fillStyleKeyList);
+		}
+
+		return styleKeyList.id;
+	};
+
+	var createStyleKeyPicker = function(inp, idx, key)
+	{
+		inp.setAttribute('list', getStyleKeyListId());
+
+		var schema = CustomActionDialog.SCHEMAS[key];
+		var hasValue = false;
+
+		if (schema != null && Array.isArray(schema.fields))
+		{
+			for (var i = 0; i < schema.fields.length; i++)
+			{
+				hasValue = hasValue || schema.fields[i].name == 'value';
+			}
+		}
+
+		var btn = selectorChips.iconButton('arrowDown',
+			mxResources.get('useSelection'), function()
+		{
+			var cell = graph.getSelectionCell();
+			var pairs = (cell != null) ? AnimationDialog.getStylePairs(
+				graph.model.getStyle(cell)) : [];
+			var items = [];
+
+			if (pairs.length == 0)
+			{
+				items.push({label: mxResources.get((cell == null) ?
+					'nothingIsSelected' : 'none'), disabled: true});
+			}
+
+			for (var i = 0; i < pairs.length; i++)
+			{
+				(function(pair)
+				{
+					items.push({label: pair.key + ' = ' + pair.value, onClick: function()
+					{
+						var s = data.steps[idx][key];
+
+						if (s == null || typeof s != 'object')
+						{
+							s = data.steps[idx][key] = {};
+						}
+
+						s.key = pair.key;
+
+						if (hasValue)
+						{
+							s.value = pair.value;
+						}
+
+						refresh();
+					}});
+				})(pairs[i]);
+			}
+
+			selectorChips.openMenuPopover(btn, items);
+		});
+
+		return btn;
+	};
+
 	var renderStepField = function(row, idx, key, spec, isPrimary, disabled)
 	{
 		// getter/setter for nested {key: {field: value}} (object actions)
@@ -13927,6 +14492,134 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		inp.addEventListener('input', commit);
 		row.appendChild(inp);
 
+		if (spec.styleKey && !isPrimary)
+		{
+			// mxGraph style keys are case sensitive, so a hand-typed
+			// "fillcolor" never paints anything and the step looks
+			// broken (Kym, 2026-09-18, chasing adaptive light-dark()
+			// colors that were fine all along). Fix the case of known
+			// keys once the field is committed — on change, not on
+			// every keystroke, so typing isn't fought. Unknown keys are
+			// left alone: custom shapes define their own.
+			inp.addEventListener('change', function()
+			{
+				var canonical = AnimationDialog.canonicalStyleKey(inp.value);
+
+				if (canonical != null && canonical !== inp.value)
+				{
+					inp.value = canonical;
+					commit();
+				}
+			});
+
+			// A Set / Toggle Style step without a key does nothing at all,
+			// and nothing in the row said so (Kym, 2026-09-18). Marks the
+			// field while it is empty; the placeholder asks for the key.
+			var updateKeyWarning = function()
+			{
+				inp.classList.toggle('geAnimationFieldWarn',
+					mxUtils.trim(inp.value) == '');
+			};
+
+			inp.addEventListener('input', updateKeyWarning);
+			inp.addEventListener('change', updateKeyWarning);
+			updateKeyWarning();
+
+			row.appendChild(createStyleKeyPicker(inp, idx, key));
+		}
+
+		// Color swatch for a style value once the key names a color —
+		// fillColor and friends were typed by hand, including adaptive
+		// light-dark() pairs (Kym, 2026-09-18). Opens the app's own color
+		// picker, which writes light-dark(light,dark) when a dark color is
+		// set, so the adaptive case needs no special handling here.
+		if (spec.colorValue && !isPrimary)
+		{
+			var swatch = document.createElement('button');
+			swatch.type = 'button';
+			swatch.className = 'geSelIconBtn geAnimationColorSwatch';
+			swatch.title = mxResources.get('color');
+
+			// The key is read from the step rather than from a sibling
+			// input, and refreshed on any input in the row: the key field
+			// commits on every keystroke, so typing "fillColor" reveals
+			// the swatch without re-rendering the row.
+			var updateSwatch = function()
+			{
+				var sel = data.steps[idx][key];
+				var styleKey = (sel != null && typeof sel == 'object' &&
+					sel.key != null) ? String(sel.key) : '';
+				var on = AnimationDialog.isColorStyleKey(styleKey);
+				swatch.style.display = (on) ? '' : 'none';
+
+				if (!on) return;
+
+				// Both cleared first so a value the browser can't read as
+				// a color shows the empty swatch rather than the previous
+				// color.
+				swatch.style.background = '';
+				swatch.style.backgroundColor = '';
+
+				var current = mxUtils.trim(inp.value);
+
+				if (current == '') return;
+
+				// Previewed the way the canvas will paint it: adaptive
+				// colors on 'auto' give a plain color an inverted dark
+				// variant, 'simple' keeps it, and 'none' pins the diagram
+				// to the light color.
+				var mode = graph.getAdaptiveColors();
+
+				if (mode == 'none')
+				{
+					swatch.style.backgroundColor = asColor(
+						mxUtils.parseLightDarkColor(current).light) || '';
+
+					return;
+				}
+
+				var cssColor = mxUtils.getLightDarkColor(current, null,
+					null, mode == 'simple');
+				var here = asColor(cssColor.cssText);
+				var other = asColor(mxUtils.invertLightDarkColor(cssColor).cssText);
+
+				// An explicit light-dark() pair shows both colors split
+				// diagonally, in either theme — the same treatment the
+				// Format panel's color swatches get: `cssText` paints the
+				// color for the current theme, the inverted pair the other
+				// one. A plain color stays solid; its dark variant is the
+				// automatic inversion, not a second color the user picked.
+				if (here != null && other != null &&
+					mxUtils.isLightDarkColor(current) &&
+					cssColor.light != cssColor.dark)
+				{
+					swatch.style.background = 'linear-gradient(to right ' +
+						'bottom, ' + here + ' 50%, ' + other + ' 50.3%)';
+				}
+				else if (here != null)
+				{
+					swatch.style.backgroundColor = here;
+				}
+			};
+
+			swatch.addEventListener('click', function()
+			{
+				var current = mxUtils.trim(inp.value);
+
+				editorUi.pickColor((current != '') ? current :
+					mxConstants.NONE, function(newColor)
+				{
+					inp.value = (newColor != null) ? newColor : '';
+					commit();
+					updateSwatch();
+				});
+			});
+
+			row.appendChild(swatch);
+			row.addEventListener('input', updateSwatch);
+			updateSwatch();
+		}
+
 		if (spec.label)
 		{
 			var lbl = document.createElement('span');
@@ -14067,6 +14760,11 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 
 		appendIcon(row, info.icon);
 		appendActionLabel(row, info.text);
+
+		if (schema != null && schema.selector && resolvesToNothing(sel))
+		{
+			appendNoEffectMarker(row);
+		}
 
 		if (schema != null && schema.primary != null)
 		{
@@ -14255,6 +14953,8 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 					disabledCheckbox.checked = !data.enabled;
 				}
 
+				updateDisabledState();
+
 				if (!advancedCheckbox.checked)
 				{
 					renderList();
@@ -14421,22 +15121,29 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		}
 	});
 
+	// True for a control that owns the user's keystrokes: text fields keep
+	// their native clipboard/editing behavior in the shortcut handler
+	// below, and a row holding a focused one is not rebuilt under the
+	// cursor by the model listener further down.
+	var isTextControl = function(el)
+	{
+		var tag = (el != null && el.tagName != null) ?
+			el.tagName.toLowerCase() : '';
+
+		return tag == 'textarea' || tag == 'select' ||
+			(tag == 'input' && el.type != 'checkbox') ||
+			(el != null && el.isContentEditable);
+	};
+
 	// Keyboard shortcuts for the list view: Ctrl/Cmd+C copies the
 	// selected steps, Ctrl/Cmd+V pastes, Ctrl/Cmd+D duplicates,
 	// Delete/Backspace deletes. Only fires when the focus is on a
 	// non-text control inside this dialog (clicking a selection checkbox
-	// focuses it) — text fields keep their native clipboard/editing
-	// behavior, and stopPropagation keeps the canvas key handler from
+	// focuses it), and stopPropagation keeps the canvas key handler from
 	// also acting on the same stroke.
 	div.addEventListener('keydown', function(e)
 	{
-		var t = e.target;
-		var tag = (t != null && t.tagName != null) ?
-			t.tagName.toLowerCase() : '';
-
-		if (tag == 'textarea' || tag == 'select' ||
-			(tag == 'input' && t.type != 'checkbox') ||
-			(t != null && t.isContentEditable))
+		if (isTextControl(e.target))
 		{
 			return;
 		}
@@ -14606,7 +15313,16 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		}
 
 		var step = buildStepObject(key, refs);
-		if (step != null) appendStep(step);
+
+		if (step != null)
+		{
+			if (refs != null && step[key] != null && typeof step[key] == 'object')
+			{
+				seededSelectors.add(step[key]);
+			}
+
+			appendStep(step);
+		}
 	});
 
 	var player = null;
@@ -14632,8 +15348,15 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 
 	var startPreviewSession = function()
 	{
-		if (previewSession != null) return;
-		previewSession = new Editor.AnimationPlayer(graph, data);
+		if (previewSession == null)
+		{
+			previewSession = new Editor.AnimationPlayer(graph, data);
+		}
+
+		// Snapshot on every preview, not only the first: the player keeps
+		// the live steps, and snapshotOpacity only adds cells it has not
+		// recorded yet, so a step added or retargeted after the session
+		// started is restored by Reset and close as well.
 		previewSession.snapshotOpacity();
 		updateResetBtn();
 	};
@@ -14939,6 +15662,36 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		}, mxResources.get('cancel'), mxResources.get('discardChanges'));
 	};
 
+	// Closes the dialog for a caller that wants a fresh one (Edit… on
+	// another cell's link while this action editor is open): the same
+	// discard prompt as the Cancel button when dirty, then `onClosed` once
+	// the window is hidden — never when the user keeps this dialog open.
+	this.requestClose = function(onClosed)
+	{
+		var finish = function()
+		{
+			thisDialog.window.setVisible(false);
+
+			if (onClosed != null)
+			{
+				onClosed();
+			}
+		};
+
+		if (dirty)
+		{
+			editorUi.confirm(mxResources.get('allChangesLost'), null, function()
+			{
+				setDirty(false);
+				finish();
+			}, mxResources.get('cancel'), mxResources.get('discardChanges'));
+		}
+		else
+		{
+			finish();
+		}
+	};
+
 	// Auto-save on close-X. mxWindow's close X calls setVisible(false)
 	// without going through our footer buttons; intercept here so that
 	// path saves first. Save / Cancel buttons drive their own flow
@@ -14965,6 +15718,40 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		// Restore any leftover preview state so closing the dialog
 		// doesn't leave cells faded out on the canvas.
 		endPreviewSession();
+	});
+
+	// Cells come and go under the non-modal dialog — a delete on the
+	// canvas, an undo that brings them back, a collaborator's edit — and
+	// the rows report which targets still resolve, so the list is rebuilt
+	// when a change adds or removes cells. Other changes (values,
+	// geometry, styles) cannot alter that verdict and are skipped, as is
+	// a change arriving while a row's text field has focus (a
+	// collaborator's edit mid-keystroke): rebuilding the rows would
+	// swallow the input, and the next refresh catches up.
+	var onModelChange = function(sender, evt)
+	{
+		var changes = evt.getProperty('edit').changes;
+
+		for (var i = 0; i < changes.length; i++)
+		{
+			if (changes[i] instanceof mxChildChange &&
+				(changes[i].parent == null || changes[i].previous == null))
+			{
+				var focused = document.activeElement;
+
+				if (!(stepList.contains(focused) && isTextControl(focused)))
+				{
+					renderList();
+				}
+
+				return;
+			}
+		}
+	};
+	graph.getModel().addListener(mxEvent.CHANGE, onModelChange);
+	this.window.addListener(mxEvent.DESTROY, function()
+	{
+		graph.getModel().removeListener(onModelChange);
 	});
 
 	// Page-switch handling only applies when we're editing the page-level
@@ -15049,6 +15836,153 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 // CustomActionDialog instance in this session so sequences can be copied
 // between pages and cell actions. Holds deep clones; pasting clones again.
 AnimationDialog.stepsClipboard = null;
+
+/**
+ * Counter for the ids of the per-dialog style-key datalists.
+ */
+AnimationDialog.styleKeyListCount = 0;
+
+/**
+ * Lazily built by getKnownStyleKeys.
+ */
+AnimationDialog.knownStyleKeys = null;
+
+/**
+ * Style keys offered by the Set Style / Toggle Style key fields, labelled
+ * with the Format panel resource (fallback English) so the panel's
+ * natural-language names map to the keys the actions need.
+ */
+AnimationDialog.STYLE_KEYS = [
+	{key: 'strokeWidth', label: 'linewidth', fallback: 'Linewidth'},
+	{key: 'strokeColor', label: 'strokeColor', fallback: 'Line Color'},
+	{key: 'fillColor', label: 'fillColor', fallback: 'Fill Color'},
+	{key: 'gradientColor', label: 'gradient', fallback: 'Gradient'},
+	{key: 'opacity', label: 'opacity', fallback: 'Opacity'},
+	{key: 'fontColor', label: 'fontColor', fallback: 'Font Color'},
+	{key: 'fontSize', label: 'fontSize', fallback: 'Font Size'},
+	{key: 'fontFamily', label: 'fontFamily', fallback: 'Font Family'},
+	{key: 'fontStyle', label: function()
+	{
+		return mxResources.get('font') + ': 1 ' + mxResources.get('bold') +
+			', 2 ' + mxResources.get('italic') + ', 4 ' + mxResources.get('underline');
+	}},
+	{key: 'textOpacity', label: 'textOpacity', fallback: 'Text Opacity'},
+	{key: 'labelBackgroundColor', label: 'backgroundColor', fallback: 'Background Color'},
+	{key: 'labelBorderColor', label: 'borderColor', fallback: 'Border Color'},
+	{key: 'align', label: 'align', fallback: 'Align'},
+	{key: 'spacing', label: 'spacing', fallback: 'Spacing'},
+	{key: 'dashed', label: 'dashed', fallback: 'Dashed'},
+	{key: 'rounded', label: 'rounded', fallback: 'Rounded'},
+	{key: 'curved', label: 'curved', fallback: 'Curved'},
+	{key: 'startArrow', label: 'linestart', fallback: 'Line Start'},
+	{key: 'endArrow', label: 'lineend', fallback: 'Line End'},
+	{key: 'flowAnimation', label: 'flowAnimation', fallback: 'Flow Animation'},
+	{key: 'shadow', label: 'shadow', fallback: 'Shadow'},
+	{key: 'glass', label: 'glass', fallback: 'Glass'},
+	{key: 'sketch', label: 'sketch', fallback: 'Sketch'},
+	{key: 'comic', label: 'comic', fallback: 'Comic'},
+	{key: 'rotation', label: 'rotation', fallback: 'Rotation'},
+	{key: 'perimeterSpacing', label: 'perimeter', fallback: 'Perimeter'}
+];
+
+/**
+ * Returns true if the given style key holds a color. Decided by the name:
+ * every color style in the app ends in "color" (fillColor, strokeColor,
+ * gradientColor, labelBackgroundColor, shadowColor, footerColor, …) and
+ * that also covers the custom color properties of individual shapes,
+ * which the property tables only describe per shape.
+ */
+AnimationDialog.isColorStyleKey = function(key)
+{
+	return key != null && /colou?r$/i.test(String(key));
+};
+
+/**
+ * Returns the known style keys (every mxConstants.STYLE_* value plus the
+ * keys the picker offers) as a lowercase → canonical spelling map. Built
+ * on a null prototype so a typed "__proto__" can't resolve to anything.
+ */
+AnimationDialog.getKnownStyleKeys = function()
+{
+	if (AnimationDialog.knownStyleKeys == null)
+	{
+		var map = Object.create(null);
+
+		for (var name in mxConstants)
+		{
+			if (name.substring(0, 6) == 'STYLE_' &&
+				typeof mxConstants[name] == 'string')
+			{
+				map[mxConstants[name].toLowerCase()] = mxConstants[name];
+			}
+		}
+
+		for (var i = 0; i < AnimationDialog.STYLE_KEYS.length; i++)
+		{
+			var key = AnimationDialog.STYLE_KEYS[i].key;
+			map[key.toLowerCase()] = key;
+		}
+
+		AnimationDialog.knownStyleKeys = map;
+	}
+
+	return AnimationDialog.knownStyleKeys;
+};
+
+/**
+ * Returns the canonical spelling of the given style key if it is a known
+ * key written in the wrong case, else null.
+ */
+AnimationDialog.canonicalStyleKey = function(value)
+{
+	var key = (value != null) ? mxUtils.trim(String(value)) : '';
+
+	if (key != '')
+	{
+		var known = AnimationDialog.getKnownStyleKeys()[key.toLowerCase()];
+
+		if (known != null && known !== key)
+		{
+			return known;
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Strips case and separators so a style key can be compared with its
+ * human-readable label ("textOpacity" vs "Text Opacity"). Used to drop
+ * datalist labels that only repeat the key.
+ */
+AnimationDialog.normalizeStyleLabel = function(value)
+{
+	return (value != null) ?
+		String(value).toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+};
+
+/**
+ * Returns the key=value entries of a raw cell style string as
+ * [{key, value}], skipping bare tokens such as the shape name.
+ */
+AnimationDialog.getStylePairs = function(style)
+{
+	var pairs = [];
+	var tokens = (style != null) ? String(style).split(';') : [];
+
+	for (var i = 0; i < tokens.length; i++)
+	{
+		var pos = tokens[i].indexOf('=');
+
+		if (pos > 0)
+		{
+			pairs.push({key: tokens[i].substring(0, pos),
+				value: tokens[i].substring(pos + 1)});
+		}
+	}
+
+	return pairs;
+};
 
 /**
  * Warning dialog shown when the GitLab server URL has been overridden via the
@@ -19165,37 +20099,89 @@ var ConnectionPointsDialog = function(editorUi, cell)
 		var addBtn = mxUtils.button(mxResources.get('add'), function()
 		{
 			var count = parseInt(pCount.value);
-			count = count < 1? 1 : (count > 100? 100 : count);
+			count = isNaN(count)? 1 : (count < 1? 1 : (count > 100? 100 : count));
 			pCount.value = count;
 			var side = sideSelect.value;
 			var geo = mainCell.geometry;
-			var cells = [];
+			var horizontal = side == 'top' || side == 'bottom';
+
+			// New points go into the gaps between the existing points on the
+			// edge - an even spread lands exactly on the default constraints
+			// of most shapes where identical points are invisible and then
+			// removed as duplicates on apply
+			var fractions = [0, 1];
+
+			for (var id in editingGraph.model.cells)
+			{
+				var cp = editingGraph.model.cells[id];
+
+				if (!cp.cp) continue;
+
+				var constraint = getConstraintFromCPoint(cp);
+
+				if ((side == 'left' && constraint.x == 0) ||
+					(side == 'right' && constraint.x == 1) ||
+					(side == 'top' && constraint.y == 0) ||
+					(side == 'bottom' && constraint.y == 1))
+				{
+					// Style points can carry non-numeric or out of range
+					// values so invalid fractions are ignored
+					var f = parseFloat(horizontal? constraint.x : constraint.y);
+
+					if (isFinite(f) && f > 0 && f < 1)
+					{
+						fractions.push(f);
+					}
+				}
+			}
+
+			fractions.sort(function(a, b)
+			{
+				return a - b;
+			});
+
+			var gaps = [];
+
+			for (var i = 1; i < fractions.length; i++)
+			{
+				if (fractions[i] > fractions[i - 1])
+				{
+					gaps.push({start: fractions[i - 1],
+						len: fractions[i] - fractions[i - 1], count: 0});
+				}
+			}
 
 			for (var i = 0; i < count; i++)
 			{
-				var x, y;
+				var best = gaps[0];
 
-				switch(side)
+				for (var j = 1; j < gaps.length; j++)
 				{
-					case 'left':
-						x = geo.x;
-						y = geo.y + (i + 1) * geo.height / (count + 1);
-						break;
-					case 'right':
-						x = geo.x + geo.width;
-						y = geo.y + (i + 1) * geo.height / (count + 1);
-						break;
-					case 'top':
-						x = geo.x + (i + 1) * geo.width / (count + 1);
-						y = geo.y;
-						break;
-					case 'bottom':
-						x = geo.x + (i + 1) * geo.width / (count + 1);
-						y = geo.y + geo.height;
-						break;
+					if (gaps[j].len / (gaps[j].count + 1) >
+						best.len / (best.count + 1))
+					{
+						best = gaps[j];
+					}
 				}
 
-				cells.push(createCPoint(x - CP_HLF_SIZE, y - CP_HLF_SIZE));
+				best.count++;
+			}
+
+			var cells = [];
+
+			for (var i = 0; i < gaps.length; i++)
+			{
+				for (var j = 1; j <= gaps[i].count; j++)
+				{
+					var f = parseFloat((gaps[i].start +
+						j * gaps[i].len / (gaps[i].count + 1)).toFixed(6));
+					var fx = horizontal? f : (side == 'left'? 0 : 1);
+					var fy = horizontal? (side == 'top'? 0 : 1) : f;
+
+					cells.push(createCPoint(geo.x + fx * geo.width - CP_HLF_SIZE,
+						geo.y + fy * geo.height - CP_HLF_SIZE,
+						new mxConnectionConstraint(new mxPoint(fx, fy), false)));
+				}
 			}
 
 			editingGraph.setSelectionCells(cells);
@@ -19266,11 +20252,15 @@ var ConnectionPointsDialog = function(editorUi, cell)
 
 			var dx = parseInt(dxInput.value) || 0;
 			var dy = parseInt(dyInput.value) || 0;
-			var constObj = new mxConnectionConstraint(new mxPoint(parseFloat((x / 100).toFixed(6)),
-				parseFloat((y / 100).toFixed(6))), false, null, dx, dy);
-			var cp = editingGraph.getConnectionPoint(state, constObj);
-
 			var cell = editingGraph.getSelectionCell();
+
+			// Points on the shape outline keep following it when their
+			// numbers are edited, dragged points have become fixed points
+			var perimeter = (cell != null && cell.constObj != null) ?
+				cell.constObj.perimeter : false;
+			var constObj = new mxConnectionConstraint(new mxPoint(parseFloat((x / 100).toFixed(6)),
+				parseFloat((y / 100).toFixed(6))), perimeter, null, dx, dy);
+			var cp = editingGraph.getConnectionPoint(state, constObj);
 
 			if (cell != null)
 			{
@@ -19288,7 +20278,12 @@ var ConnectionPointsDialog = function(editorUi, cell)
 		{
 			if (cp.constObj)
 			{
-				return {x: cp.constObj.point.x, y: cp.constObj.point.y, dx: cp.constObj.dx, dy: cp.constObj.dy};
+				// The perimeter flag must survive the round trip or default
+				// points that are projected onto the outline, eg. the sloped
+				// sides of a trapezoid, end up on the bounding box after an
+				// apply without any changes [jgraph/drawio#4821]
+				return {x: cp.constObj.point.x, y: cp.constObj.point.y,
+					perimeter: cp.constObj.perimeter, dx: cp.constObj.dx, dy: cp.constObj.dy};
 			}
 
 			// Two decimal places (mxUtils.format) are not enough precision as
@@ -19319,7 +20314,7 @@ var ConnectionPointsDialog = function(editorUi, cell)
 				y = 1;
 			}
 
-			return {x: x, y: y, dx: parseInt(dx), dy: parseInt(dy)};
+			return {x: x, y: y, perimeter: false, dx: parseInt(dx), dy: parseInt(dy)};
 		};
 
 		function fillCPointProp(evt)
@@ -19369,6 +20364,25 @@ var ConnectionPointsDialog = function(editorUi, cell)
 		mxEvent.addListener(dxInput, 'change', applyPointProp);
 		mxEvent.addListener(dyInput, 'change', applyPointProp);
 
+		// Groups and other non-connectable cells never show their own
+		// connection points in the editor so edits are a silent no-op
+		// unless the cell is also made connectable [jgraph/drawio#5733]
+		var initialConnectable = editorUi.editor.graph.isCellConnectable(cell);
+		var connectableCb = document.createElement('input');
+		connectableCb.setAttribute('type', 'checkbox');
+		connectableCb.style.verticalAlign = 'middle';
+		connectableCb.style.marginRight = '6px';
+		connectableCb.checked = initialConnectable;
+
+		function applyConnectable()
+		{
+			if (connectableCb.checked != initialConnectable)
+			{
+				editorUi.editor.graph.setCellStyles('connectable',
+					(connectableCb.checked) ? '1' : '0', [cell]);
+			}
+		};
+
 		var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 		{
 			destroy();
@@ -19376,7 +20390,7 @@ var ConnectionPointsDialog = function(editorUi, cell)
 		});
 
 		cancelBtn.className = 'geBtn';
-		
+
 		var applyBtn = mxUtils.button(mxResources.get('apply'), function()
 		{
 			var cells = editingGraph.model.cells, points = [], constraints = [];
@@ -19390,35 +20404,77 @@ var ConnectionPointsDialog = function(editorUi, cell)
 				constraints.push(getConstraintFromCPoint(cp));
 			}
 
-			//Find and remove identical points
-			constraints.sort(function(a, b) 
+			// Returns the location of a point on the shape in the editor
+			function isSameLocation(a, b)
 			{
-				return (a.x != b.x) ? a.x - b.x : ((a.y != b.y) ? a.y - b.y : 
-						((a.dx != b.dx) ? a.dx - b.dx : a.dy - b.dy)); //Sort based on x then y, dx and dy
+				var p1 = editingGraph.getConnectionPoint(state, new mxConnectionConstraint(
+					new mxPoint(a.x, a.y), a.perimeter, null, a.dx, a.dy));
+				var p2 = editingGraph.getConnectionPoint(state, new mxConnectionConstraint(
+					new mxPoint(b.x, b.y), b.perimeter, null, b.dx, b.dy));
+
+				return p1.x == p2.x && p1.y == p2.y;
+			};
+
+			// Sorts by x, y, dx, dy and perimeter so identical points are
+			// adjacent with the perimeter point first
+			constraints.sort(function(a, b)
+			{
+				return (a.x != b.x) ? a.x - b.x : ((a.y != b.y) ? a.y - b.y :
+					((a.dx != b.dx) ? a.dx - b.dx : ((a.dy != b.dy) ? a.dy - b.dy :
+					(b.perimeter ? 1 : 0) - (a.perimeter ? 1 : 0))));
 			});
 
 			for (var i = 0; i < constraints.length; i++)
 			{
-				if (i > 0 && constraints[i].x == constraints[i - 1].x && constraints[i].y == constraints[i - 1].y 
-						  && constraints[i].dx == constraints[i - 1].dx && constraints[i].dy == constraints[i - 1].dy)
+				var c = constraints[i];
+
+				// Skips identical points - equal coordinates with a different
+				// perimeter flag are only identical where the outline is the
+				// bounding box, so the point that follows the outline is kept
+				if (i > 0 && c.x == constraints[i - 1].x && c.y == constraints[i - 1].y &&
+					c.dx == constraints[i - 1].dx && c.dy == constraints[i - 1].dy &&
+					(c.perimeter == constraints[i - 1].perimeter ||
+					isSameLocation(c, constraints[i - 1])))
 				{
-					continue; //Skip this identical point
+					continue;
 				}
 
-				points.push('[' + constraints[i].x + ',' + constraints[i].y + ',0,' + 
-					constraints[i].dx + ',' + constraints[i].dy + ']');
+				points.push('[' + c.x + ',' + c.y + ',' + ((c.perimeter) ? '1' : '0') +
+					',' + c.dx + ',' + c.dy + ']');
 			}
 
-			editorUi.editor.graph.setCellStyles('points', '[' + points.join(',') + ']', [cell]);
+			var editorGraph = editorUi.editor.graph;
+			editorGraph.getModel().beginUpdate();
+			try
+			{
+				editorGraph.setCellStyles('points', '[' + points.join(',') + ']', [cell]);
+				applyConnectable();
+			}
+			finally
+			{
+				editorGraph.getModel().endUpdate();
+			}
+
 			destroy();
 			editorUi.hideDialog();
 		});
-		
+
 		applyBtn.className = 'geBtn gePrimaryBtn';
-		
+
 		var resetBtn = mxUtils.button(mxResources.get('reset'), function()
 		{
-			editorUi.editor.graph.setCellStyles('points', null, [cell]);
+			var editorGraph = editorUi.editor.graph;
+			editorGraph.getModel().beginUpdate();
+			try
+			{
+				editorGraph.setCellStyles('points', null, [cell]);
+				applyConnectable();
+			}
+			finally
+			{
+				editorGraph.getModel().endUpdate();
+			}
+
 			destroy();
 			editorUi.hideDialog();
 		});
@@ -19435,6 +20491,13 @@ var ConnectionPointsDialog = function(editorUi, cell)
 			buttons.appendChild(editorUi.createHelpIcon(
 				'https://www.drawio.com/doc/faq/shape-connection-points-customise'));
 		}
+
+		var connectableLabel = document.createElement('label');
+		connectableLabel.style.cssFloat = 'left';
+		connectableLabel.style.marginTop = '8px';
+		connectableLabel.appendChild(connectableCb);
+		mxUtils.write(connectableLabel, mxResources.get('connectable', null, 'Connectable'));
+		buttons.appendChild(connectableLabel);
 
 		if (editorUi.editor.cancelFirst)
 		{

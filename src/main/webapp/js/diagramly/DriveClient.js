@@ -648,7 +648,7 @@ DriveClient.prototype.authorizeStep2 = function(state, immediate, success, error
 			{
 				//state is used to identify which app/domain is used
 				var req = new mxXmlRequest(this.redirectUri + '?state=' + encodeURIComponent('cId=' + this.clientId +
-					'&domain=' + window.location.host + '&token=' + state) + '&userId=' + this.userId, null, 'GET');
+					'&domain=' + window.location.host + '&token=' + state + this.getRedirectPathState()) + '&userId=' + this.userId, null, 'GET');
 				
 				req.send(mxUtils.bind(this, function(req)
 				{
@@ -699,7 +699,7 @@ DriveClient.prototype.authorizeStep2 = function(state, immediate, success, error
 						(remember? '&access_type=offline&prompt=consent%20select_account' : '') + //Ask for consent again to get a new refresh token
 						'&scope=' + encodeURIComponent(this.scopes.join(' ')) +
 						'&state=' + encodeURIComponent('cId=' + this.clientId + '&domain=' + window.location.host + '&token=' + state + //To identify which app/domain is used
-						(this.sameWinRedirectUrl? '&redirect=' + this.sameWinRedirectUrl : '')); 
+						this.getRedirectPathState() + (this.sameWinRedirectUrl? '&redirect=' + this.sameWinRedirectUrl : ''));
 				
 				if (this.sameWinAuthMode)
 				{
@@ -1100,6 +1100,34 @@ DriveClient.prototype.isGoogleRealtimeMimeType = function(mimeType)
 };
 
 /**
+ * Returns the reason of the Drive API error in the response body of the
+ * given request, or null if the body carries no such error.
+ */
+DriveClient.prototype.getErrorReason = function(req)
+{
+	var reason = null;
+
+	try
+	{
+		var obj = JSON.parse(req.getText());
+		var data = (obj != null && obj.error != null) ? ((obj.error.errors != null) ?
+			obj.error.errors : obj.error.data) : null;
+
+		if (data != null && data.length > 0 && data[0] != null &&
+			typeof data[0].reason == 'string')
+		{
+			reason = data[0].reason;
+		}
+	}
+	catch (e)
+	{
+		// ignore
+	}
+
+	return reason;
+};
+
+/**
  * Checks if the client is authorized and calls the next step. The ignoreMime argument is
  * used for import via getFile. Default is false. The optional
  * readLibrary argument is used for reading libraries. Default is false.
@@ -1254,7 +1282,16 @@ DriveClient.prototype.getXmlFile = function(resp, success, error, ignoreMime, re
 					}
 				}), mxUtils.bind(this, function(e, req)
 				{
-					if (retryCount < this.maxRetries && req != null && req.getStatus() == 403)
+					// A 403 is retried for rate limits only. One that names
+					// another reason (eg. cannotDownloadRevision for a revision
+					// the user may not download) is final and reaches the
+					// caller at once instead of after five backoff rounds; a
+					// body without a reason keeps the retry
+					var reason = (req != null && req.getStatus() == 403) ?
+						this.getErrorReason(req) : null;
+
+					if (retryCount < this.maxRetries && req != null && req.getStatus() == 403 &&
+						(reason == null || /ratelimit/i.test(reason)))
 					{
 						retryCount++;
 						var jitter = 1 + 0.1 * (Math.random() - 0.5);

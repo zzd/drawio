@@ -1369,6 +1369,7 @@ Sidebar.prototype.matchTermEntries = function(term, reverseMap)
 	var prefix = [];
 	var substring = [];
 	var phonetic = [];
+	var english = null;
 
 	var found = this.taglist[term];
 
@@ -1380,7 +1381,7 @@ Sidebar.prototype.matchTermEntries = function(term, reverseMap)
 	// Checks English translation for localized search terms
 	if (reverseMap != null)
 	{
-		var english = reverseMap[term];
+		english = reverseMap[term];
 
 		if (english != null && english !== term)
 		{
@@ -1397,6 +1398,10 @@ Sidebar.prototype.matchTermEntries = function(term, reverseMap)
 				}
 			}
 		}
+		else
+		{
+			english = null;
+		}
 	}
 
 	// Adds partial matches on tags, eg. for searching parts of shape
@@ -1410,6 +1415,14 @@ Sidebar.prototype.matchTermEntries = function(term, reverseMap)
 
 	this.matchPartialEntries(term, seen, prefix, substring);
 
+	// Tags may differ from the resource key in inflection, eg. the
+	// mockups resource key resolves to the singular mockup tag, so
+	// partial and Soundex matching must also run on the translation
+	if (english != null)
+	{
+		this.matchPartialEntries(english, seen, prefix, substring);
+	}
+
 	var normalized = Editor.soundex(term.replace(/\.*\d*$/, ''));
 
 	if (normalized.length > 0 && normalized !== term)
@@ -1419,6 +1432,30 @@ Sidebar.prototype.matchTermEntries = function(term, reverseMap)
 		if (found != null)
 		{
 			phonetic = found.entries.slice();
+		}
+	}
+
+	// Soundex of the raw term cannot match for non-Latin scripts, so
+	// localized terms rely on the Soundex of the translation
+	if (english != null)
+	{
+		var englishNormalized = Editor.soundex(english.replace(/\.*\d*$/, ''));
+
+		if (englishNormalized.length > 0 && englishNormalized !== english &&
+			englishNormalized !== normalized)
+		{
+			found = this.taglist[englishNormalized];
+
+			if (found != null)
+			{
+				for (var i = 0; i < found.entries.length; i++)
+				{
+					if (mxUtils.indexOf(phonetic, found.entries[i]) < 0)
+					{
+						phonetic.push(found.entries[i]);
+					}
+				}
+			}
 		}
 	}
 
@@ -1507,12 +1544,17 @@ Sidebar.prototype.searchEntries = function(searchTerms, count, page, success, er
 		var reverseMap = this.getResourceReverseMap();
 
 		// Translates multi-word localized names as a whole, eg. "balon kata"
-		// (id) resolves to the callout tag while its single tokens do not
+		// (id) resolves to the callout tag while its single tokens do not.
+		// Soundex covers translations that only match a tag phonetically,
+		// eg. "miundo ya majaribio" (sw) resolves to the mockups resource
+		// key while the tag is the singular mockup
 		if (tmp.length > 1)
 		{
 			var english = reverseMap[searchTerms.toLowerCase().replace(/\s+/g, ' ').trim()];
 
-			if (english != null && !seenTerms[english] && this.taglist[english] != null)
+			if (english != null && !seenTerms[english] &&
+				(this.taglist[english] != null ||
+				this.taglist[Editor.soundex(english.replace(/\.*\d*$/, ''))] != null))
 			{
 				seenTerms[english] = true;
 				tmp.push(english);
@@ -2991,11 +3033,16 @@ Sidebar.prototype.addUmlPalette = function(expand)
 	var divider = new mxCell('', new mxGeometry(0, 0, 40, 8), 'line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;');
 	divider.vertex = true;
 
-	var sequenceEdgeStyle = 'newEdgeStyle={"curved":0,"rounded":0};';
+	// Messages drawn from a lifeline or an activation bar are routed by
+	// mxEdgeStyle.SequenceMessage, which keeps them horizontal at their own y
+	// (libavoidRouting=0 keeps a current edge style with auto-routing, which
+	// would otherwise be pasted onto new and inserted edges, from routing them)
+	var sequenceEdgeStyle = 'edgeStyle=sequenceEdgeStyle;libavoidRouting=0;curved=0;rounded=0;';
+	var sequenceNewEdgeStyle = 'newEdgeStyle={"edgeStyle":"sequenceEdgeStyle","libavoidRouting":0,"curved":0,"rounded":0};';
 	var lifelineStyle = 'shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;' +
-		'collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;' + sequenceEdgeStyle;
+		'collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;' + sequenceNewEdgeStyle;
 	var activationStyle = 'html=1;points=[[0,0,0,0,5],[0,1,0,0,-5],[1,0,0,0,5],[1,1,0,0,-5]];perimeter=orthogonalPerimeter;' +
-		'outlineConnect=0;targetShapes=umlLifeline;portConstraint=eastwest;' + sequenceEdgeStyle;
+		'outlineConnect=0;targetShapes=umlLifeline;portConstraint=eastwest;' + sequenceNewEdgeStyle;
 	var hr = '<hr size="1" style="border-style:solid;"/>';
 	
 	// Default tags
@@ -3252,7 +3299,7 @@ Sidebar.prototype.addUmlPalette = function(expand)
 	    	cell.vertex = true;
 	    	
 			var edge = new mxCell('dispatch', new mxGeometry(0, 0, 0, 0), 'html=1;verticalAlign=bottom;startArrow=oval;endArrow=block;' +
-				'startSize=8;curved=0;rounded=0;entryX=0;entryY=0;entryDx=0;entryDy=5;');
+				'startSize=8;' + sequenceEdgeStyle + 'entryX=0;entryY=0;entryDx=0;entryDy=5;');
 			edge.geometry.setTerminalPoint(new mxPoint(-70, 5), true);
 			edge.geometry.relative = true;
 			edge.edge = true;
@@ -3267,7 +3314,7 @@ Sidebar.prototype.addUmlPalette = function(expand)
 	    	cell.vertex = true;
 	    	
 			var edge1 = new mxCell('dispatch', new mxGeometry(0, 0, 0, 0), 'html=1;verticalAlign=bottom;endArrow=block;' +
-				'curved=0;rounded=0;entryX=0;entryY=0;entryDx=0;entryDy=5;');
+				sequenceEdgeStyle + 'entryX=0;entryY=0;entryDx=0;entryDy=5;');
 			edge1.geometry.setTerminalPoint(new mxPoint(-70, 5), true);
 			edge1.geometry.relative = true;
 			edge1.edge = true;
@@ -3275,7 +3322,7 @@ Sidebar.prototype.addUmlPalette = function(expand)
 			cell.insertEdge(edge1, false);
 			
 			var edge2 = new mxCell('return', new mxGeometry(0, 0, 0, 0), 'html=1;verticalAlign=bottom;endArrow=open;dashed=1;' +
-				'endSize=8;curved=0;rounded=0;exitX=0;exitY=1;exitDx=0;exitDy=-5;');
+				'endSize=8;' + sequenceEdgeStyle + 'exitX=0;exitY=1;exitDx=0;exitDy=-5;');
 			edge2.geometry.setTerminalPoint(new mxPoint(-70, 75), false);
 			edge2.geometry.relative = true;
 			edge2.edge = true;
@@ -3289,10 +3336,12 @@ Sidebar.prototype.addUmlPalette = function(expand)
 	    	var cell = new mxCell('', new mxGeometry(-5, 20, 10, 40), activationStyle);
 	    	cell.vertex = true;
 	
+			// A self-call leaves at the y of the first waypoint and returns at
+			// the y of the second (see mxEdgeStyle.SequenceMessage)
 			var edge = new mxCell('self call', new mxGeometry(0, 0, 0, 0), 'html=1;align=left;spacingLeft=2;endArrow=block;' +
-				'rounded=0;edgeStyle=orthogonalEdgeStyle;curved=0;rounded=0;');
+				sequenceEdgeStyle);
 			edge.geometry.setTerminalPoint(new mxPoint(0, 0), true);
-			edge.geometry.points = [new mxPoint(30, 30)];
+			edge.geometry.points = [new mxPoint(30, 0), new mxPoint(30, 30)];
 			edge.geometry.relative = true;
 			edge.edge = true;
 			
@@ -3306,7 +3355,7 @@ Sidebar.prototype.addUmlPalette = function(expand)
 			cell.vertex = true;
 
 			var edge1 = new mxCell('callback', new mxGeometry(0, 0, 0, 0), 'html=1;verticalAlign=bottom;endArrow=block;' +
-				'curved=0;rounded=0;entryX=1;entryY=0;entryDx=0;entryDy=5;');
+				sequenceEdgeStyle + 'entryX=1;entryY=0;entryDx=0;entryDy=5;');
 			edge1.geometry.setTerminalPoint(new mxPoint(80, 5), true);
 			edge1.geometry.relative = true;
 			edge1.edge = true;
@@ -3314,7 +3363,7 @@ Sidebar.prototype.addUmlPalette = function(expand)
 			cell.insertEdge(edge1, false);
 
 			var edge2 = new mxCell('return', new mxGeometry(0, 0, 0, 0), 'html=1;verticalAlign=bottom;endArrow=open;dashed=1;' +
-				'endSize=8;curved=0;rounded=0;exitX=1;exitY=1;exitDx=0;exitDy=-5;');
+				'endSize=8;' + sequenceEdgeStyle + 'exitX=1;exitY=1;exitDx=0;exitDy=-5;');
 			edge2.geometry.setTerminalPoint(new mxPoint(80, 75), false);
 			edge2.geometry.relative = true;
 			edge2.edge = true;
@@ -3326,15 +3375,15 @@ Sidebar.prototype.addUmlPalette = function(expand)
 		}),
 		this.createVertexTemplateEntry(activationStyle, 10, 80, '', 'Activation Bar', null, null, 'uml sequence activation bar'),
 	 	this.createEdgeTemplateEntry('html=1;verticalAlign=bottom;startArrow=oval;startFill=1;endArrow=block;startSize=8;' +
-		 	'curved=0;rounded=0;', 60, 0, 'dispatch', 'Found Message 1', null, 'uml sequence message call invoke dispatch'),
+		 	sequenceEdgeStyle, 60, 0, 'dispatch', 'Found Message 1', null, 'uml sequence message call invoke dispatch'),
 	 	this.createEdgeTemplateEntry('html=1;verticalAlign=bottom;startArrow=circle;startFill=1;endArrow=open;startSize=6;endSize=8;' +
-			 'curved=0;rounded=0;', 80, 0, 'dispatch', 'Found Message 2', null, 'uml sequence message call invoke dispatch'),
-	 	this.createEdgeTemplateEntry('html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;',
+			 sequenceEdgeStyle, 80, 0, 'dispatch', 'Found Message 2', null, 'uml sequence message call invoke dispatch'),
+	 	this.createEdgeTemplateEntry('html=1;verticalAlign=bottom;endArrow=block;' + sequenceEdgeStyle,
 			80, 0, 'dispatch', 'Message', null, 'uml sequence message call invoke dispatch'),
 		this.addEntry('uml sequence return message', function()
 		{
 			var edge = new mxCell('return', new mxGeometry(0, 0, 0, 0), 'html=1;verticalAlign=bottom;' +
-				'endArrow=open;dashed=1;endSize=8;curved=0;rounded=0;');
+				'endArrow=open;dashed=1;endSize=8;' + sequenceEdgeStyle);
 			edge.geometry.setTerminalPoint(new mxPoint(80, 0), true);
 			edge.geometry.setTerminalPoint(new mxPoint(0, 0), false);
 			edge.geometry.relative = true;

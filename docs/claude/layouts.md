@@ -27,6 +27,17 @@ edge mode 'auto', radial/organic straight spokes. The conservative
 CSV-reserved names incl. `organic` and the `CSV_ELK_LAYOUTS` keys keep their
 own branches and never reach the resolver).
 
+The desktop CLI's `--normalize` shares the layout plumbing without being a
+layout: `Graph.normalizeModel` (grapheditor) repairs the model — edges to the
+nearest common ancestor of their terminals (`mxGraphModel.updateEdgeParents`),
+the standard relative geometry for an edge written without one, and a
+grow-only resize for a container that would clip its children. In the export
+path (`export.js`) it is pushed as a plain `execute(parent)` step in front of
+the resolved layouts, so `--normalize --layout <name>` normalizes first and
+lays out second; on open (`ElectronApp.loadArgs`) it runs before
+`executeLayoutSpec`. A layout must never rewrite the cell hierarchy itself —
+that is what this flag is for.
+
 Every user-facing layout run (`executeLayoutSpec`, `ElkLayout.run`,
 `LibavoidRouting.run`, the Parallels menu item, custom layout dialog) records
 a custom-layout array on `ui.lastLayoutSpec`, which Arrange > Layout >
@@ -65,16 +76,25 @@ the laid-out XML.
 
 ## Layout runs retarget a selected layout container
 
-With exactly one vertex selected whose style carries a replaceable
-`childLayout` (not the structural `tableLayout`/`stackLayout`/`rack`), the
-user-gesture layout runs (`ElkLayout.run`, `LibavoidRouting.run`, the
-Parallels and circle menu items, the custom layout dialog, and
-`executeLayoutSpec` ONLY with its `retargetSelection` flag — passed by Run
-Last Layout; the programmatic callers (embed layout action, `#create`,
-desktop `--layout`) stay whole-page so a transient selection can't hijack a
-host-triggered run) rewrite the container's `childLayout` to that spec instead
-of running one-shot — `EditorUi.getSelectedLayoutContainer` +
-`EditorUi.setContainerChildLayout` (diagramly/EditorUi.js). The style write
+When every selected VERTEX carries a replaceable `childLayout` (not the
+structural `tableLayout`/`stackLayout`/`rack`; selected edges are ignored, any
+other selected vertex keeps the legacy one-shot run — Sept 2026, before that
+exactly one selected cell), the user-gesture layout runs (`ElkLayout.run`,
+`LibavoidRouting.run`, the Parallels and circle menu items, the custom layout
+dialog, and `executeLayoutSpec` ONLY with its `retargetSelection` flag —
+passed by Run Last Layout; the programmatic callers (embed layout action,
+`#create`, desktop `--layout`) stay whole-page so a transient selection can't
+hijack a host-triggered run) rewrite EACH container's `childLayout` to that
+spec in one undoable edit instead of running one-shot —
+`EditorUi.getSelectedLayoutContainers` +
+`EditorUi.applyLayoutToSelectedContainers` (returns false when nothing was
+retargeted so the caller runs its one-shot path) +
+`EditorUi.setContainerChildLayout` (diagramly/EditorUi.js). With several
+containers or Select All the old code ran a one-shot layout INSIDE the first
+selected container, which its own live layout immediately reverted ("it
+rearranges, then snaps back" — Kym, 2026-08-18). Because the layout can be
+swapped this way, the Advanced sidebar containers are all labelled
+"Layout Container" rather than by their initial layout. The style write
 triggers the layout manager, so the new layout runs in the same undoable edit
 (mxStyleChange → `addCellsWithLayout(cell)` includes the cell's own layout);
 an unchanged value produces no model change, so the helper re-runs via
@@ -170,7 +190,42 @@ transparentBounds is toggled off. The sidebar seed cells are authored at the
 exact positions ELK computes — the layout can't run for the palette thumbnail,
 and a drop then converges without moving anything; with the anchor only the
 RELATIVE positions must match ELK's output. When ELK output changes
-(spacing/defaults), re-measure and update those seeds.
+(spacing/defaults), re-measure and update those seeds (headless: a stub-graph
+run of the vendored bundle as in drawio-elk's test/verify-bridge-transparent.mjs).
+The flow seeds list the two tied Task siblings in the order the model-order
+tie-break places them (first on top / left, see below).
+
+## Flow containers keep model order (Sept 2026)
+
+A shape dropped onto a branch used to land in an arbitrary slot: layered
+crossing minimization has no preference between tied siblings, and the
+drawio-elk port picked whichever randomized try came first (the last-added
+node ended on top). The flow containers now set
+`elk.layered.considerModelOrder.strategy=NODES_AND_EDGES`
+(`Menus.flowModelOrder`, in `Menus.layoutContainers` and as an absent-only
+elkLayered default in `setContainerChildLayout`): model order — the mxGraph
+child order, ie. insertion order — breaks ties AFTER crossing minimization and
+never adds crossings, the layered counterpart of the tree containers'
+geometry-based sibling order. Two drawio-elk fixes make the option effective
+(both repos uncommitted as of 2026-09-11): `LayerSweepCrossingMinimizer` now
+sets `FIRST_TRY_WITH_INITIAL_ORDER` and keeps the SortByInputModel order for
+the first try like upstream (before, every try was randomized so the option
+was inert — `elkjs` honoured it, the port did not), and the bridge's
+`applyMermaidElkPolicy` no longer strips an EXPLICIT
+`considerModelOrder`/`forceNodeModelOrder` option (it still drops the
+DEFAULTS' pins). drawio-mermaid's `PREFER_EDGES` for wide fan-outs therefore
+takes effect too — its suite passed unchanged. Rebuild via `ant bundles` after
+committing drawio-elk (the bundle header carries the sibling commit).
+
+**Hover arrows in flow containers add a child.** All Insert > Layout and
+Advanced containers carry `containerType=tree` for the Trees.js subtree
+delete/move semantics, which also brought its arrow rules: arrow along the
+tree direction = child, opposite = insert parent, perpendicular = sibling
+(connected from the hovered cell's parent — Kym read that as "added to the
+previous shape"). `isFlowContainer` in Trees.js' `connectVertex` override
+routes every arrow of an elkLayered (or legacy `flowLayout`) container to
+`addChild`; tree, radial and organic containers keep the tree rules, and the
+keyboard (Tab child / Enter sibling) is unchanged.
 
 ## Sync by default, async fallback
 
@@ -293,6 +348,37 @@ side center. Opt out per run with the bare config key `nonTreeEdges:'elk'`
 (legacy behavior, same plumbing as `sharedStems`). Locked by
 drawio-elk's verify-bridge-nontree-edges.mjs (classification, fallback
 styling, claimed-path reset skip, convergence, placement parity, opt-out).
+
+## mrtree sibling order follows geometry (August 2026)
+
+mrtree used to order a tree parent's children by the EDGES' model (z-/XML)
+order — `elk.mrtree.weighting: MODEL_ORDER` keeps the treeify encounter
+order, and the adapter emits edges in model child order — so re-creating or
+re-fronting a connector moved its child to the end [jgraph/drawio#5454],
+and the user's on-canvas placement was ignored entirely. The bridge now
+ranks every tree parent's children by their current cross-axis model
+position (x for DOWN/UP runs, y for RIGHT/LEFT; ranks map to ascending
+coordinates in all four directions) and stamps the ranks as per-node
+`elk.mrtree.positionConstraint` values with `weighting=CONSTRAINT` on every
+level container (`ElkLayout.stampSiblingOrderConstraints`, fed by the same
+`_walkTreeStructure` treeify mirror as the non-tree extraction, so it works
+on both `nonTreeEdges` paths). Ranks are LOCAL per sibling group (the
+NodeOrderer resolves constraints per parent recursion — a global rank would
+misplace groups smaller than the rank), centers are model-derived incl. the
+transparentBounds box, and coordinate TIES keep their relative model order —
+so degenerate inputs (fresh imports with everything at one point) reproduce
+the legacy result, converged containers re-run to empty edits, and dragging
+a child to a new slot re-ranks it on the next run (drop-position adoption in
+live tree containers). Opt out per run with the bare config key
+`siblingOrder:'model'` (same plumbing as `sharedStems`, recognized by
+`Graph.elkConfigToOptions`/`elkOptionsToConfig`, documented in drawusaurus
+json-layout-specification.md); an explicit `elk.mrtree.weighting` in the
+spec's config also skips the stamping — the caller owns ordering then. The
+legacy `mxCompactTreeLayout` paths (Legacy Layouts submenu, CSV
+verticaltree/horizontaltree, Trees.js containers) are untouched and keep
+edge-order semantics. Locked by drawio-elk's
+verify-bridge-sibling-order.mjs (four directions, ties, both opt-outs,
+group-local ranks/contiguity, fan-in, convergence, drag re-rank).
 
 ## Per-edge corner picks survive manager re-runs (July 2026)
 

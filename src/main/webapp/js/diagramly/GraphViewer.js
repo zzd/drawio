@@ -2089,7 +2089,8 @@ GraphViewer.prototype.disableButton = function(token, tooltip)
 {
 	var def = this.graphConfig['toolbar-buttons']? this.graphConfig['toolbar-buttons'][token] : null;
 			
-	if (def != null)
+	// Buttons that are defined but not listed in the toolbar have no element
+	if (def != null && def.elem != null)
 	{
 		mxUtils.setOpacity(def.elem, 30);
 		mxEvent.removeListener(def.elem, 'click', def.handler);
@@ -2795,13 +2796,13 @@ GraphViewer.getCss = function()
 		'    background: light-dark(#ffffcc, ' + GraphViewer.darkBackgroundColor + ');',
 		'    border-style: solid;',
 		'    border-width: 1px;',
-		'    border-color: black;',
+		'    border-color: light-dark(#000000, #565656);',
 		'    font-family: ' + GraphViewer.cssFontFamily + ';',
 		'    font-size: 8pt;',
 		'    position: absolute;',
 		'    cursor: default;',
 		'    padding: 4px;',
-		'    color: black;',
+		'    color: light-dark(#000000, #c0c0c0);',
 		'}',
 		'td.mxPopupMenuIcon div {',
 		'    width: 16px;',
