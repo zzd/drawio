@@ -56,18 +56,16 @@ mxGraphSelectionModel.prototype.constructor = mxGraphSelectionModel;
 /**
  * Variable: doneResource
  * 
- * Specifies the resource key for the status message after a long operation.
- * If the resource for this key does not exist then the value is used as
- * the status message. Default is 'done'.
+ * Not used. Was the resource key for the status bar text (window.status)
+ * after a long operation. Default is 'done'.
  */
 mxGraphSelectionModel.prototype.doneResource = (mxClient.language != 'none') ? 'done' : '';
 
 /**
  * Variable: updatingSelectionResource
  *
- * Specifies the resource key for the status message while the selection is
- * being updated. If the resource for this key does not exist then the
- * value is used as the status message. Default is 'updatingSelection'.
+ * Not used. Was the resource key for the status bar text (window.status)
+ * while the selection is being updated. Default is 'updatingSelection'.
  */
 mxGraphSelectionModel.prototype.updatingSelectionResource = (mxClient.language != 'none') ? 'updatingSelection' : '';
 
@@ -85,6 +83,14 @@ mxGraphSelectionModel.prototype.graph = null;
  * Default is false.
  */
 mxGraphSelectionModel.prototype.singleSelection = false;
+
+/**
+ * Variable: lookup
+ *
+ * Counts the cells in <cells> for <isSelected>. Holds the counts in an
+ * <mxDictionary> and the array and length they are for. See <getLookup>.
+ */
+mxGraphSelectionModel.prototype.lookup = null;
 
 /**
  * Function: isSingleSelection
@@ -120,10 +126,54 @@ mxGraphSelectionModel.prototype.isSelected = function(cell)
 {
 	if (cell != null)
 	{
-		return mxUtils.indexOf(this.cells, cell) >= 0;
+		return this.getLookup().counts.get(cell) > 0;
 	}
 	
 	return false;
+};
+
+/**
+ * Function: getLookup
+ *
+ * Returns <lookup> for <cells>. It is created again if <cells> was replaced
+ * or changed in length other than in <cellAdded>, <cellRemoved> and
+ * <cellsRemoved>.
+ */
+mxGraphSelectionModel.prototype.getLookup = function()
+{
+	if (this.lookup == null || this.lookup.cells != this.cells ||
+		this.lookup.length != this.cells.length)
+	{
+		this.lookup = {cells: this.cells, length: 0, counts: new mxDictionary()};
+
+		for (var i = 0; i < this.cells.length; i++)
+		{
+			this.updateLookup(this.cells[i], 1);
+		}
+	}
+
+	return this.lookup;
+};
+
+/**
+ * Function: updateLookup
+ *
+ * Adds the given delta to the count of the given cell in <lookup>.
+ */
+mxGraphSelectionModel.prototype.updateLookup = function(cell, delta)
+{
+	var count = (this.lookup.counts.get(cell) || 0) + delta;
+
+	if (count > 0)
+	{
+		this.lookup.counts.put(cell, count);
+	}
+	else
+	{
+		this.lookup.counts.remove(cell);
+	}
+
+	this.lookup.length += delta;
 };
 
 /**
@@ -352,6 +402,8 @@ mxGraphSelectionModel.prototype.cellAdded = function(cell)
 	if (cell != null &&
 		!this.isSelected(cell))
 	{
+		this.getLookup();
+		this.updateLookup(cell, 1);
 		this.cells.push(cell);
 	}
 };
@@ -374,9 +426,65 @@ mxGraphSelectionModel.prototype.cellRemoved = function(cell)
 		
 		if (index >= 0)
 		{
+			this.getLookup();
+			this.updateLookup(cell, -1);
 			this.cells.splice(index, 1);
 		}
 	}
+};
+
+/**
+ * Variable: cellRemoved
+ *
+ * The default <mxGraphSelectionModel.cellRemoved>. If <cellRemoved> is
+ * replaced in an instance, a subclass or the prototype, <mxSelectionChange>
+ * calls it for each cell instead of <cellsRemoved>.
+ */
+mxGraphSelectionModel.cellRemoved = mxGraphSelectionModel.prototype.cellRemoved;
+
+/**
+ * Function: cellsRemoved
+ *
+ * Inner callback to remove the specified <mxCells> from the selection in
+ * one pass over <cells>. Removes the first occurrence of each cell like
+ * <cellRemoved>. No event is fired in this implementation.
+ *
+ * Parameters:
+ *
+ * cells - Array of <mxCells> to remove from the selection.
+ */
+mxGraphSelectionModel.prototype.cellsRemoved = function(cells)
+{
+	var remove = new mxDictionary();
+	var j = 0;
+
+	for (var i = 0; i < cells.length; i++)
+	{
+		if (cells[i] != null)
+		{
+			remove.put(cells[i], (remove.get(cells[i]) || 0) + 1);
+		}
+	}
+
+	this.getLookup();
+
+	for (var i = 0; i < this.cells.length; i++)
+	{
+		var cell = this.cells[i];
+		var count = remove.get(cell);
+
+		if (count > 0)
+		{
+			remove.put(cell, count - 1);
+			this.updateLookup(cell, -1);
+		}
+		else
+		{
+			this.cells[j++] = cell;
+		}
+	}
+
+	this.cells.length = j;
 };
 
 /**
@@ -403,15 +511,21 @@ function mxSelectionChange(selectionModel, added, removed)
 mxSelectionChange.prototype.execute = function()
 {
 	var t0 = mxLog.enter('mxSelectionChange.execute');
-	window.status = mxResources.get(
-		this.selectionModel.updatingSelectionResource) ||
-		this.selectionModel.updatingSelectionResource;
 
 	if (this.removed != null)
 	{
-		for (var i = 0; i < this.removed.length; i++)
+		// Removes many cells in one pass if cellRemoved was not replaced
+		if (this.removed.length > 1 && this.selectionModel.cellRemoved ==
+			mxGraphSelectionModel.cellRemoved)
 		{
-			this.selectionModel.cellRemoved(this.removed[i]);
+			this.selectionModel.cellsRemoved(this.removed);
+		}
+		else
+		{
+			for (var i = 0; i < this.removed.length; i++)
+			{
+				this.selectionModel.cellRemoved(this.removed[i]);
+			}
 		}
 	}
 
@@ -426,9 +540,6 @@ mxSelectionChange.prototype.execute = function()
 	var tmp = this.added;
 	this.added = this.removed;
 	this.removed = tmp;
-
-	window.status = mxResources.get(this.selectionModel.doneResource) ||
-		this.selectionModel.doneResource;
 	mxLog.leave('mxSelectionChange.execute', t0);
 	
 	this.selectionModel.fireEvent(new mxEventObject(mxEvent.CHANGE,

@@ -362,6 +362,13 @@ mxPrintPreview.prototype.targetWindow = null;
 mxPrintPreview.prototype.pageCount = 0;
 
 /**
+ * Variable: lastPageDiv
+ * 
+ * Holds the last page DIV that was added to the preview.
+ */
+mxPrintPreview.prototype.lastPageDiv = null;
+
+/**
  * Variable: clipping
  * 
  * Specifies is clipping should be used to avoid creating too many cell states
@@ -585,8 +592,14 @@ mxPrintPreview.prototype.open = function(css, targetWindow, forcePageBreaks, kee
 		{
 			isNewWindow = true;
 			this.wnd = window.open();
+
+			// Popup was blocked, callers check for a null window
+			if (this.wnd == null)
+			{
+				return null;
+			}
 		}
-		
+
 		var doc = this.wnd.document;
 		
 		if (isNewWindow)
@@ -669,6 +682,18 @@ mxPrintPreview.prototype.open = function(css, targetWindow, forcePageBreaks, kee
 				div.style.height = pageFormat.height + 'px';
 			}
 			
+			// Exempts only the last page from the forced page break. The
+			// :last-of-type rule in defaultCss misses the last page if other
+			// DIVs are appended to the body later, eg. the LoadingComplete
+			// marker in the export renderer [jgraph/drawio-dev#674]
+			if (this.lastPageDiv != null)
+			{
+				this.lastPageDiv.style.breakAfter = '';
+			}
+
+			div.style.breakAfter = 'auto';
+			this.lastPageDiv = div;
+
 			doc.body.appendChild(div);
 		});
 		
@@ -705,6 +730,11 @@ mxPrintPreview.prototype.open = function(css, targetWindow, forcePageBreaks, kee
 				div.style.display = 'flex';
 				div.style.alignItems = 'center';
 				div.style.justifyContent = 'center';
+
+				// Adds the page before the graph so that the labels are measured
+				// in the document, which gives no sizes for detached nodes
+				addPage(div, true);
+
 				var clip = new mxRectangle(dx, dy, availableWidth, availableHeight);
 				this.addGraphFragment(-dx, -dy, this.scale, pageNum, div, clip);
 
@@ -713,8 +743,6 @@ mxPrintPreview.prototype.open = function(css, targetWindow, forcePageBreaks, kee
 				{
 					div.setAttribute('id', id);
 				}
-
-				addPage(div, true);
 			}
 		}
 
@@ -944,26 +972,27 @@ mxPrintPreview.prototype.addGraphFragment = function(dx, dy, scale, pageNumber, 
 	var overlayPane = view.getOverlayPane();
 	var realScale = scale;
 
-	if (this.graph.dialect == mxConstants.DIALECT_SVG)
+	view.createSvg();
+	
+	// Uses CSS transform for scaling
+	if (this.useCssTransforms())
 	{
-		view.createSvg();
+		var g = view.getDrawPane().parentNode;
+		g.setAttribute('transformOrigin', '0 0');
+		g.setAttribute('transform', 'scale(' + scale + ',' + scale + ')' +
+			'translate(' + dx + ',' + dy + ')');
 		
-		// Uses CSS transform for scaling
-		if (this.useCssTransforms())
-		{
-			var g = view.getDrawPane().parentNode;
-			g.setAttribute('transformOrigin', '0 0');
-			g.setAttribute('transform', 'scale(' + scale + ',' + scale + ')' +
-				'translate(' + dx + ',' + dy + ')');
-			
-			scale = 1;
-			dx = 0;
-			dy = 0;
-		}
+		scale = 1;
+		dx = 0;
+		dy = 0;
 	}
-	else
+	// Applies the scale and translate to the draw pane in model coordinates,
+	// where the cells are painted in model units (see updateDrawPaneTransform
+	// in mxGraphView, which is not used here as it may have side effects)
+	else if (view.modelCoordinates)
 	{
-		view.createHtml();
+		view.getDrawPane().setAttribute('transform', 'translate(' +
+			(dx * scale) + ',' + (dy * scale) + ') scale(' + scale + ')');
 	}
 	
 	// Disables events on the view

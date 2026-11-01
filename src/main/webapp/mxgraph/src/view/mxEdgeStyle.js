@@ -107,6 +107,13 @@ var mxEdgeStyle =
 		var p0 = pts[0];
 		var pe = pts[pts.length-1];
 
+		// Compares in model units so that the route does not depend on the scale or translate
+		var isLess = function(a, b)
+		{
+			return mxUtils.unscale(a, view.scale, view.translate.x) <
+				mxUtils.unscale(b, view.scale, view.translate.x);
+		};
+
 	 	var isSourceLeft = false;
 	 	
 	 	if (source != null)
@@ -119,7 +126,7 @@ var mxEdgeStyle =
 		 	}
 		 	else if (target != null)
 		 	{
-		 		isSourceLeft = ((pe != null) ? pe.x : target.x + target.width) < ((p0 != null) ? p0.x : source.x);
+		 		isSourceLeft = isLess((pe != null) ? pe.x : target.x + target.width, (p0 != null) ? p0.x : source.x);
 		 	}
 	 	}
 
@@ -156,7 +163,7 @@ var mxEdgeStyle =
 		 	}
 		 	else if (source != null)
 		 	{
-		 		isTargetLeft = ((p0 != null) ? p0.x : source.x + source.width) < ((pe != null) ? pe.x : target.x);
+		 		isTargetLeft = isLess((p0 != null) ? p0.x : source.x + source.width, (pe != null) ? pe.x : target.x);
 		 	}
 	 	}
 		
@@ -203,7 +210,7 @@ var mxEdgeStyle =
 				result.push(new mxPoint(x, y0));
 				result.push(new mxPoint(x, ye));
 			}
-			else if ((dep.x < arr.x) == isSourceLeft)
+			else if (isLess(dep.x, arr.x) == isSourceLeft)
 			{
 				var midY = y0 + (ye - y0) / 2;
 	
@@ -428,7 +435,8 @@ var mxEdgeStyle =
 			var r = Math.min(source.x + source.width,
 							 target.x + target.width);
 	
-			var x = (pt != null) ? pt.x : Math.round(r + (l - r) / 2);
+			var x = (pt != null) ? pt.x : mxEdgeStyle.roundScaled(
+				r + (l - r) / 2, view.scale, view.translate.x);
 	
 			var y1 = view.getRoutingCenterY(source);
 			var y2 = view.getRoutingCenterY(target);
@@ -528,7 +536,8 @@ var mxEdgeStyle =
 				x = pt.x;
 			}
 			
-			var y = (pt != null) ? pt.y : Math.round(b + (t - b) / 2);
+			var y = (pt != null) ? pt.y : mxEdgeStyle.roundScaled(
+				b + (t - b) / 2, view.scale, view.translate.y);
 			
 			if (!mxUtils.contains(target, x, y) &&
 				!mxUtils.contains(source, x, y))
@@ -590,14 +599,18 @@ var mxEdgeStyle =
 	 */
 	SegmentConnector: function(state, sourceScaled, targetScaled, controlHints, result)
 	{
-		// Creates array of all way- and terminalpoints
-		var pts = mxEdgeStyle.scalePointArray(state.absolutePoints, state.view.scale);
-		var source = mxEdgeStyle.scaleCellState(sourceScaled, state.view.scale);
-		var target = mxEdgeStyle.scaleCellState(targetScaled, state.view.scale);
+		// Creates array of all way- and terminalpoints in model units
+		var s = state.view.scale;
+		var tr = state.view.translate;
+		var pts = mxEdgeStyle.scalePointArray(state.absolutePoints, s, tr);
+		var source = mxEdgeStyle.scaleCellState(sourceScaled, s, tr);
+		var target = mxEdgeStyle.scaleCellState(targetScaled, s, tr);
+		var sourceChannel = mxEdgeStyle.getChannelBounds(state.view, sourceScaled, source, s, tr);
+		var targetChannel = mxEdgeStyle.getChannelBounds(state.view, targetScaled, target, s, tr);
 		var tol = 1;
-		
-		// Adds translated unscaled points for precise collision checks
-		var tempPoints = []; 
+
+		// Adds points in model units for precise collision checks
+		var tempPoints = [];
 
 		function addPoint(pt)
 		{
@@ -605,19 +618,22 @@ var mxEdgeStyle =
 		};
 		
 		// Whether the first segment outgoing from the source end is horizontal
-		var lastPushed = (result.length > 0) ? result[0] : null;
+		var lastPushed = (result.length > 0 && result[0] != null) ?
+			new mxPoint(mxUtils.unscale(result[0].x, s, tr.x),
+			mxUtils.unscale(result[0].y, s, tr.y)) : null;
 		var horizontal = true;
 		var hint = null;
 		
-		// Adds waypoints only if outside of tolerance
+		// Adds waypoints only if outside of tolerance in model units so
+		// that the result does not depend on the scale or translate
 		function pushPoint(pt)
 		{
-			pt.x = Math.round(pt.x * state.view.scale * 10) / 10;
-			pt.y = Math.round(pt.y * state.view.scale * 10) / 10;
+			pt.x = Math.round(pt.x * 10) / 10;
+			pt.y = Math.round(pt.y * 10) / 10;
 
-			if (lastPushed == null || Math.abs(lastPushed.x - pt.x) >= tol || Math.abs(lastPushed.y - pt.y) >= Math.max(1, state.view.scale))
+			if (lastPushed == null || Math.abs(lastPushed.x - pt.x) >= tol || Math.abs(lastPushed.y - pt.y) >= tol)
 			{
-				result.push(pt);
+				result.push(new mxPoint((pt.x + tr.x) * s, (pt.y + tr.y) * s));
 				lastPushed = pt;
 			}
 			
@@ -650,7 +666,8 @@ var mxEdgeStyle =
 				
 				if (tmp != null)
 				{
-					hints.push(tmp);
+					hints.push(new mxPoint(mxUtils.unscale(tmp.x, 1, tr.x),
+						mxUtils.unscale(tmp.y, 1, tr.y)));
 				}
 			}
 			
@@ -691,6 +708,7 @@ var mxEdgeStyle =
 			hint = hints[0];
 
 			var currentTerm = source;
+			var currentChannel = sourceChannel;
 			var currentPt = pts[0];
 			var hozChan = false;
 			var vertChan = false;
@@ -708,10 +726,10 @@ var mxEdgeStyle =
 				var fixedVertAlign = currentPt != null && currentPt.x == currentHint.x;
 				var fixedHozAlign = currentPt != null && currentPt.y == currentHint.y;
 				
-				var inHozChan = currentTerm != null && (currentHint.y >= currentTerm.y &&
-						currentHint.y <= currentTerm.y + currentTerm.height);
-				var inVertChan = currentTerm != null && (currentHint.x >= currentTerm.x &&
-						currentHint.x <= currentTerm.x + currentTerm.width);
+				var inHozChan = currentTerm != null && (currentHint.y >= currentChannel.y &&
+						currentHint.y <= currentChannel.y + currentChannel.height);
+				var inVertChan = currentTerm != null && (currentHint.x >= currentChannel.x &&
+						currentHint.x <= currentChannel.x + currentChannel.width);
 
 				hozChan = fixedHozAlign || (currentPt == null && inHozChan);
 				vertChan = fixedVertAlign || (currentPt == null && inVertChan);
@@ -746,6 +764,7 @@ var mxEdgeStyle =
 				}
 				
 				currentTerm = target;
+				currentChannel = targetChannel;
 				currentPt = pts[lastInx];
 				
 				if (currentPt != null)
@@ -763,13 +782,13 @@ var mxEdgeStyle =
 
 			if (horizontal && ((pts[0] != null && pts[0].y != hint.y) ||
 				(pts[0] == null && source != null &&
-				(hint.y < source.y || hint.y > source.y + source.height))))
+				(hint.y < sourceChannel.y || hint.y > sourceChannel.y + sourceChannel.height))))
 			{
 				addPoint(new mxPoint(pt.x, hint.y));
 			}
 			else if (!horizontal && ((pts[0] != null && pts[0].x != hint.x) ||
 					(pts[0] == null && source != null &&
-					(hint.x < source.x || hint.x > source.x + source.width))))
+					(hint.x < sourceChannel.x || hint.x > sourceChannel.x + sourceChannel.width))))
 			{
 				addPoint(new mxPoint(hint.x, pt.y));
 			}
@@ -824,13 +843,13 @@ var mxEdgeStyle =
 			{
 				if (horizontal && ((pts[lastInx] != null && pts[lastInx].y != hint.y) ||
 					(pts[lastInx] == null && target != null &&
-					(hint.y < target.y || hint.y > target.y + target.height))))
+					(hint.y < targetChannel.y || hint.y > targetChannel.y + targetChannel.height))))
 				{
 					addPoint(new mxPoint(pt.x, hint.y));
 				}
 				else if (!horizontal && ((pts[lastInx] != null && pts[lastInx].x != hint.x) ||
 						(pts[lastInx] == null && target != null &&
-						(hint.x < target.x || hint.x > target.x + target.width))))
+						(hint.x < targetChannel.x || hint.x > targetChannel.x + targetChannel.width))))
 				{
 					addPoint(new mxPoint(hint.x, pt.y));
 				}
@@ -845,7 +864,7 @@ var mxEdgeStyle =
 			if (pts[0] == null && source != null)
 			{
 				while (tempPoints.length > 0 && tempPoints[0] != null &&
-					mxUtils.contains(source, tempPoints[0].x, tempPoints[0].y))
+					mxUtils.contains(sourceChannel, tempPoints[0].x, tempPoints[0].y))
 				{
 					tempPoints.splice(0, 1);
 				}
@@ -855,7 +874,7 @@ var mxEdgeStyle =
 			if (pts[lastInx] == null && target != null)
 			{
 				while (tempPoints.length > 0 && tempPoints[tempPoints.length - 1] != null &&
-					mxUtils.contains(target, tempPoints[tempPoints.length - 1].x, tempPoints[tempPoints.length - 1].y))
+					mxUtils.contains(targetChannel, tempPoints[tempPoints.length - 1].x, tempPoints[tempPoints.length - 1].y))
 				{
 					tempPoints.splice(tempPoints.length - 1, 1);
 				}
@@ -869,23 +888,24 @@ var mxEdgeStyle =
 		}
 		
 		// Removes last point if inside tolerance with end point
+		// using model units as pe is in model units
 		if (pe != null && result[result.length - 1] != null &&
-			Math.abs(pe.x - result[result.length - 1].x) <= tol &&
-			Math.abs(pe.y - result[result.length - 1].y) <= tol)
+			Math.abs(pe.x - mxUtils.unscale(result[result.length - 1].x, s, tr.x)) <= tol &&
+			Math.abs(pe.y - mxUtils.unscale(result[result.length - 1].y, s, tr.y)) <= tol)
 		{
 			result.splice(result.length - 1, 1);
 			
 			// Lines up second last point in result with end point
 			if (result[result.length - 1] != null)
 			{
-				if (Math.abs(result[result.length - 1].x - pe.x) < tol)
+				if (Math.abs(mxUtils.unscale(result[result.length - 1].x, s, tr.x) - pe.x) < tol)
 				{
-					result[result.length - 1].x = pe.x;
+					result[result.length - 1].x = (pe.x + tr.x) * s;
 				}
 				
-				if (Math.abs(result[result.length - 1].y - pe.y) < tol)
+				if (Math.abs(mxUtils.unscale(result[result.length - 1].y, s, tr.y) - pe.y) < tol)
 				{
-					result[result.length - 1].y = pe.y;
+					result[result.length - 1].y = (pe.y + tr.y) * s;
 				}
 			}
 		}
@@ -984,6 +1004,24 @@ var mxEdgeStyle =
 	},
 	
 	/**
+	 * Function: roundScaled
+	 * 
+	 * Rounds the given scaled coordinate to an integer in model units and
+	 * returns the scaled result so that it does not depend on the scale or
+	 * translate of the view.
+	 * 
+	 * Parameters:
+	 * 
+	 * value - Scaled coordinate to be rounded.
+	 * scale - Scale of the view.
+	 * translate - Translate of the view along the axis of the coordinate.
+	 */
+	roundScaled: function(value, scale, translate)
+	{
+		return (Math.round(mxUtils.unscale(value, scale, translate)) + translate) * scale;
+	},
+
+	/**
 	 * Function: scalePointArray
 	 * 
 	 * Scales an array of <mxPoint>
@@ -992,11 +1030,14 @@ var mxEdgeStyle =
 	 * 
 	 * points - array of <mxPoint> to scale
 	 * scale - the scaling to divide by
+	 * translate - optional <mxPoint> to subtract after scaling
 	 * 
 	 */
-	scalePointArray: function(points, scale)
+	scalePointArray: function(points, scale, translate)
 	{
 		var result = [];
+		var tx = (translate != null) ? translate.x : 0;
+		var ty = (translate != null) ? translate.y : 0;
 
 		if (points != null)
 		{
@@ -1004,8 +1045,8 @@ var mxEdgeStyle =
 			{
 				if (points[i] != null)
 				{
-					var pt = new mxPoint(Math.round(points[i].x / scale * 10) / 10,
-										Math.round(points[i].y / scale * 10) / 10);
+					var pt = new mxPoint(Math.round(mxUtils.unscale(points[i].x, scale, tx) * 10) / 10,
+										Math.round(mxUtils.unscale(points[i].y, scale, ty) * 10) / 10);
 					result[i] = pt;
 				}
 				else
@@ -1031,19 +1072,47 @@ var mxEdgeStyle =
 	 * 
 	 * state - <mxCellState> to scale
 	 * scale - the scaling to divide by
+	 * translate - optional <mxPoint> to subtract after scaling
 	 * 
 	 */
-	scaleCellState: function(state, scale)
+	/**
+	 * Function: getChannelBounds
+	 *
+	 * Returns the channel bounds of the given terminal in model units (see
+	 * <mxGraphView.getChannelBounds>), or the given scaled state if they are
+	 * the bounds of the terminal.
+	 */
+	getChannelBounds: function(view, state, scaled, scale, translate)
+	{
+		var bounds = (state != null) ? view.getChannelBounds(state) : null;
+
+		if (bounds != null && bounds != state)
+		{
+			var tx = (translate != null) ? translate.x : 0;
+			var ty = (translate != null) ? translate.y : 0;
+
+			return new mxRectangle(Math.round(mxUtils.unscale(bounds.x, scale, tx) * 10) / 10,
+				Math.round(mxUtils.unscale(bounds.y, scale, ty) * 10) / 10,
+				Math.round(mxUtils.unscale(bounds.width, scale) * 10) / 10,
+				Math.round(mxUtils.unscale(bounds.height, scale) * 10) / 10);
+		}
+
+		return scaled;
+	},
+
+	scaleCellState: function(state, scale, translate)
 	{
 		var result = null;
 
 		if (state != null)
 		{
+			var tx = (translate != null) ? translate.x : 0;
+			var ty = (translate != null) ? translate.y : 0;
 			result = state.clone();
-			result.setRect(Math.round(state.x / scale * 10) / 10,
-							Math.round(state.y / scale * 10) / 10,
-							Math.round(state.width / scale * 10) / 10,
-							Math.round(state.height / scale * 10) / 10);
+			result.setRect(Math.round(mxUtils.unscale(state.x, scale, tx) * 10) / 10,
+							Math.round(mxUtils.unscale(state.y, scale, ty) * 10) / 10,
+							Math.round(mxUtils.unscale(state.width, scale) * 10) / 10,
+							Math.round(mxUtils.unscale(state.height, scale) * 10) / 10);
 		}
 		else
 		{
@@ -1073,9 +1142,9 @@ var mxEdgeStyle =
 	{
 		var graph = state.view.graph;
 
-		var pts = mxEdgeStyle.scalePointArray(state.absolutePoints, state.view.scale);
-		var source = mxEdgeStyle.scaleCellState(sourceScaled, state.view.scale);
-		var target = mxEdgeStyle.scaleCellState(targetScaled, state.view.scale);
+		var pts = mxEdgeStyle.scalePointArray(state.absolutePoints, state.view.scale, state.view.translate);
+		var source = mxEdgeStyle.scaleCellState(sourceScaled, state.view.scale, state.view.translate);
+		var target = mxEdgeStyle.scaleCellState(targetScaled, state.view.scale, state.view.translate);
 
 		var p0 = pts[0];
 		var pe = pts[pts.length-1];
@@ -1621,8 +1690,11 @@ var mxEdgeStyle =
 				}
 			}
 			
-			result.push(new mxPoint(Math.round(mxEdgeStyle.wayPoints1[i][0] * state.view.scale * 10) / 10,
-									Math.round(mxEdgeStyle.wayPoints1[i][1] * state.view.scale * 10) / 10));
+			// Rounds in model units so that the result does not depend on the scale or translate
+			result.push(new mxPoint((Math.round(mxEdgeStyle.wayPoints1[i][0] * 10) / 10 +
+				state.view.translate.x) * state.view.scale,
+				(Math.round(mxEdgeStyle.wayPoints1[i][1] * 10) / 10 +
+				state.view.translate.y) * state.view.scale));
 		}
 		
 		//console.log(result);

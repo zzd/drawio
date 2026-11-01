@@ -298,7 +298,7 @@ mxCellEditor.prototype.setAlign = function (align)
 		var dir = mxUtils.getValue(state.style, mxConstants.STYLE_TEXT_DIRECTION,
 			mxConstants.DEFAULT_TEXT_DIRECTION);
 
-		if (dir == null || dir.substring(0, 9) != 'vertical-')
+		if (!mxUtils.isVerticalTextDirection(dir))
 		{
 			this.textarea.style.textAlign = align;
 		}
@@ -583,7 +583,7 @@ mxCellEditor.prototype.resize = function()
 			{
 				var dir = mxUtils.getValue(state.style, mxConstants.STYLE_TEXT_DIRECTION,
 					mxConstants.DEFAULT_TEXT_DIRECTION);
-				var vertical = dir != null && dir.substring(0, 9) == 'vertical-';
+				var vertical = mxUtils.isVerticalTextDirection(dir);
 				this.textarea.style.wordWrap = mxConstants.WORD_WRAP;
 				this.textarea.style.whiteSpace = 'normal';
 				
@@ -816,7 +816,7 @@ mxCellEditor.prototype.setEditingValue = function(state, value)
  * 
  * cell - <mxCell> to start editing.
  * trigger - Optional mouse event that triggered the editor.
- * initialText - Optional string that specifies the initial editing value.
+ * initialText - Optional plain text that replaces the initial editing value.
  */
 mxCellEditor.prototype.startEditing = function(cell, trigger, initialText)
 {
@@ -894,7 +894,10 @@ mxCellEditor.prototype.startEditing = function(cell, trigger, initialText)
 				
 				if (initialText != null)
 				{
-					this.textarea.innerHTML = initialText;
+					// Initial text is plain text (eg. from an input method,
+					// dictation or a menu paste) and is never parsed as HTML
+					this.textarea.innerHTML = mxUtils.htmlEntities(
+						initialText, false).replace(/\n/g, '<br>');
 
 					// Moves cursor after initial text
 					var range = document.createRange();

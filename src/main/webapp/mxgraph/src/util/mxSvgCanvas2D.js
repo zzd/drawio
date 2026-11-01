@@ -245,6 +245,24 @@ mxSvgCanvas2D.prototype.foAltText = '[Object]';
 mxSvgCanvas2D.prototype.foOffset = 0;
 
 /**
+ * Variable: placeForeignObjects
+ *
+ * Specifies if the foreignObjects of HTML labels are placed at the labels
+ * with <foreignObjectMargin> on all sides instead of at the origin. This is
+ * used for painting in model units, where labels may have negative
+ * coordinates, as WebKit clips the content of foreignObjects outside of
+ * their bounds. Default is false.
+ */
+mxSvgCanvas2D.prototype.placeForeignObjects = false;
+
+/**
+ * Variable: foreignObjectMargin
+ *
+ * Margin around the labels for <placeForeignObjects>. Default is 10000.
+ */
+mxSvgCanvas2D.prototype.foreignObjectMargin = 10000;
+
+/**
  * Variable: textOffset
  * 
  * Offset to be used for text elements.
@@ -264,6 +282,32 @@ mxSvgCanvas2D.prototype.imageOffset = 0;
  * Adds transparent paths for strokes.
  */
 mxSvgCanvas2D.prototype.strokeTolerance = 0;
+
+/**
+ * Variable: nonScalingTolerance
+ * 
+ * Specifies if the <strokeTolerance> of the transparent paths for strokes
+ * stays in screen pixels if the canvas is transformed, ie. if the canvas
+ * paints in model units. Default is false.
+ */
+mxSvgCanvas2D.prototype.nonScalingTolerance = false;
+
+/**
+ * Variable: toleranceScaleVariable
+ * 
+ * Name of the CSS variable with the scale that the <strokeTolerance> of the
+ * transparent paths for strokes is divided by if <nonScalingTolerance> is
+ * true, so that the paths are as wide as the stroke plus the tolerance in
+ * screen pixels for any scale, or null to use vector-effect:
+ * non-scaling-stroke, which keeps the stroke width in screen pixels too.
+ * Changing the variable restyles all cells (see
+ * <mxGraphView.scheduleToleranceScaleUpdate>). Default is --mx-scale in
+ * WebKit, which hit-tests non-scaling strokes with the transform at the time
+ * of the layout and does not update it if the transform of an ancestor
+ * changes, and null in all other browsers. The variable is set in
+ * <mxGraphView.updateDrawPaneTransform>.
+ */
+mxSvgCanvas2D.prototype.toleranceScaleVariable = (mxClient.IS_SF) ? '--mx-scale' : null;
 
 /**
  * Variable: minStrokeWidth
@@ -1375,8 +1419,13 @@ mxSvgCanvas2D.prototype.updateStroke = function()
 	
 	if (s.dashed)
 	{
-		this.node.setAttribute('stroke-dasharray', this.createDashPattern(
-			((s.fixDash) ? 1 : s.strokeWidth) * s.scale));
+		var pattern = this.createDashPattern(((s.fixDash) ? 1 : s.strokeWidth) * s.scale);
+
+		// Solid line for patterns without numbers
+		if (pattern.length > 0)
+		{
+			this.node.setAttribute('stroke-dasharray', pattern);
+		}
 	}
 };
 
@@ -1436,7 +1485,13 @@ mxSvgCanvas2D.prototype.createDashPattern = function(scale)
 		{
 			for (var i = 0; i < dash.length; i++)
 			{
-				pat[i] = Math.round(Number(dash[i]) * scale * 100) / 100;
+				var value = Number(dash[i]);
+
+				// Ignores values that are not numbers, eg. none in stencils
+				if (isFinite(value))
+				{
+					pat.push(Math.round(value * scale * 100) / 100);
+				}
 			}
 		}
 	}
@@ -1452,12 +1507,26 @@ mxSvgCanvas2D.prototype.createDashPattern = function(scale)
 mxSvgCanvas2D.prototype.createTolerance = function(node)
 {
 	var tol = node.cloneNode(true);
-	var sw = parseFloat(tol.getAttribute('stroke-width') || 1) + this.strokeTolerance;
+	var width = parseFloat(tol.getAttribute('stroke-width') || 1);
+	var sw = width + this.strokeTolerance;
 	tol.setAttribute('pointer-events', 'stroke');
 	tol.setAttribute('visibility', 'hidden');
 	tol.removeAttribute('stroke-dasharray');
 	tol.setAttribute('stroke-width', sw);
 	tol.setAttribute('fill', 'none');
+
+	if (this.nonScalingTolerance)
+	{
+		if (this.toleranceScaleVariable != null)
+		{
+			tol.style.strokeWidth = 'calc(' + width + 'px + ' + this.strokeTolerance +
+				'px / var(' + this.toleranceScaleVariable + ', 1))';
+		}
+		else
+		{
+			tol.setAttribute('vector-effect', 'non-scaling-stroke');
+		}
+	}
 	
 	// Workaround for Opera ignoring the visiblity attribute above while
 	// other browsers need a stroke color to perform the hit-detection but
@@ -1657,8 +1726,8 @@ mxSvgCanvas2D.prototype.ellipse = function(x, y, w, h)
 	// No rounding for consistent output with 1.x
 	n.setAttribute('cx', this.format((x + w / 2 + s.dx) * s.scale));
 	n.setAttribute('cy', this.format((y + h / 2 + s.dy) * s.scale));
-	n.setAttribute('rx', w / 2 * s.scale);
-	n.setAttribute('ry', h / 2 * s.scale);
+	n.setAttribute('rx', this.format(w / 2 * s.scale));
+	n.setAttribute('ry', this.format(h / 2 * s.scale));
 	this.node = n;
 };
 
@@ -1809,8 +1878,19 @@ mxSvgCanvas2D.prototype.image = function(x, y, w, h, src, aspect, flipH, flipV, 
 	{
 		this.processClipPath(node, clipPath, new mxRectangle(x, y, w, h));
 	}
-	
-	this.root.appendChild(node);
+
+	// Adds the title in a group like for labels, which keeps it if the image
+	// is replaced later, eg. with the SVG of the image
+	if (this.title != null)
+	{
+		var group = this.addTitle(this.createElement('g'));
+		group.appendChild(node);
+		this.root.appendChild(group);
+	}
+	else
+	{
+		this.root.appendChild(node);
+	}
 };
 
 /**
@@ -1919,7 +1999,14 @@ mxSvgCanvas2D.prototype.processClipPath = function(node, clipPath, bounds)
  */
 mxSvgCanvas2D.prototype.convertHtml = function(val)
 {
-	if (this.useDomParser)
+	// Plain text is returned unchanged by parsing and serializing unless it
+	// has markup, characters that are escaped or replaced, or leading
+	// whitespace, which the parser drops before the body
+	if (typeof val === 'string' && !/[<>&\r\0]|^[\t\n\f ]/.test(val))
+	{
+		return val;
+	}
+	else if (this.useDomParser)
 	{
 		var doc = new DOMParser().parseFromString(val, 'text/html');
 
@@ -2159,9 +2246,18 @@ mxSvgCanvas2D.prototype.updateTextNodes = function(x, y, w, h, align, valign, wr
 
 		var fo = g.firstChild;
 
-		if (fo.nodeName == 'title')
+		if (fo != null && fo.nodeName == 'title')
 		{
 			fo = fo.nextSibling;
+		}
+
+		var div = (fo != null) ? fo.firstChild : null;
+		var box = (div != null) ? div.firstChild : null;
+
+		// Skips text nodes that were changed outside of the canvas
+		if (box == null)
+		{
+			return;
 		}
 
 		// Fallback text, background and border color in parent block
@@ -2169,8 +2265,6 @@ mxSvgCanvas2D.prototype.updateTextNodes = function(x, y, w, h, align, valign, wr
 		item += (cssBg != null) ? 'background-color: ' + cssBg.light + '; ' : '';
 		item += (cssBorder != null) ? 'border-color: ' + cssBorder.light + '; ' : '';
 		
-		var div = fo.firstChild;
-		var box = div.firstChild;
 		var text = box.firstChild;
 		var r = ((this.rotateHtml) ? this.state.rotation : 0) + ((rotation != null) ? rotation : 0);
 		var t = ((this.foOffset != 0) ? 'translate(' + this.foOffset + ' ' + this.foOffset + ')' : '') +
@@ -2179,32 +2273,55 @@ mxSvgCanvas2D.prototype.updateTextNodes = function(x, y, w, h, align, valign, wr
 		this.setCssText(text, block);
 		this.setCssText(box, item);
 		
-		// Workaround for clipping in Webkit with scrolling and zoom
-		fo.setAttribute('width', Math.ceil(1 / Math.min(1, s) * 100) + '%');
-		fo.setAttribute('height', Math.ceil(1 / Math.min(1, s) * 100) + '%');
+		var xp = Math.round(x + dx);
 		var yp = Math.round(y + dy);
-		
-		// Allows for negative values which are causing problems with
-		// transformed content where the top edge of the foreignObject
-		// limits the text box being moved further up in the diagram.
-		// KNOWN: Possible clipping problems with zoom and scrolling
-		// but this is normally not used with scrollbars as the
-		// coordinates are always positive with scrollbars.
-		// Margin-top is ignored in Safari and no negative values allowed
-		// for padding.
-		if (yp < 0)
+
+		// Unrounded position of the text box for finding the rounding of the
+		// painted text in different canvases
+		g.textPosition = new mxPoint(x + dx, y + dy);
+
+		if (this.placeForeignObjects)
 		{
-			fo.setAttribute('y', yp);
-			flex += 'padding-top: 0; '; // To override padding-top in previous calls
+			// Places the foreignObject at the label so that no content is
+			// outside of its bounds, which WebKit clips
+			var m = this.foreignObjectMargin;
+			fo.setAttribute('x', xp - m);
+			fo.setAttribute('y', yp - m);
+			fo.setAttribute('width', Math.ceil(w) + 2 * m);
+			fo.setAttribute('height', Math.ceil(h) + 2 * m);
+			flex += 'padding-top: ' + m + 'px; ';
+			xp = m;
 		}
 		else
 		{
-			fo.removeAttribute('y');
-			flex += 'padding-top: ' + yp + 'px; ';
+			// Workaround for clipping in Webkit with scrolling and zoom
+			fo.setAttribute('width', Math.ceil(1 / Math.min(1, s) * 100) + '%');
+			fo.setAttribute('height', Math.ceil(1 / Math.min(1, s) * 100) + '%');
+			fo.removeAttribute('x');
+
+			// Allows for negative values which are causing problems with
+			// transformed content where the top edge of the foreignObject
+			// limits the text box being moved further up in the diagram.
+			// KNOWN: Possible clipping problems with zoom and scrolling
+			// but this is normally not used with scrollbars as the
+			// coordinates are always positive with scrollbars.
+			// Margin-top is ignored in Safari and no negative values allowed
+			// for padding.
+			if (yp < 0)
+			{
+				fo.setAttribute('y', yp);
+				flex += 'padding-top: 0; '; // To override padding-top in previous calls
+			}
+			else
+			{
+				fo.removeAttribute('y');
+				flex += 'padding-top: ' + yp + 'px; ';
+			}
 		}
-		
-		this.setCssText(div, flex + 'margin-left: ' + Math.round(x + dx) + 'px;');
-		t += ((r != 0) ? ('rotate(' + r + ' ' + x + ' ' + y + ')') : '');
+
+		this.setCssText(div, flex + 'margin-left: ' + xp + 'px;');
+		t += ((r != 0) ? ('rotate(' + r + ' ' + this.format(x) + ' ' +
+			this.format(y) + ')') : '');
 
 		// Output allows for reflow but Safari cannot use absolute position,
 		// transforms or opacity. https://bugs.webkit.org/show_bug.cgi?id=23113
@@ -2225,13 +2342,13 @@ mxSvgCanvas2D.prototype.updateTextNodes = function(x, y, w, h, align, valign, wr
 		{
 			g.removeAttribute('opacity');
 		}
-	}));
+	}), this.state.fontBorderWidth);
 };
 
 /**
  * Updates existing DOM nodes for text rendering.
  */
-mxSvgCanvas2D.createCss = function(w, h, align, valign, wrap, overflow, clip, dir, bg, border, padding, flex, block, s, callback)
+mxSvgCanvas2D.createCss = function(w, h, align, valign, wrap, overflow, clip, dir, bg, border, padding, flex, block, s, callback, borderWidth)
 {
 	var vertical = dir != null && dir.substring(0, 9) == 'vertical-';
 	var item = 'box-sizing: border-box; font-size: 0; ';
@@ -2315,23 +2432,34 @@ mxSvgCanvas2D.createCss = function(w, h, align, valign, wrap, overflow, clip, di
 		bgc += 'background-color: ' + bg + '; ';
 	}
 	
+	// Border widths other than 1 grow or shrink the box around the text
+	// like the padding (see margin below)
+	var bw = (border != null && borderWidth != null) ? borderWidth : 1;
+	var grow = (border != null) ? bw - 1 : 0;
+
 	if (border != null)
 	{
 		// Duplicates border properties for inherit color fallback over border CSS
-		bgc += 'border-width: 1px; border-style: solid; border-color: inherit; border: 1px solid ' + border + '; ';
+		bgc += 'border-width: ' + bw + 'px; border-style: solid; border-color: inherit; ' +
+			'border: ' + bw + 'px solid ' + border + '; ';
 	}
 
-	if (bgc != '' && padding != null)
+	if (bgc != '' && (padding != null || grow != 0))
 	{
-		bgc += 'padding: ' + padding.top + 'px ' + padding.right + 'px ' +
-			padding.bottom + 'px ' + padding.left + 'px; ';
+		var p = (padding != null) ? padding : {top: 0, right: 0, bottom: 0, left: 0};
+
+		if (padding != null)
+		{
+			bgc += 'padding: ' + p.top + 'px ' + p.right + 'px ' +
+				p.bottom + 'px ' + p.left + 'px; ';
+		}
 
 		if (ofl == '' || clip)
 		{
 			// Grows the painted background box around the text without moving
 			// the text or changing the wrapping width
-			bgc += 'margin: ' + (-padding.top) + 'px ' + (-padding.right) + 'px ' +
-				(-padding.bottom) + 'px ' + (-padding.left) + 'px; ';
+			bgc += 'margin: ' + (-p.top - grow) + 'px ' + (-p.right - grow) + 'px ' +
+				(-p.bottom - grow) + 'px ' + (-p.left - grow) + 'px; ';
 		}
 	}
 
@@ -3114,7 +3242,10 @@ mxSvgCanvas2D.prototype.wrapSvgBlockElements = function(group, maxWidth, offset)
 			maxLineWidth = wrapped.maxLineWidth;
 		}
 
-		if (wrapped != null && wrapped.elements != null)
+		// A block with only whitespace has no lines in a text flow and keeps
+		// its single line like an unwrapped block
+		if (wrapped != null && wrapped.elements != null &&
+			wrapped.elements.length > 0)
 		{
 			var origY = parseFloat(textEl.getAttribute('y')) || 0;
 			origY += heightDelta;
@@ -4014,6 +4145,17 @@ mxSvgCanvas2D.prototype.updateFont = function(node)
 };
 
 /**
+ * Variable: textBackgrounds
+ *
+ * Holds the background nodes of plain text labels whose text is measured in
+ * <measureTextBackgrounds>, or null if <addTextBackground> measures the text
+ * when the background is added. Measuring a text after another text was
+ * added to the page lays out the page again, so <mxGraphView.validate>
+ * measures the texts of all labels it paints at once. Default is null.
+ */
+mxSvgCanvas2D.textBackgrounds = null;
+
+/**
  * Function: addTextBackground
  * 
  * Background color and border
@@ -4025,7 +4167,15 @@ mxSvgCanvas2D.prototype.addTextBackground = function(node, str, x, y, w, h, alig
 	if (document.body != null && (s.fontBackgroundColor != null ||
 		s.fontBorderColor != null))
 	{
+		// Text and font for the size of the text if it is not measured
+		var text = {node: node, str: str, x: x, y: y, align: align, valign: valign,
+			fontSize: s.fontSize, fontFamily: s.fontFamily, fontStyle: s.fontStyle,
+			scale: s.scale};
 		var bbox = null;
+
+		// Vertical offset of the bounding box of the text in screen pixels
+		var dy = 0;
+		var deferred = false;
 		
 		if (overflow == 'fill' || overflow == 'width')
 		{
@@ -4052,96 +4202,352 @@ mxSvgCanvas2D.prototype.addTextBackground = function(node, str, x, y, w, h, alig
 		else if (node.getBBox != null && this.root.ownerDocument == document)
 		{
 			// Uses getBBox only if inside document for correct size
-			try
+			if (mxSvgCanvas2D.textBackgrounds != null)
 			{
-				bbox = node.getBBox();
-				bbox = new mxRectangle(bbox.x, bbox.y + 1, bbox.width, bbox.height);
+				deferred = true;
 			}
-			catch (e)
+			else
 			{
-				// Ignores NS_ERROR_FAILURE in FF if container display is none.
+				bbox = mxSvgCanvas2D.getTextBoundingBox(node);
+				dy = 1;
 			}
 		}
 		
-		if (bbox == null || bbox.width == 0 || bbox.height == 0)
+		if (!deferred && bbox == null)
 		{
 			// Computes size if not in document or no getBBox available
-			var size = mxUtils.getSizeForString(
-				mxUtils.htmlEntities(str, false).replace(/\n/g, '<br/>'),
-				s.fontSize, s.fontFamily, null, s.fontStyle);
-			var w = size.width;
-			var h = size.height;
-
-			if (align == mxConstants.ALIGN_CENTER)
-			{
-				x -= w / 2;
-			}
-			else if (align == mxConstants.ALIGN_RIGHT)
-			{
-				x -= w;
-			}
-
-			if (valign == mxConstants.ALIGN_MIDDLE)
-			{
-				y -= h / 2;
-			}
-			else if (valign == mxConstants.ALIGN_BOTTOM)
-			{
-				y -= h;
-			}
-
-			bbox = new mxRectangle((x + 1) * s.scale, (y + 2) * s.scale, w * s.scale, (h + 1) * s.scale);
+			dy = 0;
+			bbox = mxSvgCanvas2D.getStringBoundingBox(text);
 		}
 
-		// Fixed-size boxes cannot reflow the text so padding is ignored there
-		if (bbox != null && s.labelPadding != null &&
-			overflow != 'fill' && overflow != 'width')
-		{
-			bbox.x -= s.labelPadding.left * s.scale;
-			bbox.y -= s.labelPadding.top * s.scale;
-			bbox.width += (s.labelPadding.left + s.labelPadding.right) * s.scale;
-			bbox.height += (s.labelPadding.top + s.labelPadding.bottom) * s.scale;
-		}
+		var n = this.createElement('rect');
+		var cssBg = (s.fontBackgroundColor != null &&
+			s.fontBackgroundColor != mxConstants.NONE) ?
+			this.getLightDarkColor(s.fontBackgroundColor) : null;
+		var cssBorder = (s.fontBorderColor != null &&
+			s.fontBorderColor != mxConstants.NONE) ?
+			this.getLightDarkColor(s.fontBorderColor) : null;
+
+		// Fixed-size boxes cannot reflow the text so padding is ignored there.
+		// The crisp offset is only required if not exporting.
+		n.textBackground = {x: 0, y: 0, width: 0, height: 0, dy: dy, scale: s.scale,
+			padding: (overflow != 'fill' && overflow != 'width') ?
+				s.labelPadding : null,
+			strokeWidth: (s.fontBorderColor != null) ?
+				this.format(s.scale * s.fontBorderWidth) : null,
+			crisp: this.root.ownerDocument == document,
+			pending: (deferred) ? text : null};
 
 		if (bbox != null)
 		{
-			var n = this.createElement('rect');
-			var cssBg = (s.fontBackgroundColor != null &&
-				s.fontBackgroundColor != mxConstants.NONE) ?
-				this.getLightDarkColor(s.fontBackgroundColor) : null;
-			var cssBorder = (s.fontBorderColor != null &&
-				s.fontBorderColor != mxConstants.NONE) ?
-				this.getLightDarkColor(s.fontBorderColor) : null;
+			mxSvgCanvas2D.setTextBackgroundBounds(n, bbox);
+		}
 
-			n.setAttribute('fill', (cssBg != null) ? cssBg.light : 'none');
-			n.setAttribute('stroke', (cssBorder != null) ? cssBorder.light : 'none');
-			n.setAttribute('x', Math.floor(bbox.x - 1));
-			n.setAttribute('y', Math.floor(bbox.y - 1));
-			n.setAttribute('width', Math.ceil(bbox.width + 2));
-			n.setAttribute('height', Math.ceil(bbox.height));
+		// Keeps the order of the attributes in the output
+		n.setAttribute('fill', (cssBg != null) ? cssBg.light : 'none');
+		n.setAttribute('stroke', (cssBorder != null) ? cssBorder.light : 'none');
+		n.setAttribute('x', 0);
+		n.setAttribute('y', 0);
+		n.setAttribute('width', 0);
+		n.setAttribute('height', 0);
 
-			if (cssBg != null)
-			{
-				n.style.fill = cssBg.cssText;
-			}
+		if (cssBg != null)
+		{
+			n.style.fill = cssBg.cssText;
+		}
 
-			if (cssBorder)
-			{
-				n.style.stroke = cssBorder.cssText;
-			}
+		if (cssBorder)
+		{
+			n.style.stroke = cssBorder.cssText;
+		}
 
-			var sw = (s.fontBorderColor != null) ? Math.max(1, this.format(s.scale)) : 0;
-			n.setAttribute('stroke-width', sw);
-			
-			// Workaround for crisp rendering - only required if not exporting
-			if (this.root.ownerDocument == document && mxUtils.mod(sw, 2) == 1)
-			{
-				n.setAttribute('transform', 'translate(0.5, 0.5)');
-			}
-			
-			node.insertBefore(n, node.firstChild);
+		n.setAttribute('stroke-width', 0);
+
+		// Hidden so that the text is measured without the background
+		if (deferred)
+		{
+			n.setAttribute('display', 'none');
+			mxSvgCanvas2D.textBackgrounds.push(n);
+		}
+
+		mxSvgCanvas2D.updateTextBackground(n, 1, 0, 0);
+		node.insertBefore(n, node.firstChild);
+	}
+};
+
+/**
+ * Function: getTextBoundingBox
+ *
+ * Returns the bounding box of the given text node in its units, or null if
+ * it is empty or cannot be measured.
+ *
+ * Parameters:
+ *
+ * node - SVG element that contains the text.
+ */
+mxSvgCanvas2D.getTextBoundingBox = function(node)
+{
+	try
+	{
+		var bbox = node.getBBox();
+
+		return (bbox.width > 0 && bbox.height > 0) ?
+			new mxRectangle(bbox.x, bbox.y, bbox.width, bbox.height) : null;
+	}
+	catch (e)
+	{
+		// Ignores NS_ERROR_FAILURE in FF if container display is none.
+		return null;
+	}
+};
+
+/**
+ * Function: getStringBoundingBox
+ *
+ * Returns the bounding box of the text of a background with the size of
+ * the given string (see <mxUtils.getSizeForString>).
+ *
+ * Parameters:
+ *
+ * text - Object with the string, position, alignment, font and scale of
+ * the text (see <addTextBackground>).
+ */
+mxSvgCanvas2D.getStringBoundingBox = function(text)
+{
+	var size = mxUtils.getSizeForString(
+		mxUtils.htmlEntities(text.str, false).replace(/\n/g, '<br/>'),
+		text.fontSize, text.fontFamily, null, text.fontStyle);
+	var x = text.x;
+	var y = text.y;
+	var w = size.width;
+	var h = size.height;
+
+	if (text.align == mxConstants.ALIGN_CENTER)
+	{
+		x -= w / 2;
+	}
+	else if (text.align == mxConstants.ALIGN_RIGHT)
+	{
+		x -= w;
+	}
+
+	if (text.valign == mxConstants.ALIGN_MIDDLE)
+	{
+		y -= h / 2;
+	}
+	else if (text.valign == mxConstants.ALIGN_BOTTOM)
+	{
+		y -= h;
+	}
+
+	return new mxRectangle((x + 1) * text.scale, (y + 2) * text.scale,
+		w * text.scale, (h + 1) * text.scale);
+};
+
+/**
+ * Function: setTextBackgroundBounds
+ *
+ * Sets the bounding box of the text of the given background node.
+ */
+mxSvgCanvas2D.setTextBackgroundBounds = function(node, bbox)
+{
+	var tb = node.textBackground;
+	tb.x = bbox.x;
+	tb.y = bbox.y;
+	tb.width = bbox.width;
+	tb.height = bbox.height;
+};
+
+/**
+ * Function: isTextBackgroundPending
+ *
+ * Returns true if the given node of a label contains a background whose
+ * text is not measured yet (see <measureTextBackgrounds>).
+ *
+ * Parameters:
+ *
+ * node - SVG element of the label.
+ */
+mxSvgCanvas2D.isTextBackgroundPending = function(node)
+{
+	var nodes = (mxSvgCanvas2D.textBackgrounds != null &&
+		mxSvgCanvas2D.textBackgrounds.length > 0) ?
+		node.getElementsByTagName('rect') : [];
+
+	for (var i = 0; i < nodes.length; i++)
+	{
+		if (nodes[i].textBackground != null &&
+			nodes[i].textBackground.pending != null)
+		{
+			return true;
 		}
 	}
+
+	return false;
+};
+
+/**
+ * Function: measureTextBackgrounds
+ *
+ * Measures the texts of the backgrounds in <textBackgrounds> and shows the
+ * backgrounds. All texts are measured before the first background changes,
+ * so that the page is laid out once. Texts that were removed from their
+ * label since are ignored. This is called before the bounding boxes of the
+ * labels are measured (see <mxText.updateBoundingBox>) and at the end of
+ * <mxGraphView.validate>.
+ */
+mxSvgCanvas2D.measureTextBackgrounds = function()
+{
+	var nodes = mxSvgCanvas2D.textBackgrounds;
+
+	if (nodes != null && nodes.length > 0)
+	{
+		mxSvgCanvas2D.textBackgrounds = [];
+		var boxes = [];
+
+		for (var i = 0; i < nodes.length; i++)
+		{
+			var text = nodes[i].textBackground.pending;
+			boxes.push((text.node.parentNode != null) ?
+				mxSvgCanvas2D.getTextBoundingBox(text.node) : null);
+		}
+
+		// Sizes of strings are measured outside of the page before the
+		// backgrounds are changed
+		for (var i = 0; i < nodes.length; i++)
+		{
+			var tb = nodes[i].textBackground;
+
+			if (tb.pending.node.parentNode != null)
+			{
+				if (boxes[i] != null)
+				{
+					tb.dy = 1;
+				}
+				else
+				{
+					boxes[i] = mxSvgCanvas2D.getStringBoundingBox(tb.pending);
+				}
+			}
+		}
+
+		for (var i = 0; i < nodes.length; i++)
+		{
+			var tb = nodes[i].textBackground;
+			var text = tb.pending;
+			tb.pending = null;
+
+			if (boxes[i] != null)
+			{
+				mxSvgCanvas2D.setTextBackgroundBounds(nodes[i], boxes[i]);
+				nodes[i].removeAttribute('display');
+				mxSvgCanvas2D.updateTextBackground(nodes[i], (text.px != null) ? text.px : 1,
+					(text.ox != null) ? text.ox : 0, (text.oy != null) ? text.oy : 0);
+			}
+		}
+	}
+};
+
+/**
+ * Function: updateTextBackground
+ *
+ * Applies the bounds and the border of the given background node of a text
+ * (see <addTextBackground>) for the given size of a screen pixel and origin
+ * of the pixel grid in the units of the node. The box is the bounding box of
+ * the text plus the label padding, one pixel larger on each side and aligned
+ * to pixels, and the border is at least one pixel wide and offset by half a
+ * pixel if its width in pixels is odd. Texts that are painted in model units
+ * apply the pixels of the view after each change of the scale or translate
+ * (see <mxText.updateTextBackground>).
+ *
+ * Parameters:
+ *
+ * node - SVG rectangle that was created in <addTextBackground>.
+ * px - Size of a screen pixel in the units of the node.
+ * ox - Horizontal origin of the pixel grid in the units of the node.
+ * oy - Vertical origin of the pixel grid in the units of the node.
+ */
+mxSvgCanvas2D.updateTextBackground = function(node, px, ox, oy)
+{
+	var tb = node.textBackground;
+
+	// Applied after the text is measured (see measureTextBackgrounds)
+	if (tb.pending != null)
+	{
+		tb.pending.px = px;
+		tb.pending.ox = ox;
+		tb.pending.oy = oy;
+
+		return;
+	}
+
+	var b = mxSvgCanvas2D.getTextBackgroundBounds(node, px, ox, oy);
+	node.setAttribute('x', b.x);
+	node.setAttribute('y', b.y);
+	node.setAttribute('width', b.width);
+	node.setAttribute('height', b.height);
+	node.setAttribute('stroke-width', b.strokeWidth);
+
+	// Workaround for crisp rendering
+	if (b.offset != 0)
+	{
+		node.setAttribute('transform', 'translate(' + b.offset +
+			', ' + b.offset + ')');
+	}
+	else
+	{
+		node.removeAttribute('transform');
+	}
+};
+
+/**
+ * Function: getTextBackgroundBounds
+ *
+ * Returns the bounds of the given background node of a text in the units of
+ * the node for the given size of a screen pixel and origin of the pixel grid
+ * as an object with x, y, width and height, the width of the border in
+ * strokeWidth and the offset of the node for crisp rendering in offset (see
+ * <updateTextBackground>).
+ *
+ * Parameters:
+ *
+ * node - SVG rectangle that was created in <addTextBackground>.
+ * px - Size of a screen pixel in the units of the node.
+ * ox - Horizontal origin of the pixel grid in the units of the node.
+ * oy - Vertical origin of the pixel grid in the units of the node.
+ * box - Optional bounding box of the text measured with getBBox in the units
+ * of the node. Default is the box of the background.
+ */
+mxSvgCanvas2D.getTextBackgroundBounds = function(node, px, ox, oy, box)
+{
+	var tb = node.textBackground;
+	var x = (box != null) ? box.x : tb.x;
+	var y = (box != null) ? box.y + px : tb.y + tb.dy * px;
+	var w = (box != null) ? box.width : tb.width;
+	var h = (box != null) ? box.height : tb.height;
+
+	if (tb.padding != null)
+	{
+		x -= tb.padding.left * tb.scale;
+		y -= tb.padding.top * tb.scale;
+		w += (tb.padding.left + tb.padding.right) * tb.scale;
+		h += (tb.padding.top + tb.padding.bottom) * tb.scale;
+	}
+
+	// Borders wider than 1 grow outward so that they do not cover the text
+	var grow = (tb.strokeWidth != null) ? Math.max(0, tb.strokeWidth - tb.scale) / 2 : 0;
+	x -= grow;
+	y -= grow;
+	w += 2 * grow;
+	h += 2 * grow;
+
+	var sw = (tb.strokeWidth != null) ? Math.max(px, tb.strokeWidth) : 0;
+
+	return {x: Math.floor((x + ox) / px - 1) * px - ox,
+		y: Math.floor((y + oy) / px - 1) * px - oy,
+		width: Math.ceil(w / px + 2) * px,
+		height: Math.ceil(h / px) * px, strokeWidth: sw,
+		offset: (tb.crisp && mxUtils.mod(sw / px, 2) == 1) ? 0.5 * px : 0};
 };
 
 /**

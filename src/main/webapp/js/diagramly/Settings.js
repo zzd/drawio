@@ -74,6 +74,46 @@ var mxSettings =
 		mxSettings.settings.currentEdgeStyle = value;
 		mxSettings.save();
 	},
+	/**
+	 * Returns the stored array of export presets for the given format or an
+	 * empty array. The entries are unvalidated and must be sanitized by the
+	 * caller (see EditorUi.sanitizeExportPreset).
+	 */
+	getExportPresets: function(format)
+	{
+		var presets = (mxSettings.settings != null) ?
+			mxSettings.settings.exportPresets : null;
+
+		if (presets != null && typeof presets === 'object' &&
+			!Array.isArray(presets) && typeof format === 'string' &&
+			Object.prototype.hasOwnProperty.call(presets, format) &&
+			Array.isArray(presets[format]))
+		{
+			return presets[format];
+		}
+
+		return [];
+	},
+	/**
+	 * Stores the given array of export presets for the given format.
+	 */
+	setExportPresets: function(format, value)
+	{
+		if (typeof format === 'string' && /^[a-z]+$/.test(format) &&
+			Array.isArray(value))
+		{
+			var presets = mxSettings.settings.exportPresets;
+
+			if (presets == null || typeof presets !== 'object' || Array.isArray(presets))
+			{
+				presets = {};
+			}
+
+			presets[format] = value;
+			mxSettings.settings.exportPresets = presets;
+			mxSettings.save();
+		}
+	},
 	getGridColor: function(darkMode)
 	{
 		var result = (darkMode) ? mxSettings.settings.darkGridColor :
@@ -202,6 +242,14 @@ var mxSettings =
 	{
 		mxSettings.settings.recentColors = recentColors;
 	},
+	getRecentShapes: function()
+	{
+		return mxSettings.settings.recentShapes;
+	},
+	setRecentShapes: function(recentShapes)
+	{
+		mxSettings.settings.recentShapes = recentShapes;
+	},
 	getFormatWidth: function()
 	{
 		return parseInt(mxSettings.settings.formatWidth);
@@ -299,6 +347,7 @@ var mxSettings =
 			customLibraries: Editor.defaultCustomLibraries,
 			plugins: [],
 			recentColors: [],
+			recentShapes: [],
 			formatWidth: mxSettings.defaultFormatWidth,
 			sidebarWidth: null,
 			collapsedSections: {},
@@ -368,7 +417,10 @@ var mxSettings =
 	{
 		var config = (value != null) ? JSON.parse(value) : null;
 
-		if (config == null || (config.configVersion != Editor.configVersion) ||
+		// A stored value that is not an object, eg. 1, would silently drop all
+		// defaults below, including the page format
+		if (config == null || typeof config !== 'object' ||
+			(config.configVersion != Editor.configVersion) ||
 			(Editor.config != null && Editor.config.override))
 		{
 			mxSettings.settings = null;
@@ -386,6 +438,12 @@ var mxSettings =
 			if (mxSettings.settings.recentColors == null)
 			{
 				mxSettings.settings.recentColors = [];
+			}
+
+			// Recent shapes of the sidebar (see Sidebar.addRecentShapes)
+			if (!Array.isArray(mxSettings.settings.recentShapes))
+			{
+				mxSettings.settings.recentShapes = [];
 			}
 
 			if (mxSettings.settings.customFonts == null)

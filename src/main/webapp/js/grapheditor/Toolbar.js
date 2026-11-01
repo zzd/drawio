@@ -195,7 +195,7 @@ Toolbar.prototype.createTextToolbar = function()
 	// to catch the focus on click in these browsers. NOTE: Workaround in mxPopupMenu for icon items (without text).
 	var alignMenu = this.addMenu(new Menu(mxUtils.bind(this, function(menu)
 	{
-		elt = menu.addItem('', Editor.alignLeftImage, mxUtils.bind(this, function(evt)
+		var elt = menu.addItem('', Editor.alignLeftImage, mxUtils.bind(this, function(evt)
 		{
 			graph.cellEditor.alignText(mxConstants.ALIGN_LEFT, evt);
 			ui.fireEvent(new mxEventObject('styleChanged',
@@ -229,7 +229,7 @@ Toolbar.prototype.createTextToolbar = function()
 		{
 			document.execCommand('justifyfull', false, null);
 		}));
-		elt.setAttribute('title', mxResources.get('justifyfull'));
+		elt.setAttribute('title', mxResources.get('block'));
 		
 		elt = menu.addItem('', Editor.orderedListImage, mxUtils.bind(this, function()
 		{
@@ -260,7 +260,7 @@ Toolbar.prototype.createTextToolbar = function()
 	
 	var formatMenu = this.addMenu(new Menu(mxUtils.bind(this, function(menu)
 	{
-		elt = menu.addItem('', Editor.subscriptImage, this.editorUi.actions.get('subscript').funct);
+		var elt = menu.addItem('', Editor.subscriptImage, this.editorUi.actions.get('subscript').funct);
 		elt.setAttribute('title', mxResources.get('subscript') + ' (' + Editor.ctrlKey + '+,)');
 		
 		elt = menu.addItem('', Editor.superscriptImage, this.editorUi.actions.get('superscript').funct);
@@ -325,8 +325,8 @@ Toolbar.prototype.createTextToolbar = function()
 	var tableMenu = this.addMenu(new Menu(mxUtils.bind(this, function(menu)
 	{
 		var elt = graph.getSelectedElement();
-		var cell = graph.getParentByNames(elt, ['TD', 'TH'], graph.cellEditor.text2);
-		var row = graph.getParentByName(elt, 'TR', graph.cellEditor.text2);
+		var cell = graph.getParentByNames(elt, ['TD', 'TH'], graph.cellEditor.textarea);
+		var row = graph.getParentByName(elt, 'TR', graph.cellEditor.textarea);
 
 		if (row == null)
     	{
@@ -334,7 +334,7 @@ Toolbar.prototype.createTextToolbar = function()
     	}
 		else
     	{
-			var table = graph.getParentByName(row, 'TABLE', graph.cellEditor.text2);
+			var table = graph.getParentByName(row, 'TABLE', graph.cellEditor.textarea);
 
 			elt = menu.addItem('', Editor.addColumnLeftImage, mxUtils.bind(this, function()
 			{
@@ -533,7 +533,14 @@ Toolbar.prototype.hideMenu = function()
  */
 Toolbar.prototype.setMenuText = function(menu, text)
 {
-	menu.getElementsByTagName('span')[0].innerText = text
+	var span = menu.getElementsByTagName('span')[0];
+
+	// The label is missing if the DOM was changed outside of the app,
+	// eg. by a browser extension
+	if (span != null)
+	{
+		span.innerText = text;
+	}
 };
 
 /**
@@ -658,21 +665,28 @@ Toolbar.prototype.addItem = function(sprite, key, container, noListeners)
 			}
 		});
 
+		var updateTitle = function()
+		{
+			var tooltip = action.getTitle();
+
+			if (action.shortcut != null)
+			{
+				tooltip += ' (' + action.shortcut + ')';
+			}
+
+			elt.setAttribute('title', tooltip);
+		};
+
 		if (!noListeners)
 		{
-			this.editorUi.dependsOnLanguage(mxUtils.bind(this, function()
-			{
-				var tooltip = action.getTitle();
-			
-				if (action.shortcut != null)
-				{
-					tooltip += ' (' + action.shortcut + ')';
-				}
-				
-				elt.setAttribute('title', tooltip);
-			}));
-
+			this.editorUi.dependsOnLanguage(updateTitle);
 			action.addListener('stateChanged', stateChangedListener);
+		}
+		else
+		{
+			// Sets the title once for items without listeners, eg. in the format
+			// panel, as it is also the name of the button for screen readers
+			updateTitle();
 		}
 		
 		stateChangedListener();

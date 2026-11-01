@@ -13,7 +13,26 @@ GitLabFile = function(ui, data, meta)
 mxUtils.extend(GitLabFile, GitHubFile);
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Shows the deprecation notice when the file is opened. GitLab support ends
+ * on 31 December 2027, files stay editable until then.
+ */
+GitLabFile.prototype.open = function()
+{
+	GitHubFile.prototype.open.apply(this, arguments);
+
+	if (!this.ui.editor.isChromelessView())
+	{
+		this.ui.showBanner('GitLabDeprecationFooter',
+			'GitLab support ends on 31 December 2027. Click here to move this diagram.',
+			mxUtils.bind(this, function()
+			{
+				this.ui.actions.get('saveAs').funct();
+			}));
+	}
+};
+
+/**
+ * Returns the URL of the file on GitLab.
  */
 GitLabFile.prototype.getFileUrl = function()
 {
@@ -21,7 +40,7 @@ GitLabFile.prototype.getFileUrl = function()
 };
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Returns the URL of the folder of the file on GitLab.
  */
 GitLabFile.prototype.getFolderUrl = function()
 {
@@ -31,10 +50,7 @@ GitLabFile.prototype.getFolderUrl = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Opens the members page of the project on GitLab.
  */
 GitLabFile.prototype.share = function()
 {
@@ -44,10 +60,8 @@ GitLabFile.prototype.share = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the ID of the file, which consists of the organization, the
+ * URI-encoded repository, the ref and the path.
  */
 GitLabFile.prototype.getId = function()
 {
@@ -58,10 +72,8 @@ GitLabFile.prototype.getId = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the hash of the file, which is the URI-encoded A followed by the
+ * ID.
  */
 GitLabFile.prototype.getHash = function()
 {
@@ -69,7 +81,7 @@ GitLabFile.prototype.getHash = function()
 };
 
 /**
- * Adds the listener for automatically saving the diagram for local changes.
+ * Returns true if the given error is a conflict (HTTP 400).
  */
 GitLabFile.prototype.isConflict = function(err)
 {
@@ -77,10 +89,7 @@ GitLabFile.prototype.isConflict = function(err)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns App.MODE_GITLAB.
  */
 GitLabFile.prototype.getMode = function()
 {
@@ -88,7 +97,7 @@ GitLabFile.prototype.getMode = function()
 };
 
 /**
- * Adds all listeners.
+ * Returns the last commit ID from the given descriptor.
  */
 GitLabFile.prototype.getDescriptorEtag = function(desc)
 {
@@ -96,7 +105,7 @@ GitLabFile.prototype.getDescriptorEtag = function(desc)
 };
 
 /**
- * Adds the listener for automatically saving the diagram for local changes.
+ * Sets the last commit ID of the given descriptor.
  */
 GitLabFile.prototype.setDescriptorEtag = function(desc, etag)
 {

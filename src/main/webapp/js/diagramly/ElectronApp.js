@@ -193,19 +193,30 @@ mxStencilRegistry.allowEval = false;
 	};
 	
 	var oldWindowOpen = window.open;
-	window.open = async function(url)
+	window.open = function(url, target, features)
 	{
 		// Only open a native electron window when url is empty. We use this in our code in several places.
-		if (url == null)
+		// Not async so that the caller gets the Window and not a Promise (eg. mxUtils.show writes to
+		// its document, which threw for the Preview action)
+		if (url == null || url === '' || url === 'about:blank')
 		{
-			return oldWindowOpen(url);
+			// Keyword targets (_self, _top, _parent) would replace the editor page
+			// with about:blank, which will-navigate in the main process does not stop
+			if (target == null || String(target).charAt(0) == '_')
+			{
+				target = '_blank';
+			}
+
+			// Native window.open turns null into the relative URL "null"
+			return oldWindowOpen((url != null) ? url : '', target, features);
 		}
 		else
 		{
-			// Open external will filter urls based on their protocol
-			await requestSync({action: 'openExternal', url: url});
+			// Open external will filter urls based on their protocol. Returns a
+			// Promise (non-null) as before so that callers do not use fallbacks.
+			return requestSync({action: 'openExternal', url: url}).then(function() {});
 		}
-	}
+	};
 
 	var origAppMain = App.main;
 	
@@ -884,6 +895,19 @@ mxStencilRegistry.allowEval = false;
 			this.loadArgs(argsObj)
 		})
 
+		electron.registerMsgListener('updateState', (state) =>
+		{
+			this.setUpdateState(state);
+		});
+
+		electron.request({action: 'getUpdateState'}, (state) =>
+		{
+			this.setUpdateState(state);
+		}, function()
+		{
+			// ignore
+		});
+
 		//We do some async stuff during app loading so we need to know exactly when loading is finished (it is not when onload is finished)
 		electron.sendMessage('app-load-finished', null);
 
@@ -987,7 +1011,7 @@ mxStencilRegistry.allowEval = false;
 
 	var origFileLoaded = EditorUi.prototype.fileLoaded;
 	
-	EditorUi.prototype.fileLoaded = async function(file)
+	EditorUi.prototype.fileLoaded = function(file)
 	{
 		var oldFile = this.getCurrentFile();
 
@@ -1027,13 +1051,15 @@ mxStencilRegistry.allowEval = false;
 		}
 
 		this.watchFile(file);
-		origFileLoaded.apply(this, arguments);
+		var result = origFileLoaded.apply(this, arguments);
 
 		// Baseline for stale external rewrite detection
 		if (file != null && typeof file.recordOwnState === 'function')
 		{
 			file.recordOwnState();
 		}
+
+		return result;
 	};
 
 	var origSetCurrentFile = EditorUi.prototype.setCurrentFile;
@@ -1057,15 +1083,55 @@ mxStencilRegistry.allowEval = false;
 		var newPath = (file != null && file.fileObject != null &&
 			file == this.getCurrentFile()) ? file.fileObject.path : null;
 		
+		// Path of the latest request so that registrations that resolve
+		// after a newer request can be detected and undone
+		this.requestedWatchPath = newPath;
+
 		if (this.watchedPath != newPath)
 		{
-			this.unwatchPath(this.watchedPath);
+			var oldPath = this.watchedPath;
+			this.watchedPath = null;
+
+			try
+			{
+				await this.unwatchPath(oldPath);
+			}
+			catch (e)
+			{
+				EditorUi.debug('EditorUi.watchFile', [this],
+					'unwatch failed', [oldPath], 'error', [e]);
+			}
 		}
 
 		if (newPath != null)
 		{
-			this.watchedPath = newPath;
-			this.watchPath(newPath);
+			// Only records the path as watched once the registration
+			// succeeded so that a failed watch is retried on the next
+			// call [jgraph/drawio-dev#676]
+			try
+			{
+				await this.watchPath(newPath);
+
+				if (this.requestedWatchPath == newPath)
+				{
+					this.watchedPath = newPath;
+				}
+				else if (this.watchedPath != newPath)
+				{
+					// Superseded by a newer request while pending
+					await this.unwatchPath(newPath);
+				}
+			}
+			catch (e)
+			{
+				if (this.watchedPath == newPath)
+				{
+					this.watchedPath = null;
+				}
+
+				EditorUi.debug('EditorUi.watchFile', [this],
+					'watch failed', [newPath], 'error', [e]);
+			}
 		}
 	};
 	
@@ -1124,7 +1190,7 @@ mxStencilRegistry.allowEval = false;
 
 			var addConflictStatus = mxUtils.bind(this, function(latestFile)
 			{
-				file.inConflictState = true;
+				file.setConflict();
 
 				file.addConflictStatus(null, mxUtils.bind(this, function()
 				{
@@ -1434,17 +1500,11 @@ mxStencilRegistry.allowEval = false;
 				// it is ready — wait for it before parsing.
 				this.whenScriptReady(EditorUi.isMermaidSupported, mxUtils.bind(this, function()
 				{
+					// The diagram is the page, so its text alternative becomes
+					// the Alt Text of the page (see createMermaidPageXml)
 					var onMermaid = mxUtils.bind(this, function(diagramXml)
 					{
-						fn(null, diagramXml, null, name, false);
-
-						// Mermaid files carry no stored view, so the default scroll
-						// can land at an arbitrary edge (e.g. the bottom of a tall
-						// flowchart). Apply the standard fit-on-load once the diagram
-						// is in place.
-						var ui = this;
-						window.setTimeout(function() { ui.fitInitialView(); }, 0);
-
+						fn(null, this.createMermaidPageXml(diagramXml), null, name, false);
 						checkDrafts();
 					});
 
@@ -2010,7 +2070,13 @@ mxStencilRegistry.allowEval = false;
 						
 						this.fileSaved(savedData, lastDesc, mxUtils.bind(this, function()
 						{
-							this.recordOwnState();
+							// LocalLibrary extends the pre-wrapper LocalFile, so
+							// libraries have no own-state ring [drawio-desktop#2581]
+							if (typeof this.recordOwnState === 'function')
+							{
+								this.recordOwnState();
+							}
+
 							this.ui.watchFile(this);
 							this.contentChanged();
 							
@@ -2034,7 +2100,7 @@ mxStencilRegistry.allowEval = false;
 						}
 						else if (errMsg == 'conflict')
 						{
-							this.inConflictState = true;
+							this.setConflict();
 							errorWrapper();
 						}
 						else
@@ -2265,7 +2331,7 @@ mxStencilRegistry.allowEval = false;
 			electron.request({
 				action: 'saveDraft',
 				fileObject: this.fileObject,
-				data: (data != null) ? data : this.ui.getFileData()
+				data: (data != null) ? data : this.getDraftData()
 			}, mxUtils.bind(this, function(draftFileName)
 			{
 				this.fileObject.draftFileName = draftFileName;
@@ -2347,7 +2413,8 @@ mxStencilRegistry.allowEval = false;
 	};
 
 	/**
-	 * Loads the given file handle as a local file.
+	 * Saves the current file, or saves it with a new name if forceDialog is true
+	 * or the file has no title, and invokes success after saving.
 	 */
 	App.prototype.saveFile = function(forceDialog, success, error, cancel)
 	{
@@ -2415,7 +2482,9 @@ mxStencilRegistry.allowEval = false;
 	};
 	
 	/**
-	 * Translates this point by the given vector.
+	 * Saves the given images as a library with the given name to the given file,
+	 * or to a new local library if file is null. The library is renamed if the
+	 * name has changed. Invokes fn after saving or on error.
 	 */
 	App.prototype.saveLibrary = function(name, images, file, mode, noSpin, noReload, fn)
 	{
@@ -2500,6 +2569,42 @@ mxStencilRegistry.allowEval = false;
 	App.prototype.checkForUpdates = function()
 	{
 		electron.sendMessage('checkForUpdates');
+	};
+
+	/**
+	 * Restarts with a downloaded update, or opens the release page of a new
+	 * version in installs that do not update themselves (MSI, zip, deb, rpm).
+	 */
+	App.prototype.installUpdate = function()
+	{
+		electron.sendMessage('installUpdate');
+	};
+
+	/**
+	 * Shows a banner once per version for an update that is ready to install
+	 * or, in installs that do not update themselves, for a new version.
+	 */
+	App.prototype.setUpdateState = function(state)
+	{
+		this.updateState = state;
+
+		if (state != null && state.version != null &&
+			(state.status == 'downloaded' || state.status == 'available'))
+		{
+			var ready = state.status == 'downloaded';
+
+			this.showBanner((ready ? 'UpdateReady' : 'UpdateAvailable') + state.version,
+				mxResources.get(ready ? 'updateReady' : 'updateAvailable', [state.version]),
+				mxUtils.bind(this, function()
+			{
+				this.installUpdate();
+			}), true);
+		}
+	};
+
+	App.prototype.toggleAutoUpdate = function()
+	{
+		electron.sendMessage('toggleAutoUpdate');
 	};
 	
 	App.prototype.toggleSpellCheck = function()
@@ -2831,6 +2936,16 @@ mxStencilRegistry.allowEval = false;
 				case 'txt':
 					filters = [
 				          { name: 'Plain Text', extensions: ['txt'] }
+				       ];
+				break;
+				case 'gif':
+					filters = [
+				          { name: 'GIF Images', extensions: ['gif'] }
+				       ];
+				break;
+				case 'mp4':
+					filters = [
+				          { name: 'MP4 Videos', extensions: ['mp4'] }
 				       ];
 				break;
 			};

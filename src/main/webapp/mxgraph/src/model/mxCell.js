@@ -182,10 +182,11 @@ mxCell.prototype.edges = null;
  * passed to <mxUtils.clone> and is not made persistent in <mxCellCodec>.
  * This is not a convention for all classes, it is only used in this class
  * to mark transient fields since transient modifiers are not supported by
- * the language.
+ * the language. The overlays belong to the cell in the graph, their
+ * listeners refer to that cell (see <mxGraph.addCellOverlay>).
  */
 mxCell.prototype.mxTransient = ['id', 'value', 'parent', 'source',
-                                'target', 'children', 'edges'];
+                                'target', 'children', 'edges', 'overlays'];
 
 /**
  * Function: getId
@@ -654,9 +655,13 @@ mxCell.prototype.insertEdge = function(edge, isOutgoing)
 		edge.removeFromTerminal(isOutgoing);
 		edge.setTerminal(this, isOutgoing);
 		
+		// Checks the last edge first, as both ends of a loop are inserted
+		// one after the other (looking up each loop in all edges of its
+		// terminal made 40,000 loops take 5 s to open)
 		if (this.edges == null ||
 			edge.getTerminal(!isOutgoing) != this ||
-			mxUtils.indexOf(this.edges, edge) < 0)
+			(this.edges[this.edges.length - 1] != edge &&
+			mxUtils.indexOf(this.edges, edge) < 0))
 		{
 			if (this.edges == null)
 			{

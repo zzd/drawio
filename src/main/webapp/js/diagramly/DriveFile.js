@@ -48,7 +48,7 @@ DriveFile.prototype.isConflict = function(err)
 };
 
 /**
- * Returns the current etag.
+ * Returns the current Google Drive user or null.
  */
 DriveFile.prototype.getCurrentUser = function()
 {
@@ -56,10 +56,7 @@ DriveFile.prototype.getCurrentUser = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns App.MODE_GOOGLE.
  */
 DriveFile.prototype.getMode = function()
 {
@@ -67,7 +64,7 @@ DriveFile.prototype.getMode = function()
 };
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Returns the URL for opening the file in Google Drive.
  */
 DriveFile.prototype.getFileUrl = function()
 {
@@ -75,7 +72,8 @@ DriveFile.prototype.getFileUrl = function()
 };
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Returns the URL of the parent folder of the file in Google Drive, or the
+ * URL of the trash if the file is trashed.
  */
 DriveFile.prototype.getFolderUrl = function()
 {
@@ -92,7 +90,8 @@ DriveFile.prototype.getFolderUrl = function()
 };
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Passes the download link of the file to the given function if the file is
+ * shared with anyone, otherwise null.
  */
 DriveFile.prototype.getPublicUrl = function(fn)
 {
@@ -132,10 +131,7 @@ DriveFile.prototype.isAutosaveOptional = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file is editable.
  */
 DriveFile.prototype.isRenamable = function()
 {
@@ -143,21 +139,7 @@ DriveFile.prototype.isRenamable = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
- */
-DriveFile.prototype.isMovable = function()
-{
-	return this.isEditable();
-};
-
-/**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file is in the Google Drive trash.
  */
 DriveFile.prototype.isTrashed = function()
 {
@@ -165,10 +147,7 @@ DriveFile.prototype.isTrashed = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Updates the file data and saves the file to Google Drive.
  */
 DriveFile.prototype.save = function(revision, success, error, unloading, overwrite)
 {
@@ -179,10 +158,9 @@ DriveFile.prototype.save = function(revision, success, error, unloading, overwri
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Saves the file to Google Drive unless a save is in progress. On a
+ * conflict, the remote changes are merged via the sync object and the save
+ * is retried.
  */
 DriveFile.prototype.saveFile = function(title, revision, success, error, unloading, overwrite)
 {
@@ -199,10 +177,7 @@ DriveFile.prototype.saveFile = function(title, revision, success, error, unloadi
 		}
 		else if (!this.savingFile)
 		{
-			// Sets shadow modified state during save
-			this.savingFileTime = new Date();
-			this.setShadowModified(false);
-			this.savingFile = true;
+			this.beginSave();
 
 			this.createSecret(mxUtils.bind(this, function(secret, token)
 			{
@@ -221,14 +196,11 @@ DriveFile.prototype.saveFile = function(title, revision, success, error, unloadi
 						{
 							try
 							{
-								this.savingFile = false;
-								
 								// Handles special case where resp is false eg
 								// if the old file was converted to realtime
 								if (resp != false)
 								{
-									// Checks for changes during save
-									this.setModified(this.getShadowModified());
+									this.endSave();
 									
 									if (revision)
 									{
@@ -245,15 +217,34 @@ DriveFile.prototype.saveFile = function(title, revision, success, error, unloadi
 									{
 										this.contentChanged();
 
+										// Counts the user as an editor of the month. Must
+										// never turn a successful save into an error.
+										if (this.ui.reportDriveEdit != null)
+										{
+											try
+											{
+												this.ui.reportDriveEdit();
+											}
+											catch (e)
+											{
+												// ignore
+											}
+										}
+
 										if (typeof success === 'function')
 										{
 											success(resp);
 										}
 									}), error, token, pages, checksum);
 								}
-								else if (error != null)
+								else
 								{
-									error(resp);
+									this.savingFile = false;
+
+									if (error != null)
+									{
+										error(resp);
+									}
 								}
 							}
 							catch (e)
@@ -277,35 +268,11 @@ DriveFile.prototype.saveFile = function(title, revision, success, error, unloadi
 								
 								if (this.isConflict(err))
 								{
-									this.inConflictState = true;
-									
-									if (this.sync != null)
+									this.handleSaveConflict(desc, mxUtils.bind(this, function()
 									{
-										this.savingFile = true;
-										
-										this.sync.fileConflict(desc, mxUtils.bind(this, function()
-										{
-											// Adds random cool-off
-											window.setTimeout(mxUtils.bind(this, function()
-											{
-												this.updateFileData();
-												this.setShadowModified(false);
-												doSave(realOverwrite, true);
-											}), 100 + Math.random() * 500);
-										}), mxUtils.bind(this, function()
-										{
-											this.savingFile = false;
-							
-											if (error != null)
-											{
-												error();
-											}
-										}));
-									}
-									else if (error != null)
-									{
-										error();
-									}
+										this.setShadowModified(false);
+										doSave(realOverwrite, true);
+									}), error);
 								}
 								else if (error != null)
 								{
@@ -370,7 +337,9 @@ DriveFile.prototype.saveFile = function(title, revision, success, error, unloadi
 };
 
 /**
- * Shows a conflict dialog to the user.
+ * Copies the file to the given filename or a generated copy filename in
+ * Google Drive and saves the current data to the copy. Restricted files use
+ * the default implementation.
  */
 DriveFile.prototype.copyFile = function(success, error, filename)
 {
@@ -398,7 +367,8 @@ DriveFile.prototype.copyFile = function(success, error, filename)
 };
 
 /**
- * Shows a conflict dialog to the user.
+ * Copies the file in Google Drive to the given filename and makes this file
+ * refer to the copy.
  */
 DriveFile.prototype.makeCopy = function(success, error, filename)
 {
@@ -429,8 +399,7 @@ DriveFile.prototype.makeCopy = function(success, error, filename)
 
 			this.ui.spinner.stop();
 			this.setModified(false);
-			this.invalidChecksum = false;
-			this.inConflictState = false;
+			this.clearConflict();
 
 			this.descriptorChanged();
 			success();
@@ -447,10 +416,8 @@ DriveFile.prototype.makeCopy = function(success, error, filename)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Copies the file in Google Drive to a file with the given name and passes
+ * the descriptor of the copy to success.
  */
 DriveFile.prototype.saveAs = function(filename, success, error)
 {
@@ -458,15 +425,11 @@ DriveFile.prototype.saveAs = function(filename, success, error)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Renames the file to the given title. The file is saved again if the file
+ * extension has changed.
  */
 DriveFile.prototype.rename = function(title, success, error)
 {
-	var rev = this.getCurrentRevisionId();
-	
 	this.ui.drive.renameFile(this.getId(), title, mxUtils.bind(this, function(desc)
 	{
 		if (!this.hasSameExtension(title, this.getTitle()))
@@ -475,7 +438,7 @@ DriveFile.prototype.rename = function(title, success, error)
 
 			if (this.sync != null)
 			{
-				this.sync.descriptorChanged(rev);
+				this.sync.descriptorChanged();
 			}
 			
 			this.save(true, success, error);
@@ -487,9 +450,9 @@ DriveFile.prototype.rename = function(title, success, error)
 			
 			if (this.sync != null)
 			{
-				this.sync.descriptorChanged(rev);
+				this.sync.descriptorChanged();
 			}
-			
+
 			if (success != null)
 			{
 				success(desc);
@@ -499,10 +462,7 @@ DriveFile.prototype.rename = function(title, success, error)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Moves the file to the Google Drive folder with the given ID.
  */
 DriveFile.prototype.move = function(folderId, success, error)
 {
@@ -519,10 +479,7 @@ DriveFile.prototype.move = function(folderId, success, error)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Shows the Google Drive sharing dialog for the file.
  */
 DriveFile.prototype.share = function()
 {
@@ -530,10 +487,7 @@ DriveFile.prototype.share = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the title of the file.
  */
 DriveFile.prototype.getTitle = function()
 {
@@ -541,10 +495,7 @@ DriveFile.prototype.getTitle = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the hash of the file, which is G followed by the file ID.
  */
 DriveFile.prototype.getHash = function()
 {
@@ -552,10 +503,7 @@ DriveFile.prototype.getHash = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the Google Drive ID of the file.
  */
 DriveFile.prototype.getId = function()
 {
@@ -563,10 +511,8 @@ DriveFile.prototype.getId = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file is editable and the user can edit it in Google
+ * Drive.
  */
 DriveFile.prototype.isEditable = function()
 {
@@ -621,7 +567,7 @@ DriveFile.prototype.setRealtimeEnabled = function(value, success, error)
 			{
 				if (desc != null)
 				{
-					this.sync.descriptorChanged(this.getCurrentEtag());
+					this.sync.descriptorChanged();
 					this.sync.updateDescriptor(desc);
 					success();
 				}
@@ -702,7 +648,21 @@ DriveFile.prototype.getRevisions = function(success, error)
  */
 DriveFile.prototype.getLatestVersion = function(success, error)
 {
-	this.ui.drive.getFile(this.getId(), success, error, true);
+	this.ui.drive.getFile(this.getId(), mxUtils.bind(this, function(file)
+	{
+		// getFile converts files that need an import (PNG without
+		// diagram data, PDF, VSDX, Gliffy) into a LocalFile whose
+		// descriptor is undefined, which must not replace the
+		// Drive descriptor of this file
+		if (file == null || file instanceof DriveFile)
+		{
+			success(file);
+		}
+		else if (error != null)
+		{
+			error({message: mxResources.get('notADiagramFile')});
+		}
+	}), error, true);
 };
 
 /**
@@ -763,7 +723,7 @@ DriveFile.prototype.getDescriptorChecksum = function(desc)
 
 	if (value != null && secret != null)
 	{
-		tokens = value.split(':');
+		var tokens = value.split(':');
 
 		// Checks if checksum matches current secret
 		if (tokens.length == 2 && tokens[0] == secret)

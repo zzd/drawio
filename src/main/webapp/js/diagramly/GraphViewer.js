@@ -110,12 +110,32 @@ GraphViewer.prototype.minHeight = 28;
 GraphViewer.prototype.minWidth = 100;
 
 /**
+ * Specifies if updateContainerHeight adds the CSS border and padding of a
+ * container with box-sizing border-box to the height. This is true for a
+ * border below 1, which is 1 then (see init). Default is false.
+ */
+GraphViewer.prototype.borderBoxHeight = false;
+
+/**
  * Implements viewBox to keep the contents inside the bounding box
- * of the container. This is currently not supported in Safari (due
- * to clipping in labels with viewBox) and all browsers that do not
- * support foreignObjects (eg. IE11).
+ * of the container. This is not supported in browsers that do not
+ * support foreignObjects (eg. IE11). Safari is supported as labels
+ * in model units place their foreignObjects at the labels (see
+ * mxSvgCanvas2D.placeForeignObjects), which WebKit does not clip.
  */
 GraphViewer.prototype.responsive = false;
+
+/**
+ * Specifies if viewers with auto-fit use the responsive mode, where the
+ * browser scales the diagram to the container, instead of fitting the
+ * diagram after each resize. This applies if the zoom toolbar is disabled,
+ * zooming out is allowed and the container is not resized. The scale is
+ * limited to 1 unless allow-zoom-in is true, and max-height or the height
+ * of the container limit the height as in the fit. Set this to false or
+ * the responsive-auto-fit config to false for the previous fit. Default
+ * is true.
+ */
+GraphViewer.responsiveAutoFit = true;
 
 /**
  * Dark mode can be one of null, "light", "dark" or "auto".
@@ -180,10 +200,16 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 	this.initialOverflow = document.body.style.overflow;
 	this.initialWidth = (container != null) ? container.style.width : null;
 	this.widthIsEmpty = (this.initialWidth != null) ? this.initialWidth == '' : true;
+	this.heightIsEmpty = (container != null) ? container.style.height == '' : true;
 	this.currentPage = parseInt(this.graphConfig.page) || 0;
+	this.responsiveAutoFit = this.graphConfig['responsive'] == null && this.autoFit &&
+		!this.zoomEnabled && this.allowZoomOut && !this.graphConfig.resize &&
+		((this.graphConfig['responsive-auto-fit'] != null) ?
+		this.graphConfig['responsive-auto-fit'] : GraphViewer.responsiveAutoFit);
 	this.responsive = ((this.graphConfig['responsive'] != null) ?
-		this.graphConfig['responsive'] : this.responsive) &&
-		!this.zoomEnabled && !mxClient.NO_FO && !mxClient.IS_SF;
+		this.graphConfig['responsive'] : this.responsive || this.responsiveAutoFit) &&
+		!this.zoomEnabled && !mxClient.NO_FO;
+	this.responsiveAutoFit = this.responsiveAutoFit && this.responsive;
 	this.pageId = this.graphConfig.pageId;
 	this.browserTranslate = mxClient.IS_GC && ((this.graphConfig['browser-translate'] != null) ?
 		this.graphConfig['browser-translate'] : true);
@@ -206,6 +232,10 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 			var render = mxUtils.bind(this, function()
 			{
 				this.graph = new Graph(container);
+
+				// Paints the cells in model units so that zoom and pan do not
+				// repaint
+				this.graph.view.modelCoordinates = true;
 
 				if (this.browserTranslate)
 				{
@@ -251,31 +281,138 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 
 					var maxScale = parseFloat(this.graphConfig['responsive-max-scale']);
 
+					// Adds the scale of the viewBox to the scale for the hit tolerance
+					// of strokes in WebKit (see mxSvgCanvas2D.toleranceScaleVariable),
+					// which changes with the size of the root and the viewBox
+					var updateToleranceScale = null;
+
+					if (mxSvgCanvas2D.prototype.toleranceScaleVariable != null)
+					{
+						var view = this.graph.view;
+
+						view.getToleranceScale = function()
+						{
+							var vb = root.viewBox.baseVal;
+							var r = root.getBoundingClientRect();
+							var vs = (vb != null && vb.width > 0 && vb.height > 0 &&
+								r.width > 0 && r.height > 0) ? Math.min(r.width / vb.width,
+								r.height / vb.height) : 1;
+
+							return this.scale * vs;
+						};
+
+						updateToleranceScale = function()
+						{
+							view.updateToleranceScale();
+						};
+
+						GraphViewer.addResizeListener(root, updateToleranceScale);
+					}
+
+					// Limits the diagram like the fit if auto-fit uses this mode:
+					// the scale to 1 unless zooming in is allowed, applied to the
+					// diagram if the container has a width, which the fit keeps,
+					// and the height to max-height or the height of the container
+					// (the root is 100% high), aligned at the top left unless the
+					// fit centers the diagram (see fitGraph)
+					var limitRoot = false;
+
+					if (this.responsiveAutoFit)
+					{
+						if (isNaN(maxScale) && !this.allowZoomIn)
+						{
+							maxScale = 1;
+						}
+
+						limitRoot = !this.widthIsEmpty;
+
+						if (this.graphConfig['max-height'] != null)
+						{
+							root.style.maxHeight = Math.max(1, this.graphConfig['max-height'] -
+								2 * responsiveBorder) + 'px';
+						}
+
+						var centered = this.center || !(this.graphConfig.resize != false ||
+							container.style.height == '');
+						root.setAttribute('preserveAspectRatio', (!centered) ? 'xMinYMin meet' :
+							((this.hCenterOnly) ? 'xMidYMin meet' : 'xMidYMid meet'));
+
+						// Centers the root, which is not wider than the diagram, in the
+						// container (preserveAspectRatio centers it within the root)
+						if (centered && limitRoot)
+						{
+							root.style.marginLeft = 'auto';
+							root.style.marginRight = 'auto';
+						}
+					}
+
 					// Capture any pre-existing maxWidth on the container (e.g. set
 					// by the host page to constrain the diagram) so we can honour
 					// it as an upper bound when responsive-max-scale adjusts the width.
-					var presetMaxWidth = parseFloat(container.style.maxWidth);
+					// Only a length in px is a number of pixels, other lengths such as
+					// 100% (eg. in HTML exports) are kept as a bound with CSS min.
+					var presetMaxWidth = container.style.maxWidth;
+					var presetMaxWidthPx = (/^\d+(\.\d+)?px$/.test(presetMaxWidth)) ?
+						parseFloat(presetMaxWidth) : NaN;
+					var presetMaxWidthCss = (isNaN(presetMaxWidthPx) &&
+						/^\d+(\.\d+)?(%|em|rem|vw|vh|ch)$/.test(presetMaxWidth)) ?
+						presetMaxWidth : null;
 
 					this.graph.sizeDidChange = function()
 					{
-						var bounds = this.view.graphBounds;
+						var bounds = this.view.getModelGraphBounds();
 						var tr = this.view.translate;
+
+						// Rounds the size up to whole units (ignoring rounding errors)
+						// so that the maximum width in whole pixels draws the diagram
+						// at exactly 1:1 unless it is scaled down. The origin is kept
+						// so that crisp strokes stay crisp.
+						var w = Math.ceil(bounds.width + 1 - 1e-6);
+						var h = Math.ceil(bounds.height + 1 - 1e-6);
 
 						root.setAttribute('viewBox',
 							(bounds.x + tr.x - this.panDx) + ' ' +
 							(bounds.y + tr.y - this.panDy) + ' ' +
-							(bounds.width + 1) + ' ' +
-							(bounds.height + 1));
+							w + ' ' + h);
 						this.container.style.backgroundColor =
 							root.style.backgroundColor;
 
-						if (!isNaN(maxScale))
+						if (limitRoot)
 						{
-							var naturalWidth = Math.round(
-								(bounds.width + 1) * maxScale + 2 * responsiveBorder);
-							var finalMaxWidth = !isNaN(presetMaxWidth) ?
-								Math.min(naturalWidth, presetMaxWidth) : naturalWidth;
-							this.container.style.maxWidth = finalMaxWidth + 'px';
+							root.style.maxWidth = Math.round(w * maxScale) + 'px';
+						}
+						else if (!isNaN(maxScale))
+						{
+							// Rounds the width without the border so that the root
+							// in the padding of the container has the same width
+							// and adds the CSS border of the container (eg. 1px
+							// transparent in HTML exports), which is inside the
+							// maximum width with box-sizing border-box
+							var css = mxUtils.getCurrentStyle(this.container);
+							var cssBorder = (css != null && css.boxSizing == 'border-box') ?
+								mxUtils.parseCssNumber(css.borderLeftWidth) +
+								mxUtils.parseCssNumber(css.borderRightWidth) : 0;
+							var naturalWidth = Math.round(w * maxScale) +
+								2 * responsiveBorder + cssBorder;
+							var finalMaxWidth = !isNaN(presetMaxWidthPx) ?
+								Math.min(naturalWidth, presetMaxWidthPx) : naturalWidth;
+							if (presetMaxWidthCss != null)
+							{
+								this.container.style.maxWidth = 'min(' + finalMaxWidth +
+									'px, ' + presetMaxWidthCss + ')';
+							}
+
+							// Browsers without CSS min ignore the value above
+							if (presetMaxWidthCss == null ||
+								this.container.style.maxWidth.substring(0, 4) != 'min(')
+							{
+								this.container.style.maxWidth = finalMaxWidth + 'px';
+							}
+						}
+
+						if (updateToleranceScale != null)
+						{
+							updateToleranceScale();
 						}
 
 						this.fireEvent(new mxEventObject(mxEvent.SIZE, 'bounds', bounds));
@@ -468,27 +605,39 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 		
 				this.graph.setBackgroundImage = function(img)
 				{
-					if (img != null && Graph.isPageLink(img.src))
+					// Uses the page link of a background page to update it
+					var src = (img != null) ? ((img.originalSrc != null) ?
+						img.originalSrc : img.src) : null;
+
+					if (Graph.isPageLink(src))
 					{
-						var src = img.src;
 						var comma = src.indexOf(',');
-							
+
 						if (comma > 0)
 						{
 							var index = self.getIndexById(src.substring(comma + 1));
-					
+
 							if (index >= 0)
 							{
 								img = self.getImageForGraphModel(
 									Editor.parseDiagramNode(
 									self.diagrams[index]));
 								img.originalSrc = src;
+								this.backgroundPageData = this.model.getValue(
+									this.model.getRoot());
 							}
 						}
 					}
 
 					graphSetBackgroundImage.apply(this, arguments);
 				};
+
+				// Updates background to update placeholders for page data
+				// after the cells of the current page were decoded
+				this.graph.model.addListener(mxEvent.CHANGE, function()
+				{
+					self.graph.validateBackgroundPageData();
+				});
 
 				// Overrides graph bounds to include background pages
 				var graphGetGraphBounds = this.graph.getGraphBounds;
@@ -550,7 +699,21 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 					
 					if (!this.responsive)
 					{
-						this.graph.border = (this.graphConfig.border != null) ? this.graphConfig.border : 8;
+						var border = (this.graphConfig.border != null) ? this.graphConfig.border : 8;
+
+						// The translate is rounded down to whole units, which moves
+						// the diagram up to 1 px to the left and top, so a border
+						// below 1 clips half of the stroke there. Such borders are 1,
+						// and the height of updateContainerHeight includes the CSS
+						// border and padding of a container with box-sizing
+						// border-box, which larger borders leave room for.
+						if (parseFloat(border) < 1)
+						{
+							border = 1;
+							this.borderBoxHeight = true;
+						}
+
+						this.graph.border = border;
 					}
 
 					this.installBackgroundColorHandler();
@@ -567,7 +730,7 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 					this.graph.panningHandler.isForcePanningEvent = function(me)
 					{
 						return !mxEvent.isPopupTrigger(me.getEvent()) &&
-							this.graph.container.style.overflow == 'auto';
+							this.graph.isContainerPannable();
 					};
 					
 					this.graph.panningHandler.useLeftButtonForPanning = true;					
@@ -599,6 +762,7 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 				}
 
 				this.addClickHandler(this.graph);
+				this.installScreenReaderSupport();
 				this.graph.initialViewState = {
 					translate: this.graph.view.translate.clone(),
 					scale: this.graph.view.scale
@@ -609,25 +773,39 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 					this.setLayersVisible(visible);
 				}
 				
+				// Selects the next or previous page with wrap around
+				this.graph.selectNextPage = function(forward)
+				{
+					if (self.diagrams != null && self.diagrams.length > 1)
+					{
+						self.selectPage(self.currentPage + ((forward) ? 1 : -1));
+					}
+				};
+
 				this.graph.customLinkClicked = function(href, associatedCell)
 				{
 					try
 					{
 						if (Graph.isPageLink(href))
 						{
-							var comma = href.indexOf(',');
+							// Whitespace around the ID of a hand-typed link is
+							// ignored, as in EditorUi.getPageByLink.
+							var id = href.substring(href.indexOf(',') + 1);
 							
-							if (!self.selectPageById(href.substring(comma + 1)))
+							if (!self.selectPageById(id) &&
+								!self.selectPageById(mxUtils.trim(id)))
 							{
 								alert(mxResources.get('pageNotFound') || 'Page not found');
 							}
 						}
 						else
 						{
-							var bounds = this.getGraphBounds();
+							// Crops only if the diagram changed, not for viewbox or
+							// scroll actions, which change the bounds on the screen
+							var bounds = this.view.getModelGraphBounds();
 							this.handleCustomLink(href, associatedCell);
 							
-							if (!bounds.equals(this.getGraphBounds()))
+							if (!bounds.equals(this.view.getModelGraphBounds()))
 							{
 								self.crop();
 							}
@@ -639,6 +817,36 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 					}
 					
 					return true;
+				};
+
+				// Resolves page links to page names for link tooltips
+				var graphGetLinkTitle = this.graph.getLinkTitle;
+
+				this.graph.getLinkTitle = function(href)
+				{
+					if (Graph.isPageLink(href))
+					{
+						// Ignores whitespace around the ID like customLinkClicked
+						var id = href.substring(href.indexOf(',') + 1);
+						var index = self.getIndexById(id);
+
+						if (index < 0)
+						{
+							index = self.getIndexById(mxUtils.trim(id));
+						}
+
+						if (index >= 0)
+						{
+							return self.diagrams[index].getAttribute('name') ||
+								mxResources.get('pageWithNumber', [index + 1], 'Page-' + (index + 1));
+						}
+						else
+						{
+							return mxResources.get('pageNotFound', null, 'Page not found');
+						}
+					}
+
+					return graphGetLinkTitle.apply(this, arguments);
 				};
 				
 				// Updates origin after tree cell folding
@@ -683,6 +891,90 @@ GraphViewer.prototype.init = function(container, xmlNode, graphConfig)
 			}
 		}
 	}
+};
+
+/**
+ * Makes the diagram a figure for screen readers, named after the Alt Text of
+ * its page (see getDiagramAltText), or else after its title and page with its
+ * numbers of shapes and connectors, which are counted after each change, eg.
+ * of the page, and adds the button for its text outline (see
+ * Graph.addTextOutlineButton). A role or name that the page gave the
+ * container is kept.
+ */
+GraphViewer.prototype.installScreenReaderSupport = function()
+{
+	var graph = this.graph;
+	var container = graph.container;
+
+	if (container.getAttribute('role') == null)
+	{
+		container.setAttribute('role', 'figure');
+		container.setAttribute('aria-roledescription', mxResources.get('diagram'));
+	}
+
+	graph.view.getOverlayPane().setAttribute('aria-hidden', 'true');
+	graph.view.getDecoratorPane().setAttribute('aria-hidden', 'true');
+	graph.addTextOutlineButton();
+
+	if (container.getAttribute('aria-label') == null &&
+		container.getAttribute('aria-labelledby') == null)
+	{
+		var update = mxUtils.bind(this, function()
+		{
+			var alt = this.getDiagramAltText();
+			container.setAttribute('aria-label', (alt != null) ? alt :
+				graph.getDiagramDescription(this.getDiagramName(), graph.getCellCounts()));
+		});
+
+		graph.getModel().addListener(mxEvent.CHANGE, update);
+
+		// A new file is shown before its pages are known (see setXmlNode)
+		this.addListener('xmlNodeChanged', update);
+		update();
+	}
+};
+
+/**
+ * Returns the Alt Text of the shown page (see DiagramPage.getAlt), which names
+ * the diagram for screen readers, or null.
+ */
+GraphViewer.prototype.getDiagramAltText = function()
+{
+	var index = this.getShownPage();
+	var alt = (index >= 0) ? this.diagrams[index].getAttribute('alt') : null;
+
+	return (alt != null && mxUtils.trim(alt) != '') ? alt : null;
+};
+
+/**
+ * Returns the index of the shown page, which is the last page if the current
+ * page is past the last page, like in the renderer (see Editor.setGraphXml),
+ * or -1 if there are no pages.
+ */
+GraphViewer.prototype.getShownPage = function()
+{
+	return (this.diagrams != null && this.diagrams.length > 0) ?
+		Math.max(0, Math.min(this.diagrams.length - 1, this.currentPage || 0)) : -1;
+};
+
+/**
+ * Returns the name of the diagram for screen readers: its title and the
+ * name of the page if there are more than one, or Diagram.
+ */
+GraphViewer.prototype.getDiagramName = function()
+{
+	var name = (this.graphConfig.title != null) ? mxUtils.trim(String(this.graphConfig.title)) : '';
+
+	var index = this.getShownPage();
+
+	if (index >= 0 && this.diagrams.length > 1)
+	{
+		var page = this.diagrams[index].getAttribute('name') ||
+			mxResources.get('pageWithNumber', [index + 1], 'Page-' + (index + 1));
+		name = (name.length > 0) ? name + ', ' + page : page;
+	}
+
+	return (name.length > 0) ? name : mxResources.get('diagram');
 };
 
 /**
@@ -849,8 +1141,9 @@ GraphViewer.prototype.getImageForGraphModel = function(node)
 
 	var codec = new mxCodec(node.ownerDocument);
 	var root = codec.decode(node).root;
+	graph.addPlaceholderRoot(this.graph.model.getRoot());
 	graph.model.setRoot(root);
-	
+
 	var svgRoot = graph.getSvg();
 	var bounds = graph.getGraphBounds();
 	document.body.removeChild(graph.container);
@@ -914,6 +1207,11 @@ GraphViewer.prototype.setFileNode = function(xmlNode)
  */
 GraphViewer.prototype.updateGraphXml = function(xmlNode)
 {
+	// Passes the current page and the navigation to the parser like the first
+	// load, as page changes and other viewers change these global variables,
+	// eg. after setXmlNode (see getShownPage)
+	urlParams['page'] = this.currentPage;
+	urlParams['nav'] = (this.graphConfig.nav != false) ? '1' : '0';
 	this.setGraphXml(xmlNode);
 	this.fireEvent(new mxEventObject('graphChanged'));
 };
@@ -1038,8 +1336,12 @@ GraphViewer.prototype.addSizeHandler = function()
 			
 			if (this.graphConfig['toolbar-nohide'] != true)
 			{
-				// Shows scrollbars if graph is larger than available width
-				if (tmp.width + 2 * this.graph.border > container.offsetWidth - 2)
+				// Shows scrollbars if graph is larger than available width or
+				// extends beyond the available height (eg. fixed height)
+				var size = this.getAvailableSize();
+
+				if (Math.round(tmp.width + 2 * this.graph.border) > size.width ||
+					Math.round(tmp.y + tmp.height) > size.height)
 				{
 					container.style.overflow = 'auto';
 				}
@@ -1057,7 +1359,7 @@ GraphViewer.prototype.addSizeHandler = function()
 			{
 				var r = container.getBoundingClientRect();
 				
-				// Workaround for position:relative set in ResizeSensor
+				// Uses the body as the origin if it is positioned relative
 				var origin = mxUtils.getScrollOrigin(document.body)
 				var b = (document.body.style.position === 'relative') ?
 					document.body.getBoundingClientRect() :
@@ -1123,14 +1425,19 @@ GraphViewer.prototype.addSizeHandler = function()
 				((this.allowZoomIn) ? null : 1));
 			this.graph.fit(null, null, null, null, null, true);
 
-			if (this.center || !(this.graphConfig.resize != false || container.style.height == ''))
+			// A height that the viewer set (see updateContainerHeight) is not
+			// a fixed height of the container, which is centered and kept
+			var fixedHeight = container.style.height != '' && !(this.heightIsEmpty &&
+				container.style.height == this.containerHeight);
+
+			if (this.center || !(this.graphConfig.resize != false || !fixedHeight))
 			{
-				this.graph.center(true, this.hCenterOnly? false : true);
+				this.centerGraph(true, this.hCenterOnly? false : true);
 			}	
 			
 			this.graph.maxFitScale = null;
 			
-			if (this.graphConfig.resize != false || container.style.height == '' || this.hCenterOnly)
+			if (this.graphConfig.resize != false || !fixedHeight || this.hCenterOnly)
 			{
 				this.updateContainerHeight(container, Math.max(this.minHeight,
 					this.graph.getGraphBounds().height +
@@ -1154,21 +1461,14 @@ GraphViewer.prototype.addSizeHandler = function()
 
 	if (GraphViewer.useResizeSensor)
 	{
-		if (document.documentMode <= 9)
-		{
-			mxEvent.addListener(window, 'resize', updateOverflow);
-			this.graph.addListener('size', updateOverflow);
-		}
-		else
-		{
-			new ResizeSensor(this.graph.container, updateOverflow);
-		}
+		GraphViewer.addResizeListener(this.graph.container, updateOverflow);
 	}
 	
 	if (this.graphConfig.resize || ((this.zoomEnabled || !this.autoFit) && this.graphConfig.resize != false))
 	{
 		this.graph.minimumContainerSize = new mxRectangle(0, 0, this.minWidth, this.minHeight);
 		this.graph.resizeContainer = true;
+		this.installContainerSize();
 	}
 	else
 	{
@@ -1186,28 +1486,20 @@ GraphViewer.prototype.addSizeHandler = function()
 		if (!this.zoomEnabled && this.autoFit)
 		{
 			var lastOffsetWidth = null;
-			var scheduledResize = null;
 			
+			// Fits right away as the resize sensor reports at most once per
+			// frame and a fit does not repaint the cells in model coordinates
 			var doResize = mxUtils.bind(this, function()
 			{
-				window.clearTimeout(scheduledResize);
-				
 				if (!this.handlingResize)
 				{
-					scheduledResize = window.setTimeout(mxUtils.bind(this, this.fitGraph), 100);
+					this.fitGraph();
 				}
 			});
 			
 			if (GraphViewer.useResizeSensor)
 			{
-				if (document.documentMode <= 9)
-				{
-					mxEvent.addListener(window, 'resize', doResize);
-				}
-				else
-				{
-					new ResizeSensor(this.graph.container, doResize);
-				}
+				GraphViewer.addResizeListener(this.graph.container, doResize);
 			}
 		}
 		else if (!(document.documentMode <= 9))
@@ -1229,8 +1521,9 @@ GraphViewer.prototype.addSizeHandler = function()
 		var maxHeight = (this.graphConfig['max-height'] != null) ? this.graphConfig['max-height'] :
 			((container.style.height != '' && this.autoFit) ? container.offsetHeight : undefined);
 		
+		// Uses the same width as the scrollbars (see updateOverflow)
 		if (container.offsetWidth > 0 && origin == null && this.allowZoomOut && (this.allowZoomIn ||
-			bounds.width + 2 * this.graph.border > container.offsetWidth ||
+			Math.round(bounds.width + 2 * this.graph.border) > this.getAvailableSize().width ||
 			bounds.height + 2 * this.graph.border > maxHeight))
 		{
 			var maxScale = null;
@@ -1244,7 +1537,7 @@ GraphViewer.prototype.addSizeHandler = function()
 		}
 		else if (!this.widthIsEmpty && origin == null && !(this.graphConfig.resize != false || container.style.height == ''))
 		{
-			this.graph.center((!this.widthIsEmpty || bounds.width < this.minWidth) && this.graphConfig.resize != true);
+			this.centerGraph((!this.widthIsEmpty || bounds.width < this.minWidth) && this.graphConfig.resize != true, true);
 		}
 		else
 		{
@@ -1256,6 +1549,14 @@ GraphViewer.prototype.addSizeHandler = function()
 		}
 		
 		container.style.minWidth = prev
+
+		// Stores the width after restoring the minimum width so that the
+		// resize listener does not fit the diagram again (2 px narrower and
+		// without the maximum height)
+		if (this.widthIsEmpty && lastOffsetWidth != null)
+		{
+			lastOffsetWidth = container.offsetWidth;
+		}
 	});
 
 	if (document.documentMode == 8)
@@ -1292,6 +1593,131 @@ GraphViewer.prototype.crop = function()
 };
 
 /**
+ * Resizes the container of viewers that resize it (graph.resizeContainer)
+ * so that the border is on the right and bottom of the diagram once, as on
+ * the left and top. mxGraph.sizeDidChange adds the border on both sides to
+ * the size from the origin, but the translate already puts the diagram at
+ * the border, so there was twice the border on the right and bottom. The
+ * size includes the CSS border and padding of a container with box-sizing
+ * border-box, and the SVG root gets the size without them as its minimum
+ * size, which is the area that scrollbars show. The size is rounded up to
+ * whole pixels before the CSS border is added, as the CSS border is a
+ * fraction of a pixel at a device pixel ratio that is not an integer (eg.
+ * 0.67 px for 1 px at 150 %): rounding up the sum gave a client area of
+ * eg. 1226.67 px for an SVG root of 1227 px, which showed scrollbars.
+ * Sizes with a border of 0 are unchanged.
+ */
+GraphViewer.prototype.installContainerSize = function()
+{
+	var graphSizeDidChange = this.graph.sizeDidChange;
+	var depth = 0;
+
+	this.graph.sizeDidChange = function()
+	{
+		var border = Number(this.getBorder()) || 0;
+
+		// Nested calls from listeners of the size event during the call
+		// below see resizeContainer false but also resize the container.
+		// A border of 0 is not added twice, so the size stays the same.
+		if ((this.resizeContainer || depth > 0) && border > 0 && !this.pageVisible &&
+			!this.preferPageSize && this.minimumGraphSize == null)
+		{
+			var bounds = this.getGraphBounds();
+			var bs = (mxUtils.getCurrentStyle(this.container).boxSizing == 'border-box') ?
+				this.getBorderSizes() : new mxRectangle();
+			var min = this.minimumContainerSize || new mxRectangle();
+			var width = Math.ceil(Math.max(0, bounds.x) + bounds.width + border);
+			var height = Math.ceil(Math.max(0, bounds.y) + bounds.height + border);
+
+			this.doResizeContainer(Math.max(min.width, width + bs.x + bs.width),
+				Math.max(min.height, height + bs.y + bs.height));
+			this.resizeContainer = false;
+			depth++;
+
+			try
+			{
+				graphSizeDidChange.apply(this, arguments);
+			}
+			finally
+			{
+				depth--;
+
+				if (depth == 0)
+				{
+					this.resizeContainer = true;
+				}
+			}
+
+			// Uses the bounds after the call, which may have changed in
+			// listeners of the size event
+			var root = this.view.getDrawPane().ownerSVGElement;
+			bounds = this.getGraphBounds();
+
+			if (root != null)
+			{
+				root.style.minWidth = Math.max(1, Math.ceil(Math.max(min.width - bs.x - bs.width,
+					Math.max(0, bounds.x) + bounds.width + border))) + 'px';
+				root.style.minHeight = Math.max(1, Math.ceil(Math.max(min.height - bs.y - bs.height,
+					Math.max(0, bounds.y) + bounds.height + border))) + 'px';
+			}
+		}
+		else
+		{
+			graphSizeDidChange.apply(this, arguments);
+		}
+	};
+};
+
+/**
+ * Centers the graph in the client area of the container. This is used
+ * instead of mxGraph.center, which subtracts the border on both sides from
+ * the free space but does not add it on the left and top, which moves the
+ * diagram by the border to the left and top. A diagram that does not fit
+ * in a direction is placed at the border instead of being clipped on both
+ * sides.
+ */
+GraphViewer.prototype.centerGraph = function(horizontal, vertical)
+{
+	var graph = this.graph;
+	var container = graph.container;
+	var bounds = graph.getGraphBounds();
+	var t = graph.view.translate;
+	var s = graph.view.scale;
+	var border = graph.border;
+	var x = (bounds.width <= container.clientWidth) ?
+		(container.clientWidth - bounds.width) / 2 : border;
+	var y = (bounds.height <= container.clientHeight) ?
+		(container.clientHeight - bounds.height) / 2 : border;
+
+	graph.view.setTranslate((horizontal) ? Math.floor(t.x + (x - bounds.x) / s) : t.x,
+		(vertical) ? Math.floor(t.y + (y - bounds.y) / s) : t.y);
+};
+
+/**
+ * Returns the size of the container without its CSS border
+ * (eg. the transparent border of embeds) and scrollbars, which is the space
+ * for the diagram and its border without scrollbars. The width is rounded
+ * as the CSS border is a fraction of a pixel at a device pixel ratio that
+ * is not an integer (eg. 0.67 px for 1 px at 150 %), so that the rounded
+ * width of the diagram and its border (see updateOverflow) is not more
+ * than a width of eg. 1226.67 px only because of the fraction. The height
+ * is not rounded, as the bottom of the diagram in updateOverflow has no
+ * border, and a rounded height would hide up to 0.83 px of it.
+ */
+GraphViewer.prototype.getAvailableSize = function()
+{
+	var container = this.graph.container;
+	var css = mxUtils.getCurrentStyle(container);
+
+	return new mxRectangle(0, 0, Math.round(container.offsetWidth -
+		mxUtils.parseCssNumber(css.borderLeftWidth) -
+		mxUtils.parseCssNumber(css.borderRightWidth)),
+		container.offsetHeight -
+		mxUtils.parseCssNumber(css.borderTopWidth) -
+		mxUtils.parseCssNumber(css.borderBottomWidth));
+};
+
+/**
  * 
  */
 GraphViewer.prototype.updateContainerWidth = function(container, width)
@@ -1307,7 +1733,21 @@ GraphViewer.prototype.updateContainerHeight = function(container, height)
 	if (this.forceCenter || this.zoomEnabled || !this.autoFit || document.compatMode == 'BackCompat' ||
 		document.documentMode == 8)
 	{
+		if (this.borderBoxHeight)
+		{
+			var css = mxUtils.getCurrentStyle(container);
+
+			if (css != null && css.boxSizing == 'border-box')
+			{
+				height += mxUtils.parseCssNumber(css.borderTopWidth) +
+					mxUtils.parseCssNumber(css.borderBottomWidth) +
+					mxUtils.parseCssNumber(css.paddingTop) +
+					mxUtils.parseCssNumber(css.paddingBottom);
+			}
+		}
+
 		container.style.height = height + 'px';
+		this.containerHeight = container.style.height;
 	}
 };
 
@@ -1454,15 +1894,21 @@ GraphViewer.prototype.addToolbar = function()
 			if (fadeThread != null)
 			{
 				window.clearTimeout(fadeThread);
-				fadeThead = null;
+				fadeThread = null;
 			}
 			
 			if (fadeThread2 != null)
 			{
 				window.clearTimeout(fadeThread2);
-				fadeThead2 = null;
+				fadeThread2 = null;
 			}
-			
+
+			// The toolbar stays while it has the keyboard focus
+			if (mxUtils.isAncestorNode(toolbar, document.activeElement))
+			{
+				return;
+			}
+
 			fadeThread = window.setTimeout(mxUtils.bind(this, function()
 			{
 			 	mxUtils.setOpacity(toolbar, 0);
@@ -1481,13 +1927,13 @@ GraphViewer.prototype.addToolbar = function()
 			if (fadeThread != null)
 			{
 				window.clearTimeout(fadeThread);
-				fadeThead = null;
+				fadeThread = null;
 			}
 			
 			if (fadeThread2 != null)
 			{
 				window.clearTimeout(fadeThread2);
-				fadeThead2 = null;
+				fadeThread2 = null;
 			}
 			
 			toolbar.style.display = 'flex';
@@ -1526,45 +1972,40 @@ GraphViewer.prototype.addToolbar = function()
 				fadeIn(30);
 			}
 		}));
-		
-		// Shows/hides toolbar for touch devices
-		var graph = this.graph;
-		var tol = graph.getTolerance();
 
-		graph.addMouseListener(
+		// Shows the toolbar for Tab in the diagram, which can then move the focus
+		// into it, and keeps it while it has the focus. In the capture phase, as
+		// the text outline button stops the keys (see Graph.addTextOutlineButton)
+		this.graph.container.addEventListener('keydown', function(evt)
 		{
-		    startX: 0,
-		    startY: 0,
-		    scrollLeft: 0,
-		    scrollTop: 0,
-		    mouseDown: function(sender, me)
-		    {
-		    	this.startX = me.getGraphX();
-		    	this.startY = me.getGraphY();
-			    this.scrollLeft = graph.container.scrollLeft;
-			    this.scrollTop = graph.container.scrollTop;
-		    },
-		    mouseMove: function(sender, me) {},
-		    mouseUp: function(sender, me)
-		    {
-		    	if (mxEvent.isTouchEvent(me.getEvent()))
-		    	{
-			    	if ((Math.abs(this.scrollLeft - graph.container.scrollLeft) < tol &&
-			    		Math.abs(this.scrollTop - graph.container.scrollTop) < tol) &&
-			    		(Math.abs(this.startX - me.getGraphX()) < tol &&
-			    		Math.abs(this.startY - me.getGraphY()) < tol))
-			    	{
-			    		if (parseFloat(toolbar.style.opacity || 0) > 0)
-			    		{
-			    			fadeOut();
-			    		}
-			    		else
-			    		{
-			    			fadeIn(30);
-			    		}
-					}
-		    	}
-		    }
+			if (evt.keyCode == 9 /* Tab */ && toolbar.style.display == 'none')
+			{
+				fadeIn(30);
+				fadeOut();
+			}
+		}, true);
+
+		mxEvent.addListener(toolbar, 'focusin', function()
+		{
+			fadeIn(100);
+		});
+
+		mxEvent.addListener(toolbar, 'focusout', function()
+		{
+			fadeOut();
+		});
+
+		// Shows/hides toolbar for touch devices
+		this.graph.addTouchTapListener(function()
+		{
+			if (parseFloat(toolbar.style.opacity || 0) > 0)
+			{
+				fadeOut();
+			}
+			else
+			{
+				fadeIn(30);
+			}
 		});
 	}
 	
@@ -1672,39 +2113,7 @@ GraphViewer.prototype.addToolbar = function()
 					{
 						layersDialog = this.graph.createLayersDialog(mxUtils.bind(this, function()
 						{
-							if (this.autoCrop)
-							{
-								this.crop();
-							}
-							else if (this.autoOrigin)
-							{
-								var bounds = this.graph.getGraphBounds();
-								var v = this.graph.view;
-	
-								if (bounds.x < 0 || bounds.y < 0)
-								{
-									this.crop();
-									this.graph.originalViewState = this.graph.initialViewState;
-
-									this.graph.initialViewState = {
-										translate: v.translate.clone(),
-										scale: v.scale
-									};
-								}
-								else if (this.graph.originalViewState != null &&
-									bounds.x / v.scale + this.graph.originalViewState.translate.x - v.translate.x > 0 &&
-									bounds.y / v.scale + this.graph.originalViewState.translate.y - v.translate.y > 0)
-								{
-									v.setTranslate(this.graph.originalViewState.translate.x,
-										this.graph.originalViewState.translate.y);
-									this.graph.originalViewState = null;
-									
-									this.graph.initialViewState = {
-										translate: v.translate.clone(),
-										scale: v.scale
-									};
-								}
-							}
+							this.updateOrigin();
 						}));
 						
 						mxEvent.addListener(layersDialog, 'mouseleave', function()
@@ -1762,39 +2171,7 @@ GraphViewer.prototype.addToolbar = function()
 
 						this.graph.addListener(mxEvent.REFRESH, mxUtils.bind(this, function()
 						{
-							if (this.autoCrop)
-							{
-								this.crop();
-							}
-							else if (this.autoOrigin)
-							{
-								var bounds = this.graph.getGraphBounds();
-								var v = this.graph.view;
-
-								if (bounds.x < 0 || bounds.y < 0)
-								{
-									this.crop();
-									this.graph.originalViewState = this.graph.initialViewState;
-
-									this.graph.initialViewState = {
-										translate: v.translate.clone(),
-										scale: v.scale
-									};
-								}
-								else if (this.graph.originalViewState != null &&
-									bounds.x / v.scale + this.graph.originalViewState.translate.x - v.translate.x > 0 &&
-									bounds.y / v.scale + this.graph.originalViewState.translate.y - v.translate.y > 0)
-								{
-									v.setTranslate(this.graph.originalViewState.translate.x,
-										this.graph.originalViewState.translate.y);
-									this.graph.originalViewState = null;
-
-									this.graph.initialViewState = {
-										translate: v.translate.clone(),
-										scale: v.scale
-									};
-								}
-							}
+							this.updateOrigin();
 						}));
 
 						tagsComponent.div.getElementsByTagName('div')[0].style.position = '';
@@ -1927,7 +2304,7 @@ GraphViewer.prototype.addToolbar = function()
 		{
 			var r = container.getBoundingClientRect();
 	
-			// Workaround for position:relative set in ResizeSensor
+			// Uses the body as the origin if it is positioned relative
 			var origin = mxUtils.getScrollOrigin(document.body)
 			var b = (document.body.style.position === 'relative') ?
 				document.body.getBoundingClientRect() :
@@ -2037,6 +2414,47 @@ GraphViewer.prototype.addToolbar = function()
 };
 
 /**
+ * Crops the graph or updates the origin for auto-origin after the visible
+ * cells have changed.
+ */
+GraphViewer.prototype.updateOrigin = function()
+{
+	if (this.autoCrop)
+	{
+		this.crop();
+	}
+	else if (this.autoOrigin)
+	{
+		var bounds = this.graph.getGraphBounds();
+		var v = this.graph.view;
+
+		if (bounds.x < 0 || bounds.y < 0)
+		{
+			this.crop();
+			this.graph.originalViewState = this.graph.initialViewState;
+
+			this.graph.initialViewState = {
+				translate: v.translate.clone(),
+				scale: v.scale
+			};
+		}
+		else if (this.graph.originalViewState != null &&
+			bounds.x / v.scale + this.graph.originalViewState.translate.x - v.translate.x > 0 &&
+			bounds.y / v.scale + this.graph.originalViewState.translate.y - v.translate.y > 0)
+		{
+			v.setTranslate(this.graph.originalViewState.translate.x,
+				this.graph.originalViewState.translate.y);
+			this.graph.originalViewState = null;
+
+			this.graph.initialViewState = {
+				translate: v.translate.clone(),
+				scale: v.scale
+			};
+		}
+	}
+};
+
+/**
  * 
  */
 GraphViewer.prototype.createToolbarButton = function(fn, imgSrc, tip, enabled)
@@ -2054,14 +2472,18 @@ GraphViewer.prototype.createToolbarButton = function(fn, imgSrc, tip, enabled)
 		a.setAttribute('title', tip);
 	}
 	
+	// The title of the button is its name
 	var img = document.createElement('img');
+	img.setAttribute('alt', '');
 	img.setAttribute('border', '0');
 	img.setAttribute('src', imgSrc);
 	img.style.width = '18px';
 	img.className = 'geAdaptiveAsset';
-	
+
 	if (enabled == null || enabled)
 	{
+		Editor.initKeyboardButton(a);
+
 		mxEvent.addListener(a, 'mouseenter', function()
 		{
 			a.style.backgroundColor = 'light-dark(#dddddd,#333333)';
@@ -2094,6 +2516,10 @@ GraphViewer.prototype.disableButton = function(token, tooltip)
 	{
 		mxUtils.setOpacity(def.elem, 30);
 		mxEvent.removeListener(def.elem, 'click', def.handler);
+
+		// Disabled for screen readers (see Editor.initKeyboardButton) and Tab
+		def.elem.setAttribute('disabled', 'disabled');
+		def.elem.setAttribute('tabindex', '-1');
 		//Workaround to stop highlighting the disabled button
 		mxEvent.addListener(def.elem, 'mouseenter', function()
 		{
@@ -2334,21 +2760,27 @@ GraphViewer.prototype.showLocalLightbox = function(container)
 	urlParams['layers'] = (this.layersEnabled) ? '1' : '0';
 	urlParams['dark'] = (this.isDarkMode()) ? '1' : '0';
 
-	if (this.tagsEnabled && this.diagrams != null &&
-		this.diagrams[this.currentPage] != null)
+	if (this.tagsEnabled)
 	{
-		// Saves current page's hidden tags before passing to lightbox
-		var curPageId = this.diagrams[this.currentPage].getAttribute('id');
-
-		if (this.graphConfig.hiddenTags == null)
+		if (this.diagrams != null && this.diagrams[this.currentPage] != null)
 		{
-			// Null prototype: keyed by page ids from the diagram XML
-			this.graphConfig.hiddenTags = Object.create(null);
+			// Saves current page's hidden tags before passing to lightbox
+			var curPageId = this.diagrams[this.currentPage].getAttribute('id');
+
+			if (this.graphConfig.hiddenTags == null)
+			{
+				// Null prototype: keyed by page ids from the diagram XML
+				this.graphConfig.hiddenTags = Object.create(null);
+			}
+
+			this.graphConfig.hiddenTags[curPageId] =
+				(this.graph.hiddenTags.length > 0) ? this.graph.hiddenTags.slice() : null;
 		}
 
-		this.graphConfig.hiddenTags[curPageId] =
-			(this.graph.hiddenTags.length > 0) ? this.graph.hiddenTags.slice() : null;
-		urlParams['tags'] = JSON.stringify(this.graphConfig.hiddenTags);
+		// Always passed as it also adds the tags button to the lightbox toolbar,
+		// eg. for viewers without a diagram such as the Confluence Cloud lightbox
+		urlParams['tags'] = JSON.stringify((this.graphConfig.hiddenTags != null) ?
+			this.graphConfig.hiddenTags : {});
 	}
 
 	if (container != null)
@@ -2373,9 +2805,35 @@ GraphViewer.prototype.showLocalLightbox = function(container)
 	EditorUi.prototype.addBeforeUnloadListener = function() {};
 	EditorUi.prototype.addChromelessClickHandler = function() {};
 
+	// Starts loading the UI language for the dialogs of the lightbox
+	GraphViewer.loadLanguageResources();
+
 	var ui = new EditorUi(new Editor(true), document.createElement('div'), true);
 	this.addListener('darkModeChanged', updateDarkMode);
+
+	// Names the lightbox after the title of the viewer for screen readers
+	if (this.graphConfig.title != null && mxUtils.trim(String(this.graphConfig.title)).length > 0)
+	{
+		ui.diagramName = mxUtils.trim(String(this.graphConfig.title));
+	}
 	ui.editor.editBlankUrl = this.editBlankUrl;
+
+	// Waits for the UI language before showing the print dialog
+	var uiShowPrintDialog = ui.showPrintDialog;
+
+	ui.showPrintDialog = function()
+	{
+		var args = arguments;
+
+		GraphViewer.loadLanguageResources(function()
+		{
+			// Ignores lightboxes closed while loading
+			if (ui.editor != null)
+			{
+				uiShowPrintDialog.apply(ui, args);
+			}
+		});
+	};
 
 	// Disables refresh
 	ui.refresh = function() {};
@@ -2501,18 +2959,23 @@ GraphViewer.prototype.showLocalLightbox = function(container)
 				document.body.appendChild(closeImg);
 			}
 			
-			ui.setFileData(this.xml);
-
-			// Applies initial hidden tags for the current page before
-			// lightboxFit so that the view fits the visible cells
-			if (this.tagsEnabled && this.graphConfig.hiddenTags != null &&
-				ui.currentPage != null)
+			// Hides the tags of each page before it is rendered so that
+			// lightboxFit fits the visible cells
+			if (this.tagsEnabled && this.graphConfig.hiddenTags != null)
 			{
-				var pageId = ui.currentPage.getId();
-				var pageTags = this.graphConfig.hiddenTags[pageId];
-				graph.hiddenTags = (pageTags != null && pageTags.length > 0) ? pageTags : [];
-				graph.refresh();
+				var hiddenTags = this.graphConfig.hiddenTags;
+
+				ui.getHiddenTagsForPage = function(page)
+				{
+					// Own properties only as page IDs come from the diagram
+					var pageTags = (Object.prototype.hasOwnProperty.call(hiddenTags,
+						page.getId())) ? hiddenTags[page.getId()] : null;
+
+					return (pageTags != null && pageTags.length > 0) ? pageTags : [];
+				};
 			}
+
+			ui.setFileData(this.xml);
 
 			mxUtils.setPrefixedStyle(lightbox.style, 'transform', 'rotateY(0deg)');
 			ui.chromelessToolbar.style.bottom = 60 + 'px';
@@ -2668,18 +3131,452 @@ GraphViewer.createViewerForElement = function(element, callback)
 			}
 		};
 
-		if (config.url != null)
+		var load = function()
 		{
-			GraphViewer.getUrl(config.url, function(xml)
+			if (config.url != null)
 			{
-				createViewer(xml);
-			});
+				GraphViewer.getUrl(config.url, function(xml)
+				{
+					createViewer(xml);
+				});
+			}
+			else
+			{
+				createViewer(config.xml);
+			}
+		};
+
+		if (GraphViewer.isLazy(config))
+		{
+			GraphViewer.addLazyViewer(element, config, load);
 		}
 		else
 		{
-			createViewer(config.xml);
+			load();
 		}
 	}
+};
+
+/**
+ * Default of the lazy option of createViewerForElement (data-mxgraph). If
+ * true, the viewer of an element is created when the element comes near the
+ * visible area (see lazyMargin) or before printing, and the approximate
+ * size of the diagram is reserved until then. Default is false.
+ */
+GraphViewer.lazy = false;
+
+/**
+ * Margin around the visible area in which lazy viewers are created, as the
+ * rootMargin of an IntersectionObserver. Default is one viewport height
+ * above and below the visible area.
+ */
+GraphViewer.lazyMargin = '100% 0px';
+
+/**
+ * Lazy viewers that are not created yet, as objects with the element and
+ * the function that creates the viewer.
+ */
+GraphViewer.lazyViewers = [];
+
+/**
+ * IntersectionObserver of the lazy viewers.
+ */
+GraphViewer.lazyObserver = null;
+
+/**
+ * Returns true if the viewer for the given data-mxgraph config is created
+ * lazily (the lazy option or GraphViewer.lazy). This needs
+ * IntersectionObserver.
+ */
+GraphViewer.isLazy = function(config)
+{
+	var lazy = GraphViewer.lazy == true;
+
+	if (config != null && typeof config === 'object' &&
+		Object.prototype.hasOwnProperty.call(config, 'lazy') &&
+		typeof config.lazy === 'boolean')
+	{
+		lazy = config.lazy;
+	}
+
+	return lazy && typeof window.IntersectionObserver === 'function';
+};
+
+/**
+ * Calls the given function, which creates the viewer of the given element,
+ * when the element comes near the visible area or before printing, and
+ * reserves the size of the diagram until then.
+ */
+GraphViewer.addLazyViewer = function(element, config, createViewer)
+{
+	var restore = GraphViewer.reserveSize(element, config);
+	var entry = {element: element};
+
+	entry.create = function()
+	{
+		var index = mxUtils.indexOf(GraphViewer.lazyViewers, entry);
+
+		if (index >= 0)
+		{
+			GraphViewer.lazyViewers.splice(index, 1);
+			GraphViewer.lazyObserver.unobserve(element);
+
+			if (restore != null)
+			{
+				restore();
+			}
+
+			try
+			{
+				createViewer();
+			}
+			catch (e)
+			{
+				// Same as processElements
+				element.innerText = e.message;
+
+				if (window.console != null)
+				{
+					console.error(e);
+				}
+			}
+		}
+	};
+
+	if (GraphViewer.lazyObserver == null)
+	{
+		GraphViewer.lazyObserver = new IntersectionObserver(function(entries)
+		{
+			for (var i = 0; i < entries.length; i++)
+			{
+				if (entries[i].isIntersecting)
+				{
+					GraphViewer.createLazyViewers(entries[i].target);
+				}
+			}
+		}, {rootMargin: GraphViewer.lazyMargin});
+
+		mxEvent.addListener(window, 'beforeprint', function()
+		{
+			GraphViewer.createLazyViewers();
+		});
+	}
+
+	GraphViewer.lazyViewers.push(entry);
+	GraphViewer.lazyObserver.observe(element);
+};
+
+/**
+ * Creates the lazy viewer of the given element now, or all lazy viewers
+ * that are not created yet if no element is given.
+ */
+GraphViewer.createLazyViewers = function(element)
+{
+	var entries = GraphViewer.lazyViewers.slice();
+
+	for (var i = 0; i < entries.length; i++)
+	{
+		if (element == null || entries[i].element == element)
+		{
+			entries[i].create();
+		}
+	}
+};
+
+/**
+ * Reserves the approximate size of the viewer for the given config in the
+ * given element if the element has no height. Returns the function that
+ * restores the style of the element or null.
+ */
+GraphViewer.reserveSize = function(element, config)
+{
+	var css = mxUtils.getCurrentStyle(element);
+
+	if (css != null && element.style.height == '' && element.clientHeight -
+		mxUtils.parseCssNumber(css.paddingTop) -
+		mxUtils.parseCssNumber(css.paddingBottom) <= 0)
+	{
+		var size = GraphViewer.getLazySize(config);
+
+		if (size != null)
+		{
+			var style = element.style;
+			var prev = {aspectRatio: style.aspectRatio, width: style.width,
+				marginTop: style.marginTop, marginBottom: style.marginBottom};
+			style.aspectRatio = size.width + ' / ' + size.height;
+
+			if (style.width == '')
+			{
+				style.width = 'min(100%, ' + size.width + 'px)';
+			}
+
+			if (size.marginTop > 0)
+			{
+				style.marginTop = size.marginTop + 'px';
+			}
+
+			if (size.marginBottom > 0)
+			{
+				style.marginBottom = size.marginBottom + 'px';
+			}
+
+			return function()
+			{
+				for (var key in prev)
+				{
+					style[key] = prev[key];
+				}
+			};
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Returns the approximate size of the viewer for the given data-mxgraph
+ * config as an object with width, height, marginTop and marginBottom, or
+ * null if the config has no XML or the diagram is empty. The size of the
+ * diagram is the union of the geometries of the visible cells of the page,
+ * without labels outside of the shapes and strokes.
+ */
+GraphViewer.getLazySize = function(config)
+{
+	try
+	{
+		if (config != null && typeof config === 'object' && typeof config.xml === 'string')
+		{
+			var node = Editor.extractGraphModel(mxUtils.parseXml(config.xml).documentElement, true);
+
+			if (node != null && node.nodeName == 'mxfile')
+			{
+				var diagrams = node.getElementsByTagName('diagram');
+				var index = parseInt(config.page) || 0;
+
+				if (typeof config.pageId === 'string')
+				{
+					for (var i = 0; i < diagrams.length; i++)
+					{
+						if (diagrams[i].getAttribute('id') == config.pageId)
+						{
+							index = i;
+							break;
+						}
+					}
+				}
+
+				node = (index >= 0 && index < diagrams.length) ?
+					Editor.parseDiagramNode(diagrams[index]) : null;
+			}
+
+			var bounds = (node != null && node.nodeName == 'mxGraphModel') ?
+				GraphViewer.getModelNodeBounds(node) : null;
+
+			if (bounds != null)
+			{
+				var zoom = parseFloat(config.zoom);
+				zoom = (isFinite(zoom) && zoom > 0) ? zoom : 1;
+				var border = parseFloat(config.border);
+				border = (isFinite(border) && border >= 0) ? Math.max(1, border) : 8;
+				var width = Math.ceil(bounds.width * zoom + 2 * border);
+				var height = Math.ceil(bounds.height * zoom + 2 * border);
+				var tb = (config.toolbar != null) ? GraphViewer.prototype.toolbarHeight : 0;
+				var pos = config['toolbar-position'];
+
+				if (width > 0 && height > 0 && width < 1e5 && height < 1e5)
+				{
+					return {width: width, height: height,
+						marginTop: (pos != 'bottom' && pos != 'inline') ? tb : 0,
+						marginBottom: (pos == 'bottom') ? tb : 0};
+				}
+			}
+		}
+	}
+	catch (e)
+	{
+		// ignore
+	}
+
+	return null;
+};
+
+/**
+ * Returns the bounds of the geometries of the visible vertices and the
+ * points of the visible edges in the given mxGraphModel node, or null.
+ * Visits each cell once.
+ */
+GraphViewer.getModelNodeBounds = function(node)
+{
+	var cells = node.getElementsByTagName('mxCell');
+	var byId = Object.create(null);
+	var entries = [];
+
+	var num = function(elt, name)
+	{
+		var value = parseFloat(elt.getAttribute(name));
+
+		return (isFinite(value)) ? value : 0;
+	};
+
+	for (var i = 0; i < cells.length; i++)
+	{
+		var cell = cells[i];
+		var id = cell.getAttribute('id');
+
+		// Cells with properties are wrapped in an element with the ID
+		if (id == null && cell.parentNode != null &&
+			cell.parentNode.nodeType == mxConstants.NODETYPE_ELEMENT)
+		{
+			id = cell.parentNode.getAttribute('id');
+		}
+
+		var geo = null;
+
+		for (var child = cell.firstChild; child != null; child = child.nextSibling)
+		{
+			if (child.nodeName == 'mxGeometry')
+			{
+				geo = child;
+				break;
+			}
+		}
+
+		var entry = {parent: cell.getAttribute('parent'), geo: geo, style: cell.getAttribute('style'),
+			vertex: cell.getAttribute('vertex') == '1', edge: cell.getAttribute('edge') == '1',
+			source: cell.getAttribute('source'), target: cell.getAttribute('target'),
+			invisible: cell.getAttribute('visible') == '0',
+			collapsed: cell.getAttribute('collapsed') == '1',
+			relative: geo != null && geo.getAttribute('relative') == '1'};
+		entries.push(entry);
+
+		if (id != null)
+		{
+			byId[id] = entry;
+		}
+	}
+
+	// Origin of the children of the given entry, null if they are not shown.
+	// The origins are cached in the entries and parents in a cycle are not
+	// shown.
+	var getOrigin = function(entry)
+	{
+		var chain = [];
+
+		while (entry != null && entry.origin === undefined)
+		{
+			if (entry.visiting)
+			{
+				for (var i = 0; i < chain.length; i++)
+				{
+					chain[i].origin = null;
+				}
+
+				return null;
+			}
+
+			entry.visiting = true;
+			chain.push(entry);
+			entry = (entry.parent != null) ? byId[entry.parent] : null;
+		}
+
+		var origin = (entry != null) ? entry.origin : {x: 0, y: 0};
+
+		for (var i = chain.length - 1; i >= 0; i--)
+		{
+			var e = chain[i];
+
+			if (origin != null)
+			{
+				if (e.vertex)
+				{
+					origin = (e.invisible || e.collapsed || e.geo == null || e.relative) ? null :
+						{x: origin.x + num(e.geo, 'x'), y: origin.y + num(e.geo, 'y')};
+				}
+				else if (e.edge || e.invisible)
+				{
+					origin = null;
+				}
+			}
+
+			e.origin = origin;
+		}
+
+		return origin;
+	};
+
+	var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+
+	var add = function(x, y)
+	{
+		x0 = Math.min(x0, x);
+		y0 = Math.min(y0, y);
+		x1 = Math.max(x1, x);
+		y1 = Math.max(y1, y);
+	};
+
+	for (var i = 0; i < entries.length; i++)
+	{
+		var entry = entries[i];
+		var geo = entry.geo;
+
+		if (geo != null && entry.parent != null && !entry.invisible &&
+			((entry.vertex && !entry.relative) || entry.edge))
+		{
+			var o = getOrigin(byId[entry.parent]);
+
+			if (o != null && entry.vertex)
+			{
+				var x = num(geo, 'x') + o.x;
+				var y = num(geo, 'y') + o.y;
+				var w = num(geo, 'width');
+				var h = num(geo, 'height');
+				var rot = /(?:^|;)\s*rotation\s*=\s*([^;]*)/.exec(entry.style || '');
+				var alpha = (rot != null) ? parseFloat(rot[1]) * Math.PI / 180 : 0;
+
+				// Bounding box of a rotated shape
+				if (isFinite(alpha) && alpha != 0)
+				{
+					var cos = Math.abs(Math.cos(alpha)), sin = Math.abs(Math.sin(alpha));
+					var rw = w * cos + h * sin, rh = w * sin + h * cos;
+					x += (w - rw) / 2;
+					y += (h - rh) / 2;
+					w = rw;
+					h = rh;
+				}
+
+				add(x, y);
+				add(x + w, y + h);
+			}
+			else if (o != null)
+			{
+				for (var child = geo.firstChild; child != null; child = child.nextSibling)
+				{
+					if (child.nodeType == mxConstants.NODETYPE_ELEMENT)
+					{
+						var as = child.getAttribute('as');
+
+						if (child.nodeName == 'mxPoint' && ((as == 'sourcePoint' && entry.source == null) ||
+							(as == 'targetPoint' && entry.target == null)))
+						{
+							add(num(child, 'x') + o.x, num(child, 'y') + o.y);
+						}
+						else if (child.nodeName == 'Array' && as == 'points')
+						{
+							for (var pt = child.firstChild; pt != null; pt = pt.nextSibling)
+							{
+								if (pt.nodeName == 'mxPoint')
+								{
+									add(num(pt, 'x') + o.x, num(pt, 'y') + o.y);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return (x0 <= x1 && y0 <= y1) ? new mxRectangle(x0, y0, x1 - x0, y1 - y0) : null;
 };
 
 /**
@@ -2967,236 +3864,190 @@ GraphViewer.getUrl = function(url, onload, onerror)
 };
 
 /**
- * Redirects editing to absolue URLs.
+ * State of the UI language resources: null (not requested), an array of
+ * pending callbacks (loading) or true (done or not needed).
+ */
+GraphViewer.languageResources = null;
+
+/**
+ * Returns the language of the lightbox UI or null for the default language.
+ * Uses the language of the app (lang URL parameter, stored setting or
+ * browser language on known hosts) or the browser language.
+ */
+GraphViewer.getLanguage = function()
+{
+	var lang = (window.mxLanguage != null) ? mxLanguage : mxClient.language;
+
+	if (lang != null)
+	{
+		lang = String(lang).toLowerCase();
+
+		// Uses base language for unsupported regional variants
+		if (mxClient.languages != null && mxUtils.indexOf(mxClient.languages, lang) < 0)
+		{
+			var dash = lang.indexOf('-');
+
+			if (dash > 0)
+			{
+				lang = lang.substring(0, dash);
+			}
+		}
+
+		// Language is used in the resource URL
+		if (!/^[a-z0-9\-]+$/.test(lang) || lang == mxClient.defaultLanguage ||
+			(mxClient.languages != null && mxUtils.indexOf(mxClient.languages, lang) < 0))
+		{
+			lang = null;
+		}
+	}
+
+	return lang;
+};
+
+/**
+ * Returns the base URL of the UI language resources. The viewer bundles
+ * point STYLE_PATH to the viewer host while the default RESOURCES_PATH is
+ * relative to the host page so the resources next to STYLE_PATH are used.
+ */
+GraphViewer.getResourceBase = function()
+{
+	var base = window.RESOURCE_BASE;
+
+	if (window.RESOURCES_PATH == 'resources' && base == 'resources/dia' &&
+		window.STYLE_PATH != null && /(^|\/)styles$/.test(STYLE_PATH))
+	{
+		base = STYLE_PATH.substring(0, STYLE_PATH.length - 6) + 'resources/dia';
+	}
+
+	return base;
+};
+
+/**
+ * Loads the UI language resources once and invokes the optional callback.
+ * The viewer bundles contain the English resources only. Errors (eg. no
+ * CORS for the resources) are ignored and the English resources are used.
+ */
+GraphViewer.loadLanguageResources = function(fn)
+{
+	if (GraphViewer.languageResources == null)
+	{
+		var lang = GraphViewer.getLanguage();
+		var base = GraphViewer.getResourceBase();
+
+		if (lang != null && base != null)
+		{
+			var pending = [];
+			GraphViewer.languageResources = pending;
+
+			var done = function()
+			{
+				GraphViewer.languageResources = true;
+
+				for (var i = 0; i < pending.length; i++)
+				{
+					try
+					{
+						pending[i]();
+					}
+					catch (e)
+					{
+						if (window.console != null)
+						{
+							console.error(e);
+						}
+					}
+				}
+			};
+
+			try
+			{
+				mxUtils.get(base + '_' + lang + mxResources.extension, function(req)
+				{
+					try
+					{
+						if (req.getStatus() >= 200 && req.getStatus() <= 299)
+						{
+							mxResources.parse(req.getText());
+						}
+					}
+					catch (e)
+					{
+						// ignore
+					}
+
+					done();
+				}, done);
+			}
+			catch (e)
+			{
+				done();
+			}
+		}
+		else
+		{
+			GraphViewer.languageResources = true;
+		}
+	}
+
+	if (fn != null)
+	{
+		if (GraphViewer.languageResources === true)
+		{
+			fn();
+		}
+		else
+		{
+			GraphViewer.languageResources.push(fn);
+		}
+	}
+};
+
+/**
+ * Specifies if the listeners for resizing the container are called (see
+ * addResizeListener). This is false while the local lightbox is shown.
+ * Default is true.
  */
 GraphViewer.resizeSensorEnabled = true;
 
 /**
- * Specifies if ResizeObserver should be used instead of ResizeSensor.
- * Default is true.
- */
-GraphViewer.useResizeObserver = true;
-
-/**
- * Redirects editing to absolue URLs.
+ * Specifies if the viewer handles resizing the container (see
+ * addResizeListener). Default is true.
  */
 GraphViewer.useResizeSensor = true;
 
 /**
- * Copyright Marc J. Schmidt. See the LICENSE file at the top-level
- * directory of this distribution and at
- * https://github.com/marcj/css-element-queries/blob/master/LICENSE.
+ * Calls the given function in the frame after the size of the given element
+ * has changed if resizeSensorEnabled is true. Changes are combined for each
+ * frame, which follows a resize and allows the function to change the size
+ * of the element without a loop of resize notifications. Uses the resize
+ * event of the window if ResizeObserver is not supported.
  */
-(function() {
+GraphViewer.addResizeListener = function(element, fn)
+{
+	var frame = null;
 
-    // Only used for the dirty checking, so the event callback count is limted to max 1 call per fps per sensor.
-    // In combination with the event based resize sensor this saves cpu time, because the sensor is too fast and
-    // would generate too many unnecessary events.
-    var requestAnimationFrame = window.requestAnimationFrame ||
-        window.mozRequestAnimationFrame ||
-        window.webkitRequestAnimationFrame ||
-        function (fn) {
-            return window.setTimeout(fn, 20);
-        };
-
-    /**
-     * Class for dimension change detection.
-     *
-     * @param {Element|Element[]|Elements|jQuery} element
-     * @param {Function} callback
-     *
-     * @constructor
-     */
-    var ResizeSensor = function(element, fn) {
-    	
-    	var callback = function()
-    	{
-    		if (GraphViewer.resizeSensorEnabled)
-    		{
-    			fn();
-    		}
-    	};
-
-		// Uses ResizeObserver, if available
-		if (GraphViewer.useResizeObserver && typeof ResizeObserver !== 'undefined')
+	var callback = function()
+	{
+		if (frame == null)
 		{
-			var callbackThread = null;
-			var active = false;
-
-			new ResizeObserver(function()
+			frame = window.requestAnimationFrame(function()
 			{
-				if (!active)
+				frame = null;
+
+				if (GraphViewer.resizeSensorEnabled)
 				{
-					if (callbackThread != null)
-					{
-						window.clearTimeout(callbackThread);
-					}
-
-					callbackThread = window.setTimeout(function()
-					{
-						active = true;
-						callback();
-						callbackThread = null;
-						active = false;
-					}, 200);
+					fn();
 				}
-			}).observe(element)
-
-			return
+			});
 		}
-    	/**   *
-         * @constructor
-         */
-        function EventQueue() {
-            this.q = [];
-            this.add = function(ev) {
-                this.q.push(ev);
-            };
+	};
 
-            var i, j;
-            this.call = function() {
-                for (i = 0, j = this.q.length; i < j; i++) {
-                    this.q[i].call();
-                }
-            };
-        }
-/**   * @param {HTMLElement} element
-         * @param {String}      prop
-         * @returns {String|Number}
-         */
-        function getComputedStyle(element, prop) {
-            if (element.currentStyle) {
-                return element.currentStyle[prop];
-            } else if (window.getComputedStyle) {
-                return window.getComputedStyle(element, null).getPropertyValue(prop);
-            } else {
-                return element.style[prop];
-            }
-        }
-/**   *
-         * @param {HTMLElement} element
-         * @param {Function}    resized
-         */
-        function attachResizeEvent(element, resized) {
-            if (!element.resizedAttached) {
-                element.resizedAttached = new EventQueue();
-                element.resizedAttached.add(resized);
-            } else if (element.resizedAttached) {
-                element.resizedAttached.add(resized);
-                return;
-            }
-
-            element.resizeSensor = document.createElement('div');
-            element.resizeSensor.className = 'resize-sensor';
-            var style = 'position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; z-index: -1; visibility: hidden;';
-            var styleChild = 'position: absolute; left: 0; top: 0; transition: 0s;';
-
-            element.resizeSensor.style.cssText = style;
-            element.resizeSensor.innerHTML =
-                '<div class="resize-sensor-expand" style="' + style + '">' +
-                    '<div style="' + styleChild + '"></div>' +
-                '</div>' +
-                '<div class="resize-sensor-shrink" style="' + style + '">' +
-                    '<div style="' + styleChild + ' width: 200%; height: 200%"></div>' +
-                '</div>';
-            element.appendChild(element.resizeSensor);
-
-            // FIXME: Should not change element style
-            if (getComputedStyle(element, 'position') == 'static') {
-                element.style.position = 'relative';
-            }
-
-            var expand = element.resizeSensor.childNodes[0];
-            var expandChild = expand.childNodes[0];
-            var shrink = element.resizeSensor.childNodes[1];
-
-            var reset = function() {
-                expandChild.style.width  = 100000 + 'px';
-                expandChild.style.height = 100000 + 'px';
-
-                expand.scrollLeft = 100000;
-                expand.scrollTop = 100000;
-
-                shrink.scrollLeft = 100000;
-                shrink.scrollTop = 100000;
-            };
-
-            reset();
-            var dirty = false;
-
-            var dirtyChecking = function(){
-                if (!element.resizedAttached) return;
-
-                if (dirty) {
-                    element.resizedAttached.call();
-                    dirty = false;
-                }
-
-                requestAnimationFrame(dirtyChecking);
-            };
-
-            requestAnimationFrame(dirtyChecking);
-            var lastWidth, lastHeight;
-            var cachedWidth, cachedHeight; //useful to not query offsetWidth twice
-
-            var onScroll = function() {
-              if ((cachedWidth = element.offsetWidth) != lastWidth || (cachedHeight = element.offsetHeight) != lastHeight) {
-                  dirty = true;
-
-                  lastWidth = cachedWidth;
-                  lastHeight = cachedHeight;
-              }
-              reset();
-            };
-
-            var addEvent = function(el, name, cb) {
-                if (el.attachEvent) {
-                    el.attachEvent('on' + name, cb);
-                } else {
-                    el.addEventListener(name, cb);
-                }
-            };
-
-            addEvent(expand, 'scroll', onScroll);
-            addEvent(shrink, 'scroll', onScroll);
-        }
-
-        var elementType = Object.prototype.toString.call(element);
-        var isCollectionTyped = ('[object Array]' === elementType
-            || ('[object NodeList]' === elementType)
-            || ('[object HTMLCollection]' === elementType)
-            || ('undefined' !== typeof jQuery && element instanceof jQuery) //jquery
-            || ('undefined' !== typeof Elements && element instanceof Elements) //mootools
-        );
-
-        if (isCollectionTyped) {
-            var i = 0, j = element.length;
-            for (; i < j; i++) {
-                attachResizeEvent(element[i], callback);
-            }
-        } else {
-            attachResizeEvent(element, callback);
-        }
-
-        this.detach = function() {
-            if (isCollectionTyped) {
-                var i = 0, j = element.length;
-                for (; i < j; i++) {
-                    ResizeSensor.detach(element[i]);
-                }
-            } else {
-                ResizeSensor.detach(element);
-            }
-        };
-    };
-
-    ResizeSensor.detach = function(element) {
-        if (element.resizeSensor) {
-            element.removeChild(element.resizeSensor);
-            delete element.resizeSensor;
-            delete element.resizedAttached;
-        }
-    };
-
-    window.ResizeSensor = ResizeSensor;
-})();
+	if (typeof ResizeObserver !== 'undefined')
+	{
+		new ResizeObserver(callback).observe(element);
+	}
+	else
+	{
+		mxEvent.addListener(window, 'resize', callback);
+	}
+};

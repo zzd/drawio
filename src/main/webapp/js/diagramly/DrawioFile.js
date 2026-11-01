@@ -78,6 +78,83 @@ DrawioFile.prototype.savingStatusKey = 'saving';
 DrawioFile.prototype.autosaveDelay = 1500;
 
 /**
+ * True while a save operation is in progress. The subclasses set this in all
+ * places where a save starts or ends, so it is an accessor that invokes the
+ * callbacks of afterSave when it changes from true to false.
+ */
+Object.defineProperty(DrawioFile.prototype, 'savingFile',
+{
+	get: function()
+	{
+		return this.savingFileState;
+	},
+	set: function(value)
+	{
+		var wasSaving = this.savingFileState;
+		this.savingFileState = value;
+
+		if (wasSaving && !value)
+		{
+			this.saveCompleted();
+		}
+	},
+	configurable: true
+});
+
+/**
+ * Invokes the given function after the current save operation has ended,
+ * or asynchronously if no save is in progress. Use this to wait for a save
+ * before saving again instead of failing with App.ERROR_BUSY.
+ */
+DrawioFile.prototype.afterSave = function(fn)
+{
+	if (this.savingFile)
+	{
+		if (this.afterSaveCallbacks == null)
+		{
+			this.afterSaveCallbacks = [];
+		}
+
+		this.afterSaveCallbacks.push(fn);
+	}
+	else
+	{
+		window.setTimeout(fn, 0);
+	}
+};
+
+/**
+ * Invokes the callbacks of afterSave once the save operation has ended. The
+ * callbacks are invoked asynchronously so that the code that ended the save
+ * can finish handling the result first (eg. update the descriptor), and are
+ * kept for the next end of a save if a save was started meanwhile (eg. a
+ * retry after a conflict).
+ */
+DrawioFile.prototype.saveCompleted = function()
+{
+	var callbacks = this.afterSaveCallbacks;
+	this.afterSaveCallbacks = null;
+
+	if (callbacks != null)
+	{
+		window.setTimeout(mxUtils.bind(this, function()
+		{
+			for (var i = 0; i < callbacks.length; i++)
+			{
+				if (this.savingFile)
+				{
+					this.afterSave(callbacks[i]);
+				}
+				else
+				{
+					callbacks[i]();
+				}
+			}
+		}), 0);
+	}
+};
+
+/**
  * Specifies the maximum delay before an autosave is forced even if the graph
  * is being changed.
  */
@@ -158,14 +235,79 @@ DrawioFile.prototype.lastAutosaveRevision = null;
 DrawioFile.prototype.maxAutosaveRevisionDelay = 300000;
 
 /**
- * Specifies if notify events should be ignored.
+ * Specifies if the file is in a conflict state, which stops the autosave and
+ * the realtime sync until it is resolved. See <setConflict>.
  */
 DrawioFile.prototype.inConflictState = false;
 
 /**
- * Specifies if notify events should be ignored.
+ * Specifies if the conflict state was caused by merged pages that did not
+ * match the checksum of the file. See <setConflict>.
  */
 DrawioFile.prototype.invalidChecksum = false;
+
+/**
+ * Puts the file in a conflict state. If invalidChecksum is true then the
+ * conflict was caused by an invalid checksum, which a later conflict without
+ * that flag does not reset.
+ */
+DrawioFile.prototype.setConflict = function(invalidChecksum)
+{
+	this.inConflictState = true;
+
+	if (invalidChecksum)
+	{
+		this.invalidChecksum = true;
+	}
+};
+
+/**
+ * Resolves the conflict state of the file.
+ */
+DrawioFile.prototype.clearConflict = function()
+{
+	this.inConflictState = false;
+	this.invalidChecksum = false;
+};
+
+/**
+ * Handles a save that was rejected because the file was changed by another
+ * client: puts the file in a conflict state and, with a sync, catches up
+ * with the given descriptor (see DrawioFileSync.fileConflict) and calls
+ * retry after a random cool-off, or error if the catchup fails. The file is
+ * saving until then. Without a sync, error is called.
+ */
+DrawioFile.prototype.handleSaveConflict = function(desc, retry, error)
+{
+	this.setConflict();
+
+	if (this.sync != null)
+	{
+		this.savingFile = true;
+
+		this.sync.fileConflict(desc, mxUtils.bind(this, function()
+		{
+			// Adds random cool-off
+			window.setTimeout(mxUtils.bind(this, function()
+			{
+				this.updateFileData();
+				retry();
+			}), 100 + Math.random() * 500);
+		}), mxUtils.bind(this, function()
+		{
+			this.savingFile = false;
+
+			if (error != null)
+			{
+				error();
+			}
+		}));
+	}
+	else if (error != null)
+	{
+		error();
+	}
+};
 
 /**
  * Specifies if stats should be sent.
@@ -189,22 +331,28 @@ DrawioFile.prototype.getShadowPages = function()
 	{
 		this.shadowPages = this.ui.getPagesForXml(this.initialData, true);
 
-		if (this.shadowVars === undefined)
+		if (this.shadowVars === undefined || this.shadowAttributes === undefined)
 		{
-			this.shadowVars = null;
+			var root = null;
 
 			try
 			{
 				var doc = mxUtils.parseXml(this.initialData);
-				var root = doc.documentElement;
+				root = doc.documentElement;
 				root = this.ui.editor.extractGraphModel(root, true, true) || root;
-
-				if (root != null && root.nodeName == 'mxfile')
-				{
-					this.shadowVars = root.getAttribute('vars');
-				}
 			}
 			catch (e) {}
+
+			if (this.shadowVars === undefined)
+			{
+				this.shadowVars = (root != null && root.nodeName == 'mxfile') ?
+					root.getAttribute('vars') : null;
+			}
+
+			if (this.shadowAttributes === undefined)
+			{
+				this.shadowAttributes = this.getSyncedFileAttributes(root);
+			}
 		}
 	}
 
@@ -212,14 +360,103 @@ DrawioFile.prototype.getShadowPages = function()
 };
 
 /**
- * Sets the shadow pages.
+ * Sets the shadow pages with the given vars and synced file attributes (see
+ * getSyncedFileAttributes) or those of the file node.
  */
-DrawioFile.prototype.setShadowPages = function(pages, optVars)
+DrawioFile.prototype.setShadowPages = function(pages, optVars, optAttributes)
 {
 	this.shadowPages = pages;
 	this.shadowVars = (optVars !== undefined) ? optVars :
 		((this.ui.fileNode != null) ?
 			this.ui.fileNode.getAttribute('vars') : null);
+	this.shadowAttributes = (optAttributes !== undefined) ? optAttributes :
+		this.getSyncedFileAttributes();
+};
+
+/**
+ * Attributes of the file node other than vars that are sent with the live
+ * changes, saves and merges in EditorUi.DIFF_FILE. Unlike vars they have no
+ * ownership of pending writes: the last write wins, and they are not resent
+ * or retracted.
+ */
+DrawioFile.syncedFileAttributes = ['pageGroups'];
+
+/**
+ * Returns the synced file attributes of the given mxfile node or of the file
+ * node as an object with null for missing attributes.
+ */
+DrawioFile.prototype.getSyncedFileAttributes = function(node)
+{
+	node = (node !== undefined) ? node : this.ui.fileNode;
+	var result = {};
+
+	for (var i = 0; i < DrawioFile.syncedFileAttributes.length; i++)
+	{
+		var name = DrawioFile.syncedFileAttributes[i];
+		result[name] = (node != null && node.nodeName == 'mxfile') ?
+			node.getAttribute(name) : null;
+	}
+
+	return result;
+};
+
+/**
+ * Returns the synced file attributes of the shadow pages.
+ */
+DrawioFile.prototype.getShadowAttributes = function()
+{
+	this.getShadowPages(); // ensure lazy init
+
+	return (this.shadowAttributes != null) ? this.shadowAttributes :
+		this.getSyncedFileAttributes(null);
+};
+
+/**
+ * Adds the synced file attributes that differ from the given base to the
+ * file changes of the given patch.
+ */
+DrawioFile.prototype.diffSyncedFileAttributes = function(patch, base, attributes)
+{
+	for (var i = 0; i < DrawioFile.syncedFileAttributes.length; i++)
+	{
+		var name = DrawioFile.syncedFileAttributes[i];
+
+		if (attributes[name] != base[name])
+		{
+			if (patch[EditorUi.DIFF_FILE] == null)
+			{
+				patch[EditorUi.DIFF_FILE] = {};
+			}
+
+			patch[EditorUi.DIFF_FILE][name] = attributes[name];
+		}
+	}
+};
+
+/**
+ * Returns a copy of the given synced file attributes with the values of the
+ * file changes in the given patches.
+ */
+DrawioFile.prototype.patchSyncedFileAttributes = function(attributes, patches)
+{
+	var result = {};
+
+	for (var i = 0; i < DrawioFile.syncedFileAttributes.length; i++)
+	{
+		var name = DrawioFile.syncedFileAttributes[i];
+		result[name] = (attributes != null) ? attributes[name] : null;
+
+		for (var j = 0; patches != null && j < patches.length; j++)
+		{
+			if (patches[j] != null && patches[j][EditorUi.DIFF_FILE] != null &&
+				patches[j][EditorUi.DIFF_FILE][name] !== undefined)
+			{
+				result[name] = patches[j][EditorUi.DIFF_FILE][name];
+			}
+		}
+	}
+
+	return result;
 };
 
 /**
@@ -405,6 +642,7 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 				diffShadow : shadow, pages)];
 
 			var incomingVars = null;
+			var incomingAttributes = this.getSyncedFileAttributes(null);
 
 			try
 			{
@@ -415,6 +653,7 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 				if (root != null && root.nodeName == 'mxfile')
 				{
 					incomingVars = root.getAttribute('vars');
+					incomingAttributes = this.getSyncedFileAttributes(root);
 				}
 			}
 			catch (e) {}
@@ -423,6 +662,9 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 			{
 				patches[0][EditorUi.DIFF_FILE] = {vars: incomingVars};
 			}
+
+			this.diffSyncedFileAttributes(patches[0],
+				this.getShadowAttributes(), incomingAttributes);
 
 			var ignored = this.ignorePatches(patches);
 			
@@ -466,7 +708,7 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 					}
 					else
 					{
-						this.setShadowPages(pages, incomingVars);
+						this.setShadowPages(pages, incomingVars, incomingAttributes);
 
 						// Patches the realtime document
 						if (this.sync != null)
@@ -499,8 +741,7 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 							changes : null);
 					}
 				
-					this.invalidChecksum = false;
-					this.inConflictState = false;
+					this.clearConflict();
 					this.setDescriptor(file.getDescriptor());
 					this.descriptorChanged();
 					
@@ -511,8 +752,7 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 				}
 				catch (e)
 				{
-					this.inConflictState = true;
-					this.invalidChecksum = true;
+					this.setConflict(true);
 					this.descriptorChanged();
 
 					if (error != null)
@@ -544,8 +784,10 @@ DrawioFile.prototype.mergeFile = function(file, success, error, diffShadow, imme
 			}
 			else
 			{
-				this.invalidChecksum = false;
-				this.inConflictState = false;
+				// The file can still differ in what the diff ignores, eg. a
+				// page size that another tool removed (see diffSavedPages)
+				this.setShadowPages(pages, incomingVars, incomingAttributes);
+				this.clearConflict();
 				this.setDescriptor(file.getDescriptor());
 				this.descriptorChanged();
 
@@ -585,6 +827,7 @@ DrawioFile.prototype.getAnonymizedXmlForPages = function(pages)
 	{
 		for (var i = 0; i < pages.length; i++)
 		{
+			this.ui.updatePageRoot(pages[i]);
 			var temp = enc.encode(new mxGraphModel(pages[i].root));
 			
 			if (urlParams['dev'] != '1')
@@ -631,8 +874,7 @@ DrawioFile.prototype.compressReportData = function(data, limit, max)
 DrawioFile.prototype.checksumError = function(fn, patches, details, etag, functionName, checksum, current, rev)
 {
 	this.stats.checksumErrors++;
-	this.inConflictState = true;
-	this.invalidChecksum = true;
+	this.setConflict(true);
 	this.descriptorChanged();
 	
 	if (this.sync != null)
@@ -1134,9 +1376,10 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 		var prev = this.changeListenerEnabled;
 		this.changeListenerEnabled = undoable;
 		
-		// Folding and math change require special handling
+		// Folding, math and measure scale change require special handling
 		var fold = graph.foldingEnabled;
 		var math = graph.mathEnabled;
+		var measureScale = graph.measureScale;
 
 		// Applies file-level changes before model update so that
 		// labels using file variables are resolved correctly
@@ -1167,6 +1410,51 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 		// patched with the same arguments as the pages
 		var modified = this.isModified();
 		var createdPage = null;
+
+		// Cells changed through the model by the patch and the reactions
+		// to it until the reactive delta below (eg. layouts, also in the
+		// view validation), so that the delta only compares these cells
+		// in full (see diffCells). Null if there are other changes.
+		var changedCells = (this.sync != null && this.isRealtime() &&
+			!sendChanges) ? Object.create(null) : null;
+
+		var cellsListener = mxUtils.bind(this, function(sender, evt)
+		{
+			var edit = evt.getProperty('edit');
+
+			for (var i = 0; changedCells != null && i < ((edit != null &&
+				edit.changes != null) ? edit.changes.length : 0); i++)
+			{
+				var cell = this.sync.getCellForChange(edit.changes[i]);
+
+				if (cell != null && cell.getId() != null)
+				{
+					changedCells[cell.getId()] = true;
+				}
+				else
+				{
+					changedCells = null;
+				}
+			}
+
+			if (edit == null || edit.changes == null)
+			{
+				changedCells = null;
+			}
+		});
+
+		// Removes the listener of a patch that ended with an exception
+		if (this.patchCellsListener != null)
+		{
+			graph.model.removeListener(this.patchCellsListener);
+			this.patchCellsListener = null;
+		}
+
+		if (changedCells != null)
+		{
+			graph.model.addListener(mxEvent.CHANGE, cellsListener);
+			this.patchCellsListener = cellsListener;
+		}
 
 		graph.model.beginUpdate();
 		try
@@ -1262,8 +1550,10 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 				this.ui.editor.updateGraphComponents();
 				graph.refresh();
 			}
-			else if (varsChanged)
+			else if (varsChanged || (needsUpdate &&
+				measureScale != graph.measureScale))
 			{
+				// Updates labels with placeholders
 				graph.refresh();
 			}
 			else if (needsUpdate)
@@ -1309,6 +1599,7 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 					// diffable, and fileChanged is called explicitly as the
 					// change listener is disabled during the patch.
 					var current = this.ui.currentPage;
+					var currentRepairs = null;
 
 					// Edges the patch left with an undetermined end are
 					// unrenderable and would silently vanish from the
@@ -1331,6 +1622,11 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 						}
 
 						var pageIds = Object.create(null);
+
+						if (patched == current)
+						{
+							currentRepairs = pageIds;
+						}
 
 						// A repair becomes a first-class local change so
 						// it reaches collaborators and the file - but
@@ -1362,8 +1658,35 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 						{
 							if (this.sync.snapshot[i].getId() == current.getId())
 							{
+								// Compares geometries, XML values and custom
+								// properties only for the cells changed by
+								// the patch, the repaired edges, which change
+								// without a model change, and the pending
+								// local changes, which are not in the snapshot
+								// if the flush before the patch was skipped
+								var pending = (this.sync.dirtyPageIds != null) ?
+									this.sync.dirtyPageIds[current.getId()] : true;
+								var changed = null;
+
+								if (changedCells != null && pending !== true)
+								{
+									changed = Object.create(null);
+									changed[current.getId()] = changedCells;
+
+									for (var id in currentRepairs)
+									{
+										changedCells[id] = true;
+									}
+
+									for (var id in pending)
+									{
+										changedCells[id] = true;
+									}
+								}
+
 								var delta = this.ui.diffPages(
-									[this.sync.snapshot[i]], [current]);
+									[this.sync.snapshot[i]], [current],
+									null, changed);
 
 								if (!this.ignorePatches([delta]))
 								{
@@ -1402,13 +1725,13 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 
 				this.sync.snapshotVars = (this.ui.fileNode != null) ?
 					this.ui.fileNode.getAttribute('vars') : null;
+				this.sync.snapshotAttributes = this.patchSyncedFileAttributes(
+					this.sync.snapshotAttributes, patches);
 
 				// Verifies that the snapshot matches the pages while no
 				// local changes are pending, ie. the next outgoing diff
 				// must be empty
-				// Release telemetry: the check also runs in sampled sessions
-				if ((urlParams['test'] == '1' || (EditorUi.realtimeTelemetry &&
-					EditorUi.realtimeTelemetrySampled)) && !this.sync.localFileWasChanged &&
+				if (urlParams['test'] == '1' && !this.sync.localFileWasChanged &&
 					this.ui.getHashValueForPages(this.sync.snapshot) !=
 					this.ui.getHashValueForPages(this.ui.pages))
 				{
@@ -1416,16 +1739,14 @@ DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, 
 						'snapshot mismatch', this.sync.snapshot,
 						'pages', this.ui.pages, 'diff', this.ui.diffPages(
 							this.sync.snapshot, this.ui.pages));
-					EditorUi.logRealtime('snapshot-drift',
-						{p: this.ui.pages.length}, this, this.getId());
-
-					if (urlParams['test'] == '1')
-					{
-						this.ui.alert('Snapshot out of sync');
-					}
+					this.ui.alert('Snapshot out of sync');
 				}
 			}
 			
+			// Reactions to the patch may change cells until the delta
+			// above was computed (eg. layouts in the view validation)
+			graph.model.removeListener(cellsListener);
+			this.patchCellsListener = null;
 			this.ui.editor.fireEvent(new mxEventObject('pagesPatched', 'patches', patches));
 		}
 
@@ -1486,20 +1807,39 @@ DrawioFile.prototype.loadFonts = function(callback)
 };
 
 /**
- * Adds the listener for automatically saving the diagram for local changes.
+ * Returns the error of a save of this file that is not possible, which is
+ * the case if the app must be upgraded, if the file is read-only, or if it
+ * has an invalid checksum and overwrite is not true. Returns null if the
+ * file can be saved.
  */
-DrawioFile.prototype.save = function(revision, success, error, unloading, overwrite, manual)
+DrawioFile.prototype.getSaveError = function(overwrite)
 {
 	if (this.appUpgradeRequired)
 	{
-		if (error != null)
-		{
-			error({message: mxResources.get('redirectToNewApp')});
-		}
-		else
-		{
-			this.redirectToNewApp(function() {});
-		}
+		return {message: mxResources.get('redirectToNewApp')};
+	}
+	else if (!this.isEditable())
+	{
+		return {message: mxResources.get('readOnly')};
+	}
+	else if (!overwrite && this.invalidChecksum)
+	{
+		return {message: mxResources.get('checksum')};
+	}
+
+	return null;
+};
+
+/**
+ * Updates the file data and invokes success. Subclasses call this before
+ * writing the data to their storage. Fails if the file cannot be saved (see
+ * getSaveError).
+ */
+DrawioFile.prototype.save = function(revision, success, error, unloading, overwrite)
+{
+	if (this.appUpgradeRequired && error == null)
+	{
+		this.redirectToNewApp(function() {});
 
 		return;
 	}
@@ -1507,30 +1847,21 @@ DrawioFile.prototype.save = function(revision, success, error, unloading, overwr
 	try
 	{
 		EditorUi.debug('DrawioFile.save', [this], 'revision', revision,
-			'unloading', unloading, 'overwrite', overwrite, 'manual', manual,
+			'unloading', unloading, 'overwrite', overwrite,
 			'saving', this.savingFile, 'editable', this.isEditable(),
 			'invalidChecksum', this.invalidChecksum);
 
-		if (!this.isEditable())
+		var saveError = this.getSaveError(overwrite);
+
+		if (saveError != null)
 		{
 			if (error != null)
 			{
-				error({message: mxResources.get('readOnly')});
+				error(saveError);
 			}
 			else
 			{
-				throw new Error(mxResources.get('readOnly'));
-			}
-		}
-		else if (!overwrite && this.invalidChecksum)
-		{
-			if (error != null)
-			{
-				error({message: mxResources.get('checksum')});
-			}
-			else
-			{
-				throw new Error(mxResources.get('checksum'));
+				throw new Error(saveError.message);
 			}
 		}
 		else
@@ -1593,10 +1924,8 @@ DrawioFile.prototype.save = function(revision, success, error, unloading, overwr
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Creates and returns the file data for saving. In realtime mode, the data
+ * is created from the own pages of this file.
  */
 DrawioFile.prototype.createData = function()
 {
@@ -1617,23 +1946,26 @@ DrawioFile.prototype.createData = function()
 			if (ownPage != null)
 			{
 				ownPage.viewState = this.ui.editor.graph.getViewState();
-				ownPage.needsUpdate = true;
+				ownPage.invalidateNode();
 			}
 		}
 	}
 
-	var result = this.ui.getFileData(null, null, null, null,
-		null, null, null, null, this, !this.isCompressed());
-	this.ui.pages = actualPages;
-
-	return result;
+	try
+	{
+		return this.ui.getFileData(null, null, null, null,
+			null, null, null, null, this, !this.isCompressed());
+	}
+	finally
+	{
+		// Restores the visible pages if getFileData throws
+		this.ui.pages = actualPages;
+	}
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Sends pending local changes and replaces the data of this file with the
+ * current file data.
  */
 DrawioFile.prototype.updateFileData = function()
 {
@@ -1656,10 +1988,8 @@ DrawioFile.prototype.updateFileData = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the data of this file should be compressed by default.
+ * This implementation returns Editor.defaultCompressed.
  */
 DrawioFile.prototype.isCompressedStorage = function()
 {
@@ -1667,10 +1997,9 @@ DrawioFile.prototype.isCompressedStorage = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file data is compressed. Uses the compressed attribute
+ * of the file node if it exists, otherwise isCompressedStorage and
+ * Editor.compressXml.
  */
 DrawioFile.prototype.isCompressed = function()
 {
@@ -1687,10 +2016,8 @@ DrawioFile.prototype.isCompressed = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Sets the locked state of the file and clears the selection if the file is
+ * locked.
  */
 DrawioFile.prototype.setLocked = function(locked)
 {
@@ -1706,10 +2033,7 @@ DrawioFile.prototype.setLocked = function(locked)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file is locked.
  */
 DrawioFile.prototype.isLocked = function()
 {
@@ -1724,23 +2048,19 @@ DrawioFile.prototype.isLocked = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Hook for subclassers to save the file with the given filename. This
+ * implementation does nothing.
  */
 DrawioFile.prototype.saveAs = function(filename, success, error) { };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Hook for subclassers to save the file with the given title. This
+ * implementation does nothing.
  */
 DrawioFile.prototype.saveFile = function(title, revision, success, error) { };
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Returns the URL of the file. This implementation returns null.
  */
 DrawioFile.prototype.getFileUrl = function()
 {
@@ -1748,7 +2068,8 @@ DrawioFile.prototype.getFileUrl = function()
 };
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Returns the URL of the folder of the file. This implementation returns
+ * null.
  */
 DrawioFile.prototype.getFolderUrl = function(fn)
 {
@@ -1756,7 +2077,8 @@ DrawioFile.prototype.getFolderUrl = function(fn)
 };
 
 /**
- * Returns true if copy, export and print are not allowed for this file.
+ * Passes the public URL of the file to the given function. This
+ * implementation passes null.
  */
 DrawioFile.prototype.getPublicUrl = function(fn)
 {
@@ -1772,10 +2094,7 @@ DrawioFile.prototype.isRestricted = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file has unsaved changes.
  */
 DrawioFile.prototype.isModified = function()
 {
@@ -1783,10 +2102,7 @@ DrawioFile.prototype.isModified = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the shadow of the modified state.
  */
 DrawioFile.prototype.getShadowModified = function()
 {
@@ -1794,10 +2110,7 @@ DrawioFile.prototype.getShadowModified = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Sets the shadow of the modified state.
  */
 DrawioFile.prototype.setShadowModified = function(value)
 {
@@ -1805,15 +2118,34 @@ DrawioFile.prototype.setShadowModified = function(value)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Sets the modified state and its shadow to the given value.
  */
 DrawioFile.prototype.setModified = function(value)
 {
 	this.modified = value;
 	this.shadowModified = value;
+};
+
+/**
+ * Starts a write of the data of this file to its storage. An edit during the
+ * write sets the shadow of the modified state, which keeps the file modified
+ * when the write ends (see endSave).
+ */
+DrawioFile.prototype.beginSave = function()
+{
+	this.savingFileTime = new Date();
+	this.setShadowModified(false);
+	this.savingFile = true;
+};
+
+/**
+ * Ends a write that the storage committed. The file stays modified if it was
+ * edited during the write.
+ */
+DrawioFile.prototype.endSave = function()
+{
+	this.setModified(this.getShadowModified());
+	this.savingFile = false;
 };
 
 /**
@@ -1826,10 +2158,8 @@ DrawioFile.prototype.isAutosaveOptional = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if autosave is enabled in the editor and the file is not in
+ * a conflict state.
  */
 DrawioFile.prototype.isAutosave = function()
 {
@@ -1837,10 +2167,8 @@ DrawioFile.prototype.isAutosave = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file can be renamed. This implementation returns
+ * false.
  */
 DrawioFile.prototype.isRenamable = function()
 {
@@ -1848,29 +2176,14 @@ DrawioFile.prototype.isRenamable = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Hook for subclassers to rename the file to the given title. This
+ * implementation does nothing.
  */
 DrawioFile.prototype.rename = function(title, success, error) { };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
- */
-DrawioFile.prototype.isMovable = function()
-{
-	return false;
-};
-
-/**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the file is in the trash. This implementation returns
+ * false.
  */
 DrawioFile.prototype.isTrashed = function()
 {
@@ -1878,18 +2191,14 @@ DrawioFile.prototype.isTrashed = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Hook for subclassers to move the file to the folder with the given ID.
+ * This implementation does nothing.
  */
 DrawioFile.prototype.move = function(folderId, success, error) { };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Offers to save the file to Google Drive for collaborating if Google Drive
+ * is available, otherwise shows a message that sharing is not available.
  */
 DrawioFile.prototype.share = function()
 {
@@ -1992,8 +2301,6 @@ DrawioFile.prototype.handleWriteRevoked = function(err)
 	{
 		return;
 	}
-
-	EditorUi.logRealtime('write-revoked', null, this, this.getId());
 
 	try
 	{
@@ -2229,8 +2536,7 @@ DrawioFile.prototype.handleWriteRevoked = function(err)
 };
 
 /**
- * Returns the location as a new object.
- * @type mx.Point
+ * Returns the editor UI of this file.
  */
 DrawioFile.prototype.getUi = function()
 {
@@ -2293,10 +2599,11 @@ DrawioFile.prototype.open = function()
 		this.ui.setFileData(data, this);
 		
 		// Updates shadow in case any page IDs have been updated
-		// only if the file has not been modified and reopened
+		// only if the file has not been modified and reopened. Pages
+		// that were not decoded are copied without decoding them.
 		if (!this.isModified())
 		{
-			this.setShadowPages(this.ui.clonePages(this.ui.pages));
+			this.setShadowPages(this.ui.clonePages(this.ui.pages, true));
 		}
 	}
 
@@ -2580,6 +2887,18 @@ DrawioFile.prototype.getChannelKey = function(desc)
 };
 
 /**
+ * Returns the channel key that clients from before random channel keys
+ * derive from the file metadata, or null if there is none. Anyone who
+ * knows that metadata can derive it, so while getChannelKey returns a
+ * random key it is only used to fall back to the file for those clients
+ * (see DrawioFileSync.handleLegacyMessage), never to trust a message.
+ */
+DrawioFile.prototype.getLegacyChannelKey = function()
+{
+	return null;
+};
+
+/**
  * Returns the current etag.
  */
 DrawioFile.prototype.getCurrentUser = function()
@@ -2783,8 +3102,9 @@ DrawioFile.prototype.addLastChangeStatus = function()
 };
 
 /**
- * Returns the location as a new object.
- * @type mx.Point
+ * Shows the given status or the all changes saved message in the status bar
+ * if this is the current file. The status opens the revision history if it
+ * is supported.
  */
 DrawioFile.prototype.addAllSavedStatus = function(status)
 {
@@ -2806,12 +3126,15 @@ DrawioFile.prototype.saveDraft = function(data)
 {
 	try
 	{
-		data = (data != null) ? data : this.ui.getFileData();
+		// Parsing the data of the current diagram to check if it is empty
+		// is only needed if the current page is empty
+		var check = data != null || this.ui.isCurrentPageEmpty();
+		data = (data != null) ? data : this.getDraftData();
 
 		// Empty diagrams are useless as drafts — drop any existing one
 		// instead of writing an empty record, so the post-restart prompt
 		// doesn't surface drafts that contain nothing to recover.
-		if (this.ui.isDiagramDataEmpty(data))
+		if (check && this.ui.isDiagramDataEmpty(data))
 		{
 			this.removeDraft();
 			return;
@@ -2847,6 +3170,18 @@ DrawioFile.prototype.saveDraft = function(data)
 		// Removes any stored draft
 		this.removeDraft();
 	}
+};
+
+/**
+ * Returns the data for a draft of this file: the XML of all pages without
+ * the pretty printing of getFileData, which takes several times longer and
+ * is not needed as drafts are never read or compared by people, and without
+ * the SVG or HTML of files with these extensions, as a draft is loaded as
+ * a diagram.
+ */
+DrawioFile.prototype.getDraftData = function()
+{
+	return mxUtils.getXml(this.ui.getXmlFileData());
 };
 
 /**
@@ -3055,8 +3390,7 @@ DrawioFile.prototype.showRefreshDialog = function(success, error, message)
  */
 DrawioFile.prototype.showCopyDialog = function(success, error, overwrite)
 {
-	this.inConflictState = false;
-	this.invalidChecksum = false;
+	this.clearConflict();
 	this.addUnsavedStatus();
 	
 	this.ui.showError(mxResources.get('externalChanges'),
@@ -3095,8 +3429,6 @@ DrawioFile.prototype.requireAppUpgrade = function()
 	if (!this.appUpgradeRequired)
 	{
 		this.appUpgradeRequired = true;
-		EditorUi.logRealtime('upgrade-required', {min: (this.sync != null) ?
-			this.sync.minRemoteAppVersion : null}, this, this.getId());
 		this.clearAutosave();
 
 		if (this.sync != null)
@@ -3120,10 +3452,10 @@ DrawioFile.prototype.requireAppUpgrade = function()
  */
 DrawioFile.prototype.redirectToNewApp = function(error, details)
 {
-	this.ui.spinner.stop();
-	
+	// A redirect in progress keeps its spinner (see below)
 	if (!this.redirectDialogShowing)
 	{
+		this.ui.spinner.stop();
 		this.redirectDialogShowing = true;
 		
 		var url = window.location.protocol + '//' + window.location.host + '/' + this.ui.getSearch(
@@ -3139,8 +3471,6 @@ DrawioFile.prototype.redirectToNewApp = function(error, details)
 		{
 			var fn = mxUtils.bind(this, function()
 			{
-				this.redirectDialogShowing = false;
-
 				// Assigning a URL that differs from the current one in its
 				// fragment only does not navigate: the browser changes the
 				// fragment and fires hashchange, so the old app stayed
@@ -3175,15 +3505,20 @@ DrawioFile.prototype.redirectToNewApp = function(error, details)
 					// keeps the page when that is declined, so the spinner
 					// shown for the service worker update is stopped once
 					// the navigation is triggered (a page that does unload
-					// is gone right after)
+					// is gone right after) and a later message may offer
+					// the update again
 					this.ui.spinner.stop();
+					this.redirectDialogShowing = false;
 				});
 
 				// A reload served by the old service worker still runs
 				// the old app and merely installs the update in the
 				// background, so this dialog would show a second time.
 				// Waiting for the updated worker to activate makes the
-				// reload load the new app in one step.
+				// reload load the new app in one step. The dialog counts
+				// as showing until the navigation is triggered: messages
+				// from newer peers during the wait (up to 15s) would
+				// otherwise stop the spinner and show it again.
 				if (typeof App !== 'undefined' && App.updateServiceWorker != null)
 				{
 					this.ui.spinner.spin(document.body, mxResources.get('loading'));
@@ -3408,9 +3743,7 @@ DrawioFile.prototype.handleConflictError = function(err, manual)
 		if (this.ui.spinner.spin(document.body, mxResources.get(this.savingSpinnerKey)))
 		{
 			this.ui.clearStatus();
-			var isRepoFile = (this.constructor == GitHubFile) || (this.constructor == GitLabFile);
-			this.save(true, success, error, null, true, (isRepoFile &&
-				err != null) ? err.commitMessage : null);
+			this.saveAfterConflict(err, true, success, error);
 		}
 	});
 
@@ -3424,9 +3757,7 @@ DrawioFile.prototype.handleConflictError = function(err, manual)
 				
 				if (this.ui.spinner.spin(document.body, mxResources.get(this.savingSpinnerKey)))
 				{
-					var isRepoFile = (this.constructor == GitHubFile) || (this.constructor == GitLabFile);
-					this.save(true, success, error, null, null, (isRepoFile &&
-						err != null) ? err.commitMessage : null);
+					this.saveAfterConflict(err, false, success, error);
 				}
 			}), error);
 		}
@@ -3456,7 +3787,16 @@ DrawioFile.prototype.handleConflictError = function(err, manual)
 };
 
 /**
- * Adds the listener for automatically saving the diagram for local changes.
+ * Saves the file after the given conflict error was resolved, overwriting
+ * the file in the storage if overwrite is true.
+ */
+DrawioFile.prototype.saveAfterConflict = function(err, overwrite, success, error)
+{
+	this.save(true, success, error, null, overwrite);
+};
+
+/**
+ * Returns the message of the given error.
  */
 DrawioFile.prototype.getErrorMessage = function(err)
 {
@@ -3536,8 +3876,7 @@ DrawioFile.prototype.compressionChanged = function(compressed)
  */
 DrawioFile.prototype.fileReplaced = function(patches)
 {
-	this.invalidChecksum = false;
-	this.inConflictState = false;
+	this.clearConflict();
 
 	if (patches != null)
 	{
@@ -3695,14 +4034,15 @@ DrawioFile.prototype.fileChanged = function(sync, edit, reactive)
 };
 
 /**
- * Creates a secret and token pair for writing a patch to the cache.
+ * Creates a secret and token pair for writing a patch to the cache. No token
+ * while alone, as the save then writes no patch (see DrawioFileSync.isAlone).
  */
 DrawioFile.prototype.createSecret = function(success)
 {
-	var secret = Editor.guid(32);
+	var secret = Editor.secureGuid(32);
 	
 	if (Editor.enableRealtimeCache && this.sync != null &&
-		!this.isOptimisticSync())
+		!this.isOptimisticSync() && !this.sync.isAlone())
 	{
 		this.sync.createToken(secret,
 			mxUtils.bind(this, function(token)
@@ -3744,8 +4084,7 @@ DrawioFile.prototype.fileSaved = function(savedData, lastDesc, success, error, t
 
 	try
 	{
-		this.inConflictState = false;
-		this.invalidChecksum = false;
+		this.clearConflict();
 
 		// The conflict retry budget counts the CONSECUTIVE catchup
 		// attempts of ONE conflict episode, so a confirmed save ends
@@ -3769,6 +4108,7 @@ DrawioFile.prototype.fileSaved = function(savedData, lastDesc, success, error, t
 		savedRoot = this.ui.editor.extractGraphModel(savedRoot, true, true) || savedRoot;
 		var savedVars = (savedRoot != null && savedRoot.nodeName == 'mxfile') ?
 			savedRoot.getAttribute('vars') : null;
+		var savedAttributes = this.getSyncedFileAttributes(savedRoot);
 		pages = (pages != null) ? pages :
 			this.ui.getPagesForNode(savedRoot, null, true);
 
@@ -3776,13 +4116,17 @@ DrawioFile.prototype.fileSaved = function(savedData, lastDesc, success, error, t
 		{
 			if (this.sync == null || this.isOptimisticSync())
 			{
-				this.setShadowPages(pages, savedVars);
+				this.setShadowPages(pages, savedVars, savedAttributes);
 				this.confirmFileVars(savedVars);
 				
 				if (this.sync != null)
 				{
 					this.sync.lastModified = this.getLastModifiedDate();
 					this.sync.resetUpdateStatusThread();
+
+					// The save can have written a new channel key, the
+					// other branch switches in DrawioFileSync.start
+					this.sync.updateChannelKey();
 
 					if (this.isRealtime())
 					{
@@ -3797,14 +4141,13 @@ DrawioFile.prototype.fileSaved = function(savedData, lastDesc, success, error, t
 			}
 			else
 			{
-				this.sync.fileSaved(pages, lastDesc,
-					success, error, token, checksum, savedVars);
+				this.sync.fileSaved(pages, lastDesc, success, error,
+					token, checksum, savedVars, savedAttributes);
 			}
 		}
 		catch (e)
 		{
-			this.inConflictState = true;
-			this.invalidChecksum = true;
+			this.setConflict(true);
 			this.descriptorChanged();
 			
 			if (error != null)
@@ -3958,8 +4301,8 @@ DrawioFile.prototype.clearAutosave = function()
 };
 
 /**
- * Returns the location as a new object.
- * @type mx.Point
+ * Returns true if the next autosave should create a new revision, ie. if no
+ * revision was created during the last maxAutosaveRevisionDelay ms.
  */
 DrawioFile.prototype.isAutosaveRevision = function()
 {
@@ -3969,21 +4312,21 @@ DrawioFile.prototype.isAutosaveRevision = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Fires a descriptorChanged event.
  */
 DrawioFile.prototype.descriptorChanged = function()
 {
+	// A merged or reloaded version of the file can carry a new channel key
+	if (this.sync != null)
+	{
+		this.sync.updateChannelKey();
+	}
+
 	this.fireEvent(new mxEventObject('descriptorChanged'));
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Fires a contentChanged event.
  */
 DrawioFile.prototype.contentChanged = function()
 {
@@ -3991,7 +4334,8 @@ DrawioFile.prototype.contentChanged = function()
 };
 
 /**
- * Returns the location as a new object.
+ * Saves the file if autosave is enabled and the file is modified, then
+ * destroys the file.
  */
 DrawioFile.prototype.close = function(unloading)
 {
@@ -4009,26 +4353,12 @@ DrawioFile.prototype.close = function(unloading)
 	}
 	
 	this.stats.closed++;
-
-	// Release telemetry: session summary of sampled and flagged sessions
-	if (this.sync != null && EditorUi.realtimeTelemetry &&
-		(EditorUi.realtimeTelemetrySampled || this.realtimeTelemetryFlagged))
-	{
-		var s = this.stats;
-
-		EditorUi.logRealtime('session', {rt: (this.isRealtime()) ? 1 : 0,
-			min: Math.round((Date.now() - this.created) / 60000), saved: s.saved,
-			merged: s.merged, fm: s.fileMerged, fr: s.fileReloaded,
-			conf: s.conflicts, to: s.timeouts, cs: s.checksumErrors,
-			join: s.joined, ms: s.msgSent, mr: s.msgReceived, ch: s.cacheHits,
-			cm: s.cacheMiss, cf: s.cacheFail}, this, null, unloading);
-	}
-
 	this.destroy();
 };
 
 /**
- * Returns the location as a new object.
+ * Returns true if the given titles have the same file extension. If either
+ * title is null, the titles are compared directly.
  */
 DrawioFile.prototype.hasSameExtension = function(title, newTitle)
 {

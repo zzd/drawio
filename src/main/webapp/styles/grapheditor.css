@@ -70,6 +70,59 @@
 	--prop-accent-text-color: #305496;
 }
 
+/* System colors (systemColors in Editor.configure): derives the grays from
+   the CSS system colors Canvas and CanvasText, which the browser resolves
+   for the color scheme where they are used. With the default Canvas and
+   CanvasText of Chrome, the mixes give the fixed colors above. Accent,
+   selection and status colors are unchanged. Not used with forced colors,
+   where high-contrast.css applies. */
+@media (forced-colors: none) {
+	:root.geSystemColors {
+		--ge-panel-color: color-mix(in srgb, CanvasText 5%, Canvas);
+		--toolbar-color: color-mix(in srgb, CanvasText 5%, Canvas);
+		--workspace-color: color-mix(in srgb, CanvasText 7.5%, Canvas);
+		--inactive-color: color-mix(in srgb, CanvasText 10.5%, Canvas);
+		--active-color: color-mix(in srgb, CanvasText 23%, Canvas);
+		--border-color: color-mix(in srgb, CanvasText 14.5%, Canvas);
+		--highlight-color: color-mix(in srgb, CanvasText 11.5%, Canvas);
+		--scrollbar-hover-color: color-mix(in srgb, CanvasText 41%, Canvas);
+		--text-color: color-mix(in srgb, CanvasText 75%, Canvas);
+		--dialog-color: color-mix(in srgb, CanvasText 6%, Canvas);
+		--strong-text-color: color-mix(in srgb, CanvasText 88.5%, Canvas);
+		--secondary-text-color: color-mix(in srgb, CanvasText 56.5%, Canvas);
+		--faint-text-color: color-mix(in srgb, CanvasText 44%, Canvas);
+		--field-color: Canvas;
+		--field-border-color: color-mix(in srgb, CanvasText 17%, Canvas);
+		--strong-border-color: color-mix(in srgb, CanvasText 27%, Canvas);
+		--card-color: Canvas;
+		--soft-color: color-mix(in srgb, CanvasText 4%, Canvas);
+		--soft-hover-color: color-mix(in srgb, CanvasText 5.5%, Canvas);
+		--active-item-color: color-mix(in srgb, CanvasText 17%, Canvas);
+		--scrollbar-color: color-mix(in srgb, CanvasText 11.5%, Canvas);
+		--prop-stripe-color: color-mix(in srgb, CanvasText 1%, Canvas);
+		--dark-color: Canvas;
+		--dark-toolbar-color: color-mix(in srgb, CanvasText 6%, Canvas);
+		--ge-dark-panel-color: color-mix(in srgb, CanvasText 4.5%, Canvas);
+		--dark-header-color: color-mix(in srgb, CanvasText 4.5%, Canvas);
+		--dark-border-color: color-mix(in srgb, CanvasText 14%, Canvas);
+		--dark-text-color: color-mix(in srgb, CanvasText 73%, Canvas);
+		--dark-inverse-active-color: color-mix(in srgb, CanvasText 75%, Canvas);
+		--dark-dialog-color: color-mix(in srgb, CanvasText 10%, Canvas);
+		--dark-strong-text-color: color-mix(in srgb, CanvasText 89%, Canvas);
+		--dark-secondary-text-color: color-mix(in srgb, CanvasText 60%, Canvas);
+		--dark-faint-text-color: color-mix(in srgb, CanvasText 44%, Canvas);
+		--dark-field-color: color-mix(in srgb, CanvasText 4%, Canvas);
+		--dark-field-border-color: color-mix(in srgb, CanvasText 23%, Canvas);
+		--dark-strong-border-color: color-mix(in srgb, CanvasText 30%, Canvas);
+		--dark-card-color: color-mix(in srgb, CanvasText 11%, Canvas);
+		--dark-soft-color: color-mix(in srgb, CanvasText 17%, Canvas);
+		--dark-soft-hover-color: color-mix(in srgb, CanvasText 17%, Canvas);
+		--dark-active-item-color: color-mix(in srgb, CanvasText 64%, Canvas);
+		--dark-error-color: CanvasText;
+		--dark-scrollbar-color: color-mix(in srgb, CanvasText 11%, Canvas);
+	}
+}
+
 .geEditor * {
 	forced-color-adjust: none;
 }
@@ -88,7 +141,7 @@
 	grid-template-columns: min-content min-content 1fr min-content;
 }
 
-html:has(.geFullscreen),
+html.geFullscreen,
 .geEditor,
 .mxWindow,
 .geDialogTitle,
@@ -208,8 +261,9 @@ div[id*="dgeMermaidOutput-"] {
 	margin-left: 0;
 }
 
+/* The color window of the inline toolbar stays */
 .geInlineNoUi .geToolbarContainer,
-.geInlineNoUi .mxWindow {
+.geInlineNoUi .mxWindow:not(.geColorWindow) {
 	display: none !important;
 }
 
@@ -367,7 +421,9 @@ div[id*="dgeMermaidOutput-"] {
 }
 
 .geFreehandMode,
-.geFreehandMode * {
+.geFreehandMode *,
+.gePolygonMode,
+.gePolygonMode * {
 	cursor: crosshair !important;
 }
 
@@ -380,7 +436,7 @@ div[id*="dgeMermaidOutput-"] {
 .geDarkMode .geBtnStepper>div,
 .geDarkMode .geColorDropper,
 .geDarkMode .geStyleMenuItem,
-.geDarkMode .gePropHeader,
+.geDarkMode .gePropHeader>.gePropHeaderCell:first-child,
 .geDarkMode .geStyleBtn .geAdaptiveAsset.geArrow,
 .geAtlas .geMenubar .geButtonContainer .geButton:empty,
 .geAtlas .geMenubar .geButtonContainer .geButton:has(> span.geCommentsBadge:only-child),
@@ -388,6 +444,22 @@ div[id*="dgeMermaidOutput-"] {
 .geAtlas .geMenubar .geButtonContainer .geButton img:last-child {
 	filter: invert(1);
 	outline: none;
+}
+
+/* Keyboard focus ring of the inverted controls above: the inverse of the focus
+   color shows the focus color, else the color of the control is used. The
+   outline shows in forced colors. */
+.geDarkMode .geButton:focus-visible,
+.geDarkMode .geHelpIcon:not(.geTitle *):focus-visible,
+.geDarkMode .geAdaptiveAsset:focus-visible,
+.geDarkMode .geTitle:focus-visible,
+.geDarkMode .geTitle.geFocusRing,
+.geDarkMode .geTitle .geLibraryButton:focus-visible,
+.geDarkMode .gePropHeader>.gePropHeaderCell:focus-visible,
+.geAtlas .geMenubar .geButtonContainer .geButton:empty:focus-visible,
+.geAtlas .geMenubar .geButtonContainer .geButton:has(> span.geCommentsBadge:only-child):focus-visible {
+	outline: 2px solid currentColor;
+	outline: 2px solid rgb(from var(--dark-focus-color) calc(255 - r) calc(255 - g) calc(255 - b));
 }
 
 /* Cancels out the inversion for the badge in the atlas menubar */
@@ -416,11 +488,6 @@ div[id*="dgeMermaidOutput-"] {
 .geFormatTitleContainer {
 	height: 34px;
 	margin-bottom: 12px;
-	/* Bleed back across the scrollbar gutter reserved on .geFormatContainer so
-	   the tabs span the full panel width (the gutter is a right margin for the
-	   inset content panels only, not the full-bleed tab header). Keep in sync
-	   with the ::-webkit-scrollbar width. */
-	margin-right: -10px;
 }
 
 .geFormatTitle {
@@ -467,14 +534,15 @@ div[id*="dgeMermaidOutput-"] {
 	width: 20px !important;
 }
 
-.gePageTab:hover {
+.gePageTab:hover,
+.gePageGroupTab:hover {
 	background-color: light-dark(var(--highlight-color), var(--dark-border-color));
 	opacity: 1;
 }
 
 .geFormatContent {
 	margin-left: 12px;
-	margin-right: 0;
+	margin-right: 8px;
 }
 
 div.geActivePage {
@@ -508,12 +576,13 @@ div.geActivePage:hover {
 	position: relative;
 }
 
+/* The dots are 24px apart, the spacing of small targets in WCAG 2.5.8 */
 .geSwitcher>.geSwitcherDot {
 	display: inline-block;
 	width: 6px;
 	height: 6px;
-	margin-left: 4px;
-	margin-right: 3px;
+	margin-left: 8px;
+	margin-right: 8px;
 	border-radius: 3px;
 	cursor: pointer;
 	border: 1px solid rgb(181, 182, 183);
@@ -694,6 +763,13 @@ html td.mxPopupMenuItem {
 	transition-property: none !important;
 }
 
+/* Menu items with the keyboard focus have the hover style (see
+   mxPopupMenu.addItem), the outline shows in forced colors */
+table.mxPopupMenu tr:focus {
+	outline: 1px solid transparent;
+	outline-offset: -1px;
+}
+
 html body td.mxWindowTitle {
 	padding-right: 14px;
 }
@@ -811,7 +887,7 @@ div.geTemplatePreview {
 	margin: 8px;
 }
 
-.geTemplateSelected:has(div) span {
+.geTemplateSelected.geTemplateHasPreview span {
 	display: none;
 }
 
@@ -932,7 +1008,20 @@ div td.mxWindowTitle {
 	height: 22px;
 }
 
-.mxWindowTitle>div>img {
+/* The title buttons are 24px targets (WCAG 2.5.8) with the icon in the middle,
+   and the margin keeps the height they had with a padding of 4px */
+.mxWindowTitle>div>img:not(.geHelpIcon) {
+	box-sizing: border-box;
+	width: 24px;
+	height: 24px;
+	margin-top: -3px;
+	margin-bottom: -3px;
+	object-fit: none;
+}
+
+/* Help icons in titles, eg. of the AI window, are 16px with the padding of a
+   24px target */
+.mxWindowTitle>div>img.geHelpIcon {
 	padding: 4px;
 }
 
@@ -1073,12 +1162,6 @@ html div.mxWindow.mxWindowDocked {
 
 div.geFormatContainer {
 	overflow-y: auto;
-	/* Reserve the scrollbar gutter so the panel width does not jump (and the
-	   right-anchored color controls do not get squeezed) when the styled
-	   scrollbar appears. The custom ::-webkit-scrollbar makes it a classic,
-	   space-consuming bar, so the gutter is the panel's effective right margin
-	   - hence margin-right: 0 on .geFormatContent below. */
-	scrollbar-gutter: stable;
 	font-size: 12px;
 	width: 240px;
 }
@@ -1089,12 +1172,30 @@ div.geFormatContainer {
 	outline: none;
 }
 
-.geDiagramContainer:has(.geRuler) {
+/* Diagram that got the focus with the keyboard (see EditorUi.init). A sticky
+   overlay as the canvas covers outlines inside of the diagram and the panels
+   cover outlines outside of it. The outline shows in forced colors. */
+.geDiagramContainer.geFocusVisible::before {
+	content: '';
+	display: block;
+	position: sticky;
+	z-index: 1;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	box-shadow: inset 0 0 0 2px light-dark(var(--focus-color), var(--dark-focus-color));
+	outline: 2px solid transparent;
+	outline-offset: -2px;
+	pointer-events: none;
+}
+
+.geDiagramContainer.geRulerContainer {
 	margin: 14px 0 0 4px;
 }
 
-.geSketch .geDiagramContainer:has(.geRuler),
-.geMinimal .geDiagramContainer:has(.geRuler) {
+.geSketch .geDiagramContainer.geRulerContainer,
+.geMinimal .geDiagramContainer.geRulerContainer {
 	margin-left: 14px;
 }
 
@@ -1300,6 +1401,37 @@ html body div.geBtn.geSmallBanner {
 	box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.1);
 }
 
+/* Keyboard focus ring of buttons, eg. More Shapes and the buttons of dialogs:
+   an outline in the focus color that also shows next to primary buttons and in
+   dark mode, which removes all shadows, inside of the button so that areas
+   that scroll do not clip it, eg. the content of dialogs */
+.geBtn:focus-visible,
+.geCollapsibleTitle:focus-visible,
+.geTab:focus-visible,
+.geFormatTitle:focus-visible,
+.geGraphStylePreview:focus-visible {
+	outline: 2px solid light-dark(var(--focus-color), var(--dark-focus-color));
+	outline-offset: -2px;
+}
+
+/* The page tabs clip the ring of their menu button */
+.gePageTab .geButton:focus-visible,
+.gePageGroupTab .geButton:focus-visible {
+	outline-offset: -2px;
+}
+
+/* Keyboard focus of a label that stands for its container, which also contains
+   other controls, eg. the name of a page tab or of a library (see
+   Editor.addFocusRing) */
+.geFocusRing {
+	outline: 2px solid light-dark(var(--focus-color), var(--dark-focus-color));
+	outline-offset: -2px;
+}
+
+.geFocusLabel:focus-visible {
+	outline: none;
+}
+
 .geShapePicker {
 	position: absolute;
 	width: 142px;
@@ -1337,6 +1469,7 @@ html body div.geBtn.geSmallBanner {
 
 .geStyleBtn {
 	display: inline-flex;
+	position: relative;
 	box-sizing: border-box;
 	border-radius: 4px;
 	height: 22px;
@@ -1402,7 +1535,7 @@ td.mxPopupMenuIcon .geStyleMenuItem>div {
 	width: 100%;
 	height: 100%;
 	display: flex;
-	font-size: 13px;
+	font-size: 12px;
 	padding-right: 8px;
 	position: relative;
 	align-items: center;
@@ -1419,6 +1552,9 @@ td.mxPopupMenuIcon .geStyleMenuItem>div {
 
 .geFullWidthElement {
 	width: 212px;
+	/* Keeps 3px for the focus ring where the scrollbar of .geFormatContainer
+	   narrows the panel, which would otherwise clip it at the right edge */
+	max-width: calc(100% - 3px);
 }
 
 .geBtn[disabled],
@@ -1482,7 +1618,7 @@ td.mxPopupMenuIcon .geStyleMenuItem>div {
 
 .geEditor .geItem:active:not(.mxDisabled, [disabled]):not(.geStatus),
 .geEditor .geBtn:active:not([disabled]),
-.geEditor .geStatus:has(div[data-action]:not(.mxDisabled, [disabled])):active,
+.geEditor .geStatus.geStatusAction:active,
 .geEditor .geTitle:active,
 .geEditor .geButton:active:not(.mxDisabled, .mxDisabled *, [disabled], .geBtn *),
 .geEditor .geHelpIcon:active,
@@ -1500,6 +1636,11 @@ td.mxPopupMenuIcon .geStyleMenuItem>div {
 
 .geEditor .geButton:not(.mxDisabled, .mxDisabled *, [disabled]) {
 	opacity: 0.65;
+}
+
+/* Shows the keyboard focus ring of buttons at full strength like the hover */
+.geEditor .geButton:focus-visible:not(.mxDisabled, .mxDisabled *, [disabled]) {
+	opacity: 1;
 }
 
 .geItem:hover:not(.mxDisabled, [disabled]),
@@ -1533,7 +1674,8 @@ table.mxPopupMenu tr.mxPopupMenuItemHover,
 	visibility: hidden;
 }
 
-.gePageTab.gePageTabDragPlaceholder {
+.gePageTab.gePageTabDragPlaceholder,
+.gePageGroupTab.gePageTabDragPlaceholder {
 	visibility: hidden;
 }
 
@@ -1862,6 +2004,26 @@ a.geStatus>div {
 	font-weight: bold;
 }
 
+/* Icon that a style rule of the page sets the value of a Format panel entry
+   (BaseFormatPanel.addStyleRuleHint), which opens the rules when clicked */
+.geStyleRuleHint {
+	display: inline-flex;
+	align-items: center;
+	margin-left: 4px;
+	vertical-align: middle;
+	flex-shrink: 0;
+	color: light-dark(var(--secondary-text-color), var(--dark-secondary-text-color));
+}
+
+.geStyleRuleHint[role="button"]:hover {
+	color: light-dark(var(--focus-color), var(--dark-focus-color));
+}
+
+/* The title has a gap between its children */
+.geCollapsibleTitle .geStyleRuleHint {
+	margin-left: 0;
+}
+
 .geCollapsibleTitle {
 	cursor: pointer;
 	-webkit-user-select: none;
@@ -1925,7 +2087,10 @@ a.geStatus>div {
 	margin: 0 8px 0 0;
 }
 
-.mxWindowPane .geSidebarContainer {
+/* Shapes in windows and in the shapes panel of the minimal theme without
+   windows (windows=0), with room for the library buttons */
+.mxWindowPane .geSidebarContainer,
+.geEditor>.geSidebarContainer .geSidebarContainer {
 	position: absolute;
 	width: 100% !important;
 	top: 0;
@@ -1990,6 +2155,33 @@ a.geStatus>div {
 	padding: 0px 0px 0px 16px;
 }
 
+/* Page groups (see EditorUi.createTabForPageGroup): the tab of a group and
+   the tabs of its pages are underlined, the current page is shown in a
+   collapsed group */
+.gePageTabGrouped,
+.gePageGroupTab {
+	box-shadow: inset 0 -2px 0 light-dark(var(--strong-border-color), var(--dark-strong-border-color));
+}
+
+.gePageTab.gePageTabCollapsed {
+	display: none;
+}
+
+.gePageGroupTab {
+	vertical-align: top;
+	margin-left: 4px;
+	padding: 0px 2px 0px 4px;
+	font-weight: 500;
+}
+
+.gePageGroupTab>div.geButton {
+	width: 20px !important;
+}
+
+.gePageGroupTab:not(:hover, :focus-within)>div.geButton:last-child {
+	opacity: 0;
+}
+
 .geControlTab {
 	width: 30px;
 	margin: 0 4px;
@@ -2049,7 +2241,7 @@ a.geStatus>div {
 	border-radius: 10px;
 	text-align: center;
 	font-size: 12px;
-	opacity: 0.6;
+	color: light-dark(#5f5f63, #a0a0a0);
 	padding: 6px;
 	margin: 4px 6px 4px 0;
 }
@@ -2063,7 +2255,7 @@ a.geStatus>div {
 .geLibraryButton {
 	position: relative;
 	border-radius: 50%;
-	padding: 2px;
+	padding: 5px;
 	width: 14px;
 	cursor: pointer;
 	margin: 0px 1px;
@@ -2072,6 +2264,12 @@ a.geStatus>div {
 
 .geLibraryButton:hover {
 	background-color: var(--active-color);
+}
+
+/* Keyboard focus ring of the buttons in the titles of libraries */
+.geLibraryButton:focus-visible {
+	outline: 2px solid light-dark(var(--focus-color), var(--dark-focus-color));
+	opacity: 1;
 }
 
 .geTitle .geButton {
@@ -2165,7 +2363,7 @@ a.geStatus>div {
 .geDialog textarea,
 .geDialog select {
 	border-radius: 6px;
-	border: light-dark(1px solid rgba(0, 0, 0, 0.15), 1px solid rgba(255, 255, 255, 0.15));
+	border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.15));
 	background-color: light-dark(var(--field-color), var(--dark-field-color));
 	padding: 4px 8px;
 	font-size: 13px;
@@ -2199,7 +2397,7 @@ a.geStatus>div {
 /* Dialog form sections and layout */
 .geDialogSection {
 	background: light-dark(rgba(0, 0, 0, 0.035), rgba(255, 255, 255, 0.05));
-	border: light-dark(1px solid rgba(0, 0, 0, 0.06), 1px solid rgba(255, 255, 255, 0.06));
+	border: 1px solid light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
 	border-radius: 8px;
 	padding: 10px 12px;
 	margin-bottom: 10px;
@@ -2250,11 +2448,371 @@ a.geStatus>div {
 	padding-top: 4px;
 }
 
+/* Marks a required field of a dialog that is still empty or invalid, like
+   the style key of a step in the action dialog (.geAnimationFieldWarn) */
+.geDialog .geDialogFieldWarn {
+	border-color: light-dark(#e6a700, #ffcc4d) !important;
+	box-shadow: 0 0 0 1px light-dark(rgba(230, 167, 0, 0.25), rgba(255, 204, 77, 0.25));
+}
+
 /* Explanatory hint text describing what an option does - never for the
    current value of an entry, which stays in the regular text style */
 .geDialogHint {
 	font-size: 12px;
+}
+
+/* Gray text in dialogs with at least 4.5:1 on their background (the secondary
+   text color has 4.45:1 on the light dialog color and gray 3.5:1) */
+.geDialogHint, .geSecondaryText {
+	color: light-dark(#5f5f63, var(--dark-secondary-text-color));
+}
+
+/* Home screen (HomeDialog): the Google Drive diagrams draw.io can open */
+.geHome {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	line-height: normal;
+}
+
+/* Only the nav and the grid scroll: as a scroll container (.geDialog >
+   :first-child), Home would clip the focus rings at its edges */
+.geDialog > div.geHome {
+	overflow: visible;
+}
+
+.geHome .geHomeHeader {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex: 0 0 auto;
+	padding-bottom: 16px;
+}
+
+.geHome .geHomeTitle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 16px;
+	font-weight: 600;
+	white-space: nowrap;
+	color: light-dark(var(--strong-text-color), var(--dark-strong-text-color));
+}
+
+.geHome .geHomeTitle img {
+	width: 24px;
+	height: 24px;
+}
+
+.geHome input.geHomeSearch {
+	flex: 1 1 auto;
+	min-width: 0;
+	max-width: 420px;
+	height: 32px;
+	margin-left: auto;
+	padding: 0 14px;
+	box-sizing: border-box;
+	border-radius: 16px;
+	border: 1px solid light-dark(var(--field-border-color), var(--dark-field-border-color));
+	background: light-dark(var(--field-color), var(--dark-field-color));
+	color: inherit;
+}
+
+/* Same ring as the cards in every browser (Firefox draws a thick outline) */
+.geHome input.geHomeSearch:focus {
+	outline: 1px solid transparent;
+	border-color: light-dark(var(--focus-color), var(--dark-focus-color));
+	box-shadow: 0 0 0 3px light-dark(color-mix(in srgb, var(--focus-color) 35%, transparent), color-mix(in srgb, var(--dark-focus-color) 35%, transparent));
+}
+
+.geHome .geHomeNewButton {
+	flex: 0 0 auto;
+	margin: 0;
+}
+
+.geHome .geHomeBody {
+	display: flex;
+	flex: 1 1 auto;
+	gap: 16px;
+	min-height: 0;
+}
+
+.geHome .geHomeNav {
+	display: flex;
+	flex-direction: column;
+	flex: 0 0 200px;
+	gap: 2px;
+	min-height: 0;
+	min-width: 0;
+	/* Scrolls in short dialogs, with room for the focus rings */
+	overflow-y: auto;
+	padding: 3px;
+	margin: -3px;
+}
+
+.geHome .geHomeNavItem {
+	flex: 0 0 auto;
+	padding: 7px 12px;
+	border: none;
+	border-radius: 16px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.geHome .geHomeNavItem:hover {
+	background: light-dark(var(--soft-hover-color), var(--dark-soft-hover-color));
+}
+
+.geHome .geHomeNavItem[aria-current="true"] {
+	background: light-dark(var(--selected-color), color-mix(in srgb, var(--dark-focus-color) 20%, transparent));
+	font-weight: 600;
+}
+
+/* Same ring as buttons (see .geBtn:focus-visible), in the room for the rings
+   of the nav and main parts */
+.geHome .geHomeNavItem:focus-visible,
+.geHome .geHomeCard:focus-visible {
+	outline: 2px solid light-dark(var(--focus-color), var(--dark-focus-color));
+	outline-offset: 1px;
+}
+
+.geHome .geHomeNavSeparator {
+	margin: 8px 12px;
+	border-top: 1px solid light-dark(var(--border-color), var(--dark-border-color));
+}
+
+.geHome .geHomeNavFooter {
+	margin-top: auto;
+	padding: 12px 12px 0 12px;
+	overflow-wrap: anywhere;
+}
+
+.geHome .geHomeMain {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-y: auto;
+	padding: 3px;
+}
+
+.geHome .geHomeHint {
+	margin: 0 0 12px 0;
+}
+
+.geHome .geHomeGrid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+	gap: 16px;
+}
+
+.geHome .geHomeCard {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	padding: 0;
+	overflow: hidden;
+	border: 1px solid light-dark(var(--field-border-color), var(--dark-field-border-color));
+	border-radius: 12px;
+	background: light-dark(var(--card-color), var(--dark-card-color));
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.geHome .geHomeCard:hover {
+	border-color: light-dark(var(--strong-border-color), var(--dark-strong-border-color));
+}
+
+.geHome .geHomeThumb {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 112px;
+	overflow: hidden;
+	background: light-dark(var(--soft-color), var(--dark-soft-color));
+}
+
+.geHome .geHomeThumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+}
+
+.geHome .geHomeThumb img.geHomePlaceholder {
+	width: 40px;
+	height: 40px;
+	opacity: 0.35;
+}
+
+.geHome .geHomeCardText {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+	padding: 8px 10px 10px 10px;
+}
+
+.geHome .geHomeCardTitle,
+.geHome .geHomeCardMeta {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	line-height: normal;
+}
+
+.geHome .geHomeCardTitle {
+	font-weight: 600;
+}
+
+.geHome .geHomeCardMeta {
+	font-size: 12px;
 	color: light-dark(var(--secondary-text-color), var(--dark-secondary-text-color));
+}
+
+.geHome .geHomeAddCard {
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	min-height: 160px;
+	padding: 12px;
+	border-style: dashed;
+	text-align: center;
+	color: light-dark(var(--accent-text-color), var(--dark-accent-text-color));
+}
+
+.geHome .geHomeAddIcon {
+	font-size: 28px;
+	line-height: 1;
+}
+
+.geHome .geHomeSkeleton {
+	pointer-events: none;
+}
+
+.geHome .geHomeSkeleton .geHomeThumb,
+.geHome .geHomeSkeleton .geHomeCardTitle,
+.geHome .geHomeSkeleton .geHomeCardMeta {
+	animation: geHomePulse 1.2s ease-in-out infinite;
+}
+
+.geHome .geHomeSkeleton .geHomeCardTitle,
+.geHome .geHomeSkeleton .geHomeCardMeta {
+	height: 12px;
+	border-radius: 4px;
+	background: light-dark(var(--soft-color), var(--dark-soft-color));
+}
+
+.geHome .geHomeSkeleton .geHomeCardTitle {
+	width: 70%;
+}
+
+.geHome .geHomeSkeleton .geHomeCardMeta {
+	width: 40%;
+}
+
+@keyframes geHomePulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.geHome .geHomeSkeleton .geHomeThumb,
+	.geHome .geHomeSkeleton .geHomeCardTitle,
+	.geHome .geHomeSkeleton .geHomeCardMeta {
+		animation: none;
+	}
+}
+
+.geHome .geHomeStatus {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	padding: 48px 16px;
+	text-align: center;
+}
+
+.geHome .geHomeStatusTitle {
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.geHome .geHomeMore {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	padding: 16px 0 4px 0;
+}
+
+/* Narrow dialogs: the nav becomes a scrolling row above the grid */
+.geHome.geHomeNarrow .geHomeHeader {
+	flex-wrap: wrap;
+}
+
+.geHome.geHomeNarrow input.geHomeSearch {
+	order: 3;
+	flex-basis: 100%;
+	max-width: none;
+	margin-left: 0;
+}
+
+.geHome.geHomeNarrow .geHomeBody {
+	flex-direction: column;
+	gap: 8px;
+}
+
+.geHome.geHomeNarrow .geHomeNav {
+	flex: 0 0 auto;
+	flex-direction: row;
+	overflow-x: auto;
+}
+
+.geHome.geHomeNarrow .geHomeNavItem {
+	white-space: nowrap;
+}
+
+.geHome.geHomeNarrow .geHomeNewButton {
+	margin-left: auto;
+}
+
+.geHome.geHomeNarrow .geHomeNavSeparator,
+.geHome.geHomeNarrow .geHomeNavFooter {
+	display: none;
+}
+
+.geHome.geHomeNarrow .geHomeGrid {
+	grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+	gap: 12px;
+}
+
+/* Actions shown as links: the Home hint and the Allow access dialog */
+.geHomeAccess .geHomeLinks {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+	margin-top: 16px;
+}
+
+.geHome .geHomeLink,
+.geHomeAccess .geHomeLink {
+	padding: 0;
+	border: none;
+	background: none;
+	color: light-dark(var(--accent-text-color), var(--dark-accent-text-color));
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.geHome .geHomeLink:hover,
+.geHomeAccess .geHomeLink:hover {
+	background: none;
 }
 
 .geDialogCheckRow {
@@ -2337,7 +2895,7 @@ a.geStatus>div {
 .geDialogTitle {
 	box-sizing: border-box;
 	white-space: nowrap;
-	border-bottom: light-dark(1px solid rgba(0, 0, 0, 0.1), 1px solid rgba(255, 255, 255, 0.1));
+	border-bottom: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
 	font-size: 13px;
 	font-weight: 600;
 	text-align: center;
@@ -2348,7 +2906,7 @@ a.geStatus>div {
 	white-space: nowrap;
 	text-align: right;
 	box-sizing: border-box;
-	border-top: light-dark(1px solid rgba(0, 0, 0, 0.1), 1px solid rgba(255, 255, 255, 0.1));
+	border-top: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
 }
 
 .geMoreShapesSectionHeader {
@@ -2356,10 +2914,10 @@ a.geStatus>div {
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
-	color: light-dark(var(--secondary-text-color), var(--dark-secondary-text-color));
+	color: light-dark(#5f5f63, var(--dark-secondary-text-color));
 	background-color: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.04));
 	padding: 8px 12px 8px 16px;
-	border-bottom: light-dark(1px solid rgba(0, 0, 0, 0.06), 1px solid rgba(255, 255, 255, 0.06));
+	border-bottom: 1px solid light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
 	user-select: none;
 }
 
@@ -2400,7 +2958,7 @@ a.geStatus>div {
 }
 
 .geMoreShapesPreview {
-	border-left: light-dark(1px solid rgba(0, 0, 0, 0.1), 1px solid rgba(255, 255, 255, 0.1));
+	border-left: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
 }
 
 .geMoreShapesPreview img {
@@ -2532,6 +3090,151 @@ html div.mxRubberband {
 	padding: 6px 20px 6px 10px
 }
 
+/* Status messages for screen readers that are not shown (see EditorUi.announce) */
+.geLiveRegion {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* Cells of the page as a tree (see TextOutlineWindow), with the colors of
+   the layers and page tabs. The window collapses the groups itself. */
+.geTextOutline {
+	position: absolute;
+	inset: 0;
+	overflow: auto;
+	padding: 6px 0;
+	box-sizing: border-box;
+	font-size: 12px;
+	line-height: 16px;
+	user-select: none;
+	color: light-dark(var(--strong-text-color), var(--dark-strong-text-color));
+}
+
+.geTextOutline ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.geTextOutline li {
+	outline: none;
+}
+
+.geTextOutlineItem {
+	display: flex;
+	align-items: center;
+	height: 26px;
+	margin: 0 6px;
+	padding-right: 8px;
+	border-radius: 6px;
+	white-space: nowrap;
+	cursor: default;
+}
+
+.geTextOutlineItem:hover {
+	background-color: light-dark(var(--highlight-color), var(--dark-border-color));
+}
+
+.geTextOutline li[aria-selected="true"] > .geTextOutlineItem {
+	background-color: light-dark(var(--accent-color), var(--dark-accent-color));
+	color: light-dark(var(--accent-text-color), var(--dark-accent-text-color));
+}
+
+.geTextOutline li[aria-selected="true"] > .geTextOutlineItem:hover {
+	background-color: light-dark(var(--accent-hover-color), var(--dark-active-accent-color));
+}
+
+.geTextOutline li:focus-visible > .geTextOutlineItem {
+	outline: 2px solid light-dark(var(--focus-color), var(--dark-focus-color));
+	outline-offset: -2px;
+}
+
+.geTextOutlineToggle {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	margin-right: 2px;
+	border-radius: 4px;
+}
+
+.geTextOutlineToggle img {
+	width: 16px;
+	height: 16px;
+	opacity: 0.55;
+	cursor: pointer;
+	transition: transform 0.15s ease;
+}
+
+.geTextOutlineToggle:hover img {
+	opacity: 1;
+}
+
+.geTextOutline li[aria-expanded="false"] > .geTextOutlineItem .geTextOutlineToggle img {
+	transform: rotate(-90deg);
+}
+
+.geTextOutlineName {
+	flex: 0 1 auto;
+	min-width: 24px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.geTextOutlineLayer > .geTextOutlineItem .geTextOutlineName {
+	font-weight: 600;
+}
+
+/* Shrinks before the name */
+.geTextOutlineKind {
+	flex: 0 1000 auto;
+	min-width: 0;
+	margin-left: 8px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-size: 11px;
+}
+
+.geTextOutlineArrow {
+	flex: none;
+	margin-right: 5px;
+}
+
+.geTextOutlineKind,
+.geTextOutlineArrow,
+.geTextOutlineEmpty {
+	color: light-dark(var(--secondary-text-color), var(--dark-secondary-text-color));
+}
+
+.geTextOutline li[aria-selected="true"] > .geTextOutlineItem .geTextOutlineKind,
+.geTextOutline li[aria-selected="true"] > .geTextOutlineItem .geTextOutlineArrow {
+	color: inherit;
+	opacity: 0.75;
+}
+
+.geTextOutline > .geBtn {
+	display: block;
+	margin: 8px auto;
+}
+
+.geTextOutlineEmpty {
+	padding: 24px 12px;
+	text-align: center;
+}
+
+/* Same ring as the search of the Home dialog, the outline shows in forced colors */
+.geSearchSidebar input:focus {
+	outline: 1px solid transparent;
+	border-color: light-dark(var(--focus-color), var(--dark-focus-color));
+	box-shadow: 0 0 0 3px light-dark(color-mix(in srgb, var(--focus-color) 35%, transparent), color-mix(in srgb, var(--dark-focus-color) 35%, transparent));
+}
+
 .geSearchSidebar>div {
 	margin-bottom: 4px;
 }
@@ -2613,9 +3316,23 @@ table.geProperties tr th {
 	border-right: none;
 }
 
+/* The dark mode filter only inverts the text and fold arrow of the header
+   cells. Inverting the row would also invert its collapsed borders in Safari,
+   whose invert also darkens #e5e5e5 to #0d0d0d instead of #1a1a1a. */
 .gePropHeader {
-	background-color: #e5e5e5;
+	background-color: light-dark(#e5e5e5, #1a1a1a);
 	color: black;
+}
+
+/* The second cell has no fold arrow, so its text needs no filter, which
+   the contrast checks of assistive tools cannot see (white like the first) */
+.geDarkMode .gePropHeader>.gePropHeaderCell:nth-child(2) {
+	color: #ffffff;
+}
+
+/* Shortcuts in menus with enough contrast on the menu and its highlight */
+.geMenuShortcut {
+	color: light-dark(#5f5f63, #a0a0a0);
 }
 
 .gePropRowCell {

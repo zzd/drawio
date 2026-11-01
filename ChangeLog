@@ -1,3 +1,2030 @@
+29-OCT-2026: 32.6.9
+
+- Adds connection point resize cases for the palette shapes of #783 and #916
+- Makes the storage and start dialogs of the web app usable with the keyboard
+- Raises the contrast of gray text in the storage and start dialogs and of dialog hints
+- Makes the templates of the New Diagram dialog keyboard accessible
+- Makes the file lists of the GitHub, GitLab and Trello dialogs keyboard accessible
+- Stops flow animations if the operating system asks for reduced motion
+- Makes the storage buttons of the create dialog keyboard accessible
+- Names the progress bars of spinners and disables storage buttons while they load
+- Names the file name, storage logo and file type of the New Diagram dialog
+- Makes the title buttons of windows 24px targets
+- Makes the toolbar of the lightbox keyboard accessible
+- Makes the buttons of the viewer toolbar keyboard accessible
+- Takes disabled buttons of the viewer toolbar out of the Tab order
+- Keeps the focus in the file lists of the GitHub, GitLab and Trello dialogs
+- Keeps the size of help icons in the titles of windows
+- Makes the tabs of the Configuration dialog keyboard accessible
+- Logs errors of error dialogs with their stack to the console
+- Revert "Logs errors of error dialogs with their stack to the console"
+- Adds resizeCentered style that keeps the center of shapes in all resizes
+- Inverts resizeCentered with Ctrl or Cmd while a resize handle is dragged
+- Keeps the center of relative geometries with resizeCentered and fires cellsArranged for Ctrl+cursor key resizes
+- Limits the regular expressions of editableCssRules
+- Stops the updates of a descriptor when another file is opened
+- Charges the alternatives of editableCssRules by their number
+- Removes the update listener of a descriptor after the event
+- Keeps at most 100,000 results in the placeholder cache
+- Keeps placeholder results only for keys that are looked up again
+- Shows the lightbox and viewer toolbars for Tab from the text outline button
+- Adds the Restore from a Zip key of the Confluence Cloud page ID mappings
+- Keeps the connection points of the U-turn arrow and UML 2.5 actions finite for extreme arrowhead lengths and arc sizes
+
+29-OCT-2026: 32.6.8
+
+- Updates the mathjax tooling and the CI wrangler pin for the Dependabot alerts
+- Runs the source checks on pushes and PRs to dev-db
+- Walks the descendants of nested invalid cells once in incremental validations
+- Keeps connectors visible that are connected to a shape a collaborator deletes at the same time
+- Walks the nested invalid cells if a walk stopped at a removed state
+- Keeps the open end of a connector at its point when the old parent of the removed terminal is unknown
+- Passes changed tie layouts on without routing the connectors per tie
+- Does not parse the styles of hidden ties for their connectors
+- Redraws traced outlines at most for a fifth of the time and not for failed traces
+- Traces the images of hidden documents in slices with messages
+- Shows the icons of page group tabs with the rules of one stylesheet
+- Keeps outlines at 256 points on large vertices
+- Measures all label gaps before their clip paths are written
+- Orders the nodes of invalid cells after cells without shapes in linear time
+- Inserts loops into the edges of their terminal without a lookup
+- Adds perf budget tests for crafted diagrams and runs them on every push
+- Delays only redraws of traced outlines and reports apps that fail to open
+- Shows the views of an SVG of all pages without general sibling selectors
+- Measures the texts of plain text labels with a background after painting all labels
+- Sets the ties of each connector once when ties are cloned with Ctrl+drag
+- Parses the ties of each connector once when ties are removed
+- Looks up the ties of connectors once per preview of cloned ties
+- Collects the hidden cells of collapsed tree topics without searching or recursion
+- Updates the tabs and placeholders once per edit when pages are moved
+- Passes on lane changes of ties that were laid out lazily after a zoom
+- Tests edges with line jumps only against the processed edges near them
+- Fails the traces of images that a wait timed out for in all graphs
+- Walks each cell once for the invalidations of all changes of an edit
+- Finds the segment of each label of an edge with a binary search
+- Keeps the ancestors with the data of placeholders while the view is validated
+- Adds perf budget families for the pre-existing on-open quadratics
+- Measures the plain text labels that are placed again at once after the last repaint
+- Keeps the line jumps of dense diagrams below the work limit of a validation
+- Skips a cell in an invalidation only if one earlier walk covers its flags
+- Tests all processed edges when the buckets of the line jump index hold more
+- Checks the steps of org chart boundaries once per merge
+- Limits crafted ELK options before they reach ELK
+- Pushes the cells of the changes into one array in the layout manager
+- Limits the automatic ELK runs of large layout containers
+- Looks up the selected cells in constant time and removes many in one pass
+- Adds differential tests of the selection model against the old implementation
+- Writes the rows of a data source in its dialog without the layout limits
+- Checks the selection lookup in isSelected also if nothing is selected
+- Runs the layouts of selected containers without the limits in one edit
+- Writes the tooltip of a cell once in SVG exports
+- Adds the translation keys of the Confluence Cloud page ID translation
+- Adds the missing translation keys of the draw.io Confluence Cloud app
+- Removes the listeners of many selection handlers in one pass
+- Adds deep-hierarchy tests of batches of removed listeners
+- Saves only the org chart waypoints that change the routes
+- Routes the connectors of org chart teams with more than 32 lines
+- Keeps Graph.isSameRoute and the points of bezier org chart connectors
+- Exports math pages with tooltip icons as SVG
+- Routes all connectors of an org chart manager with one walk
+- Updates the vendored drawio-plantuml bundle to commit 8769041
+- Filters the icon attributes of SVG exports after embedding images
+- Shows no scrollbars in resized viewers at 150 % display scaling
+- Redraws the outlines of images that load after the timeout of a wait
+- Keeps ELK margins and paddings with their numbers limited
+- Upgrades the routes of large tree boxes when libavoid is ready
+- Shows scrollbars for diagrams cut off by up to 0.83 px at 150 %
+- Keeps the size limits for the ancestors of small boxes in the libavoid re-run
+- Keeps late outlines of images that only temporary graphs waited for
+
+27-OCT-2026: 32.6.7
+
+- Pauses the autosaves for the closing saves of undo-stale
+- Makes drive-stale-etag deterministic under real timers
+- Holds the autosaves and the lazy cleanup for the cases of tree-undo
+- Redraws traced outlines in one walk and traces loaded images in slices
+- Traces all images of hidden documents at once, forces the redraw when a wait stops and visits labels of edges again
+- Runs the autosave stub of the real timers on the client window
+- Keeps the open end of a connector at its removed terminal in containers
+- Keeps the origin of the parent of cells that patches remove
+- Renames quoted url() references with balanced parentheses in SVG page IDs
+
+27-OCT-2026: 32.6.6
+
+- Trims the view IDs of page names with a scan and takes the SVGs of all pages in a loop
+- Compares a bounded number of library keys for each style and keeps the cached shape matches when the cache is full
+- Reads the old scripts of the page-groups and mermaid-alt tests from a release tag
+- Adds the lessons of the 32.6.5 release test to the release skill
+- Redraws only the port edges of traced outlines and finds old outlines without walking the cache
+- Counts the shared values of the closest keys exactly within a total budget and keeps shape matches in two generations
+- Compares a key with the values of the style when the key is longer
+- Gives the definitions of each page their own IDs in SVG exports of all pages
+- Keeps the images of all pages in one copy and the defs of Embed Images visible
+- Adds Spacing to the Properties panel of ties
+- Names the diagram of the viewer and the lightbox after the Alt Text of its page
+- Names the viewer after the shown page and after a new file of setXmlNode
+- Shows the current page after setXmlNode and names the page the viewer shows
+- Passes the navigation of the viewer to the parser on each update
+- Tests Spacing of several selected ties
+- Keeps the replays of the realtime undo repair per page
+- Adds the realtime scenario tree-undo for the hover arrows of Trees.js
+- Removes the terminal points of the connected ends of the Trees.js hover arrows
+- Keeps the popovers of the inline toolbar and the color window inside short inline editors
+- Replaces stale terminal points of cut ends and of Trees.js copies
+- Keeps the scroll position of popovers after changes and scrolls palettes with the popover
+- Keeps the shape picker of a click on a hover arrow open
+- Keeps the renaming of SVG page IDs linear for crafted url() values
+- Updates lockfiles for the open Dependabot alerts
+- Renames quoted url() references with a parenthesis in SVG page IDs again
+
+26-OCT-2026: 32.6.5
+
+- Keeps the label position of the new palette shape for changed alignments
+- Parses each label once when the text outline is filled
+- Finds the columns of selected table cells in linear time
+- Makes viewers and lightboxes figures with a text outline for screen readers
+- Hides the Text Outline button with Escape and keeps the scroll position of the diagram
+- Adds trimCurve to end curves where the markers start [jgraph/drawio#5819]
+- Lets page tabs be dropped onto the name of a tab
+- Adds optional page groups to the page tabs [jgraph/drawio#5774]
+- Shows the edge of selected edge labels and label gaps in edge selections
+- Bounds the encodings of embedded images in cells of many sizes
+- Keeps label gaps when a color set of the Style tab is applied
+- Routes auto-routed edges in the resize preview of the multi-selection box [jgraph/drawio#3370]
+- Stops libavoid solves without connectors from leaking their shapes
+- Compares palette shapes with the values of named styles when their shape changes
+- Announces wrapped plain text labels as the shapes show them
+- Parses each label once when the outline of a viewer is filled
+- Keeps pages dropped after a collapsed page group visible
+- Gives each size of an embedded image the encoding it got before
+- Sends the Page Groups switch to collaborators and keeps it in their saves
+- Starts the Confluence Cloud viewer without collectExternalHosts
+- Explores from connectors without a geometry
+- Hides the shape picker if it was already removed from the page
+- Records the groups of the GAE error log pass of 2026-10-26
+- Keeps the sources of embedded images whose sizes were not tried by the end of the call
+- Keeps the visible state of the tool windows while no file is open [jgraph/drawio#5823]
+- Adds the outline perimeter: edges end on the outline of what shapes paint
+- Fixes the tool windows that are kept while no file is open [jgraph/drawio#5823]
+- Spreads the connection points of shapes with the outline perimeter along the outline
+- Keeps the side points of outline shapes off the grid and lets the points on callout tails follow the tail
+- Documents the bent ends of snapToPoint routes when the outline points change
+- Exports all pages as one SVG with a view for each page [jgraph/drawio#5821]
+- Discards the result of an SVG or PNG export after its timeout
+- Adds a text alternative to pages for the SVG export
+- Restores the colors of a fixed theme before the shadow of an SVG export
+- Applies the Alt Text of Page Setup only if it was changed in the dialog
+- Retries an SVG or PNG export with a timeout of 5 minutes
+- Saves the result of an export that finished after its timeout on Retry
+- Keeps the Alt Text of a collaborator during the grace period of realtime
+- Writes the Alt Text of a new SVG file from its own first page
+- Traces the outlines of images on other pages before an SVG of all pages
+- Takes the SVG of each page in the CLI after its outlines and keeps the wait counter
+- Restores the embed choice of Export as SVG after All Pages
+- Adds the Alt Text row of Page Setup from diagramly
+- Waits once for stalled outline traces in the CLI export of all SVG pages
+- Ignores the node modules of the SVG views tests
+- Uses the accessibility title and description of Mermaid diagrams as their text alternative
+- Updates the Mermaid bundle to jgraph/drawio-mermaid@2c429a1
+- Updates the Mermaid bundle to jgraph/drawio-mermaid@0231f39
+- Adds ties that bundle connectors (prototype)
+- Previews moved and cloned ties on their connectors
+- Deletes ties with the delete action
+- Aligns moved ties with guides
+- Adds a Tie mode to the freehand tool
+- Stops the Tie mode of the freehand tool after a tie is added
+- Draws ties with the stroke of the tie
+- Updates tie layouts that were laid out for another zoom or pan
+- Adds the translations of Bundle, Unbundle and Tie
+- Fixes the findings of the performance and bug review of ties
+- Adds Select All for ties to the freehand Tie mode
+- Keeps the Mermaid text alternative of copies, authors and layouts
+- Routes snapToPoint ends to the outline points of the edited style
+- Traces the outlines of SVG and HTML files before their PDF export
+- Resets the styles of the copied shape for the snap points of outline shapes
+- Fixes the review findings of ties
+- Shows Select All of the freehand Tie mode as an icon in the mode row
+- Fixes copies of ties with the containers of their connectors
+- Adds the internal guide for connector ties
+- Fixes the shapes of the Basic palette in the Shapes button of the inline toolbar
+- Hides the inline toolbar while a shape picker that was opened with a click is shown
+- Shows the shapes of the library of a shape in the shape picker
+- Keeps drawing in the Tie mode of the freehand window after a tie is added
+- Fixes the review findings of the shape picker
+- Adds the balloon tree and mindmap layouts and the outline of tree boxes
+- Fixes the hover arrows of the branches of mindmaps at some zoom levels
+- Adds a regression suite for connector ties
+- Ignores crafted layout configs and logs the errors of container layouts
+- Writes the tooltips of images and groups as titles in SVG exports
+- Keeps ties out of the child layouts of their containers
+- Ignores double-clicks in the Tie mode of the freehand window
+- Fixes the review findings of the connector ties suite
+- Writes the title of a group on its group also if a plugin draws into another
+- Keeps ties in their layout containers and lets the layouts skip them
+- Fixes the review findings of the outline of tree boxes
+- Lays out balloon trees and mindmaps around roots that can't be moved
+- Keeps the order of the roots of an outline with a root that can't be moved
+- Leaves ties in place in ELK layouts of the Arrange > Layout dialog
+- Keeps ties out of the lane commands of pools
+- Keeps the top left of an outline with a line on a new level
+- Moves and copies the hidden branch of collapsed topics in mindmap boxes
+- Keeps the terminals of edges that an undo removes with their terminal
+- Ignores hidden shapes in the top left of an outline
+- Keeps the edge of the old parent exact when adding a parent is undone
+- Moves only the hidden cells below collapsed cells in layout containers
+- Moves the release skill into etc/build so anyone can run a release
+- Makes the release scripts report only what they checked
+
+25-OCT-2026: 32.6.4
+
+- Reads long decimals in style rules and placeholders as numbers again
+- Updates stable to 32.6.1
+- Names the Edit Data dialog for screen readers
+- Moves the focus into dialogs opened from menus and shortcuts
+- Names the Insert buttons of the text panel for screen readers
+- Keeps the inline toolbar popover off the selected shapes and shows its color window in inline embeds
+- Stops service workers on development hosts from failing every install
+- Stops the clear page from framing the other domain and fixes its buttons on ac.draw.io
+- Announces the selection and describes the diagram for screen readers
+- Links the shapes of a data source again when its key column changes
+- Removes the links of the shapes of a deleted data source
+- Needs a new preview for a data source whose URL was changed
+- Changes no connector styles in org chart layout containers whose layout fails
+- Reports a refresh of a read-only page as an error of its data sources
+- Shows Read-only for OK in the dialog of a data source of a read-only page
+- Reports an error while a refresh writes the cells of data sources
+- Shows Refresh All in an open Page Setup when the first data source is added
+- Shows an error for a style rule that would be lost in the Style Rules dialog
+- Keeps the font colors of the document in VSDX exports in dark mode
+- Shows only the rules that a page uses in the Style Rules dialog
+- Limits the size, rows, columns and connections of data source files
+- Counts only the rules that the page uses for Add Rule in the Style Rules dialog
+- Counts the connections of data sources from attributes that the import sets
+- Adds a text outline of the page for screen readers and the keyboard
+- Adds Alt+Shift+D, Alt+Shift+U and Ctrl+{ / } to the keyboard shortcuts
+- Names custom shapes Shape for screen readers instead of reading their stencil
+- Announces a selection with the same description as the previous one
+- Removes the listener of Page Setup when it is closed
+- Updates the text outline when shapes are hidden or shown by tag
+- Shows the inline toolbar for shapes in the simple theme by default
+- Keeps the inline toolbar off handles after it is clamped to the viewport
+- Adds a table popover to the inline toolbar for shapes
+- Keeps the popover of the inline toolbar off the toolbar beside shapes
+- Does not count empty rows and columns of data sources for their limits
+- Shows the rule that the page uses for a cleared rule in Style Rules
+- Adds a More button with the options of a single cell to the inline toolbar
+- Adds a Shape button to the inline toolbar for basic shapes
+- Adds Copy Style and Paste Style to the More button of the inline toolbar
+- Updates stable channel to 32.6.3
+- Embeds the external images of Confluence Cloud diagrams on save at the size of their cells
+- Lowers the cap per diagram to 2 MB and embeds images again for cells made larger
+- Cuts the label gaps out of edges in PDF exports and printouts [jgraph/drawio#5820]
+- Tests that the Forge app saves at once when the editor closes, and documents the Forge mode of the embed images suite
+- Keeps the styles of each shape when several shapes change their shape
+- Adds Insert to the context menu of the diagram with the shape toolbar
+- Offers the basic shapes of the General palette in the Shape popover
+- Adds effects, Rotate with Edge and the label background to the inline toolbar
+- Does not load images again that the size limit made smaller, and keeps their source when the same image is set again
+- Remembers the width a grown cell asked for when the source gives no wider image
+- Turns off effects of named styles in the More popover of the inline toolbar
+- Counts the blocked image and font hosts of the Jira Cloud app by page
+- Serves generate/v3 on ac.draw.io, aj.draw.io and app.diagrams.net and calls it on the own origin there
+- Shows only the named columns in the preview of data sources
+- Finds shapes with a label perimeter in the libraries of the sidebar
+- Offers the shapes of the library of a shape in the Shape popover
+- Moves Use Connector Style of edge labels to the Text popover
+- Keeps the formatting of shapes changed to another shape of their palette
+- Keeps moved labels when shapes change to another shape of their palette
+
+24-OCT-2026: 32.6.3
+
+- Reads the numbers of style rules and placeholders in styles in linear time
+- Checks the columns that data sources wrote once for all placeholders of a label
+- Trims the lines of text copied from labels with text flow in linear time
+
+23-OCT-2026: 32.6.2
+
+- Removes centering on clicks and zooming on double clicks in presentation mode
+- Limits the table operations of the text toolbar to the label editor
+- Inserts images, HTML and text dropped on a label that is being edited into the label
+- Inserts exported PNG and SVG files pasted into a label that is being edited as images
+- Keeps the colors of the parts of shapes and stencils in VSDX exports (#910)
+- Keeps the labels and the text of shapes in VSDX exports
+- Keeps the alignment and the fonts of text in VSDX exports
+- Applies the inline toolbar options to the cells they fit and adds arrange options
+- Hides tooltips when a popover or dropdown of the inline toolbar opens
+- Keeps edges on the connection points of the Lean Mapping kanbans after a resize
+- Keeps edges on the connection points of the Bootstrap popover after a resize
+- Keeps edges on the connection points of the DFD shapes after a resize
+- Keeps edges on the connection points of the SysML states and actions after a resize
+- Keeps edges on the pins of the Electrical multiplexer after a resize
+- Keeps edges on the connection points of the Basic shapes after a resize
+- Keeps edges on the connection points of the Infographic shapes after a resize
+- Keeps edges on the connection points of the Arrows shapes after a resize
+- Adds rules per page and placeholders in styles
+- Adds a modifier argument to mxKeyHandler.bindKey and binds Alt shortcuts with it
+- Uses the built-in features in the plugins that copied them
+- Keeps edges on the connection points of the ArchiMate Service and Event after a resize
+- Removes the page reordering test plugin
+- Adds a dialog for the style rules of a page
+- Moves the focus between the parts of the editor with F6 and Shift+F6
+- Adds F6 and Shift+F6 to the keyboard shortcuts
+- Shows a focus ring on the diagram and on dialog buttons for keyboard focus
+- Gives dialogs a role and a name and returns the focus to their opener
+- Declares the language of the user interface on the page
+- Allows pinch zoom on the pages without the editor
+- Adds alt text to the images in embed snippets
+- Uses a random realtime channel key from the Nextcloud host
+- Shows in the Format panel which values style rules set
+- Adds Insert Legend to the Style Rules dialog
+- Adds data sources to pages that refresh the data of linked cells
+- Adds keyboard access and ARIA roles to menus
+- Returns the focus to the diagram with Escape
+- Moves Tab through the user interface in reading order
+- Removes F6
+- Moves the focus to the search for shapes with Slash from everywhere
+- Makes toolbar buttons focusable
+- Expands and collapses foldable headers with the keyboard
+- Anchors the connection points of label shapes drawn from the height to their nearest side
+- Gives the focus back to the diagram when it is shown
+- Adds tree shapes with Enter shortcuts and edits the new shape [jgraph/drawio#5817]
+- Moves the focus between the controls outside of the diagram with the arrow keys
+- Adds the Data Sources dialog and makes the data styles linear
+- Makes the update of labels and shapes with placeholders linear for nested edits
+- Inserts tables from the table picker with the keyboard
+- Moves the focus into windows opened with the keyboard and closes them with Escape
+- Escapes values from data sources in all labels that are shown as HTML
+- Shows the first paragraph of labels on one line as the title of the explorer
+- Allows one explore step at the end of an action and disables its levels in classic mode
+- Checks the options of dialogs if their fields are used, not if they get the focus
+- Zooms the label editor with the zoom preview
+- Moves the label gap with the label of an edge that is dragged
+- Starts the caret of empty labels in shapes with text flow where the text will be
+- Shows only the first line of labels in the title of the explorer and removes the levels
+- Adds the levels of the explorer earlier when zooming out
+- Ends the title of the explorer with an ellipsis if the label has more lines
+- Defines checkRadioOnInput in the grapheditor so the print dialog of the viewer opens
+- Keeps the explore step of an action and the selection when steps are added or pasted
+- Keeps the lines of labels with text flow and copies and pastes them without the helpers
+- Keeps the format of part of a word copied from labels with text flow
+- Keeps blank lines, lists, undo and formatting in labels with text flow
+- Saves empty lines of labels with text flow only when an edit emptied the label
+- Writes the label of shapes with text flow only if it was edited
+- Moves the focus with Shift+arrow keys from everywhere outside of the diagram
+- Makes the shapes and palette titles of the sidebar keyboard accessible
+- Makes Shift+Tab go back to where Tab came from
+- Makes windows without controls reachable with Tab and the arrow keys
+- Makes the Layers and Tags windows and the help icons keyboard accessible
+- Moves the focus with the arrow keys in dialogs and windows and makes their title buttons keyboard accessible
+- Makes the keyboard focus visible on toolbar buttons and the shape search
+- Announces status messages to screen readers
+- Generates shapes from data sources with CSV import directives
+- Moves the focus out of the diagram with Shift+arrow keys without a selection
+- Inserts shapes with Ctrl+Enter without a selection and shows the context menu with Shift+F10
+- Makes the empty selection the first stop of Tab in the diagram
+- Keeps the format window of the sketch theme open on Escape
+- Shows the current format when the format window of the minimal theme opens
+- Moves the focus to the format panel with Shift+Enter
+- Moves the focus into the diagram with Shift+arrow keys
+- Keeps Shift+Arrow Left and Right for selecting text in text fields
+- Refreshes the format panel before the edge label tests read the Reset list
+- Fixes the Catalan translations [jgraph/drawio#5818]
+- Makes inserts look only at the cells with the routing flag for auto-routed edges
+- Makes the empty selection also the stop of Tab after the last cell
+- Shows the keyboard focus of buttons as an outline, also in dark mode
+- Saves an edited label with text flow that was stored as an empty line as an empty label
+- Adds the colors for dark mode to pasted and dropped text in the label editor
+- Adds the colors for dark mode to HTML dropped into the label editor of the app
+- Makes the buttons in the titles of libraries keyboard accessible
+- Shows the keyboard focus in the Home dialog as an outline, also in dark mode
+- Inserts tables from the table picker of the text toolbar with the keyboard
+- Applies a zoom typed into the zoom field on Tab
+- Lets Tab and Shift+Tab leave an editor in a frame at the ends of the order
+- Keeps the arrow keys in fields with suggestions and in date fields
+- Continues Tab in the diagram after a shape is inserted from the sidebar
+- Moves the focus to the format panel with Shift+Enter before the format window exists
+- Cancels a value in the property grid with Escape
+- Returns the focus to the diagram after a context menu opened with the mouse
+- Moves the focus out of menus with Shift+Arrow Left and Right
+- Announces buttons disabled with the mxDisabled class as disabled
+- Leaves an editor in a frame with Tab only at the ends of the order
+- Fixes the minimal theme without windows (windows=0)
+- Leaves the arrow keys without Shift to areas that scroll
+- Draws the focus rings of buttons inside of the buttons
+- Makes the page tabs keyboard accessible
+- Makes the tabs and the other buttons of the format panel keyboard accessible
+- Makes the toolbar buttons, app icons, status actions and toolbar shapes keyboard accessible
+- Fixes the find windows missing in the list of windows
+- Adds the color window to the order of Tab and its colors to the keyboard
+- Makes the search reset buttons and the template categories keyboard accessible
+- Loads Google Sheets links as data sources and names hosts that cannot be reached
+- Makes the entries of the library dialog keyboard accessible
+- Moves to the preview and the buttons of the More Shapes dialog with Shift+Arrow Left and Right
+- Adds keyboard navigation to the Explore view
+- Makes the Style Rules dialog resizable with a bigger initial size
+- Applies the style rules of the page in the explorer
+- Moves Style Rules and Data Sources into Page Setup and adds its help link
+- Keeps the controls of page tabs, library titles, library entries and the color window apart for screen readers
+- Names the color scheme buttons in the format panel
+- Shows the focus ring of the diagram when Tab clears the selection after the last shape
+- Moves the focus to the shape search with Slash only from the diagram
+- Keeps the links in the labels of a read-only diagram in the order of Tab
+- Announces the label of the cell in the diagram for the highlighted node of the Explore view
+- Keeps the label of custom library titles as the control for the keyboard
+- Raises the contrast of gray text in menus, the shapes panel and the format panel
+- Makes the small buttons of library titles, the color window and the color schemes 24px targets
+- Names fields and images for screen readers
+- Documents names, images, target sizes and contrast in the dialog style guide
+- Lets data sources and style rules set https images
+- Clears the selection with Escape in the diagram if Escape has no other effect
+- Removes unused variables from the connection points of ArchiMate Event, Popover, Bar Callout and Circular Dial
+- Anchors the connection points of shapes drawn from one side to that side
+- Keeps the selection when Escape closes a popover of the inline toolbar or a note
+- Selects the nearest shape in a direction with Alt+arrow keys, or with Shift+arrow keys if configured
+- Ends a pending move of the selection before Alt or Shift+arrow keys select another shape
+- Selects connectors too with Alt or Shift+arrow keys
+- Moves between the search field of the help menu and its items with Up and Down
+- Keeps connectors on the same path from selecting each other with Alt or Shift+arrow keys
+- Updates drawio-elk bundle to 0.1.0+commit.ce35b42
+- Makes the org chart layout the layout of layout containers
+- Remembers the options of the Org Chart dialog and applies it to layout containers
+- Adds Last Layout to the Add list of the custom layout dialog
+- Adds Refresh All to the Data Sources row of Page Setup
+- Moves the focus to the nearest color with Shift+arrow keys in the color window and dialog
+- Asks whether a changed template applies to the generated shapes
+- Keeps Alt or Shift+arrow keys at the nesting level of the selection in tables and lists
+- Goes out of containers with Shift+Tab in the diagram
+- Stacks the buttons of the Data Sources row in Page Setup
+- Skips cells that cannot be selected with Tab and Shift+Tab in the diagram
+- Shows the guides when shapes are moved or resized with the arrow keys
+- Shows the refresh status of Page Setup below the description
+- Moves the shapes into the layout container of an applied template
+- Loads the org chart layout in Edit of a data source
+- Shows the edge guides of a resize with the arrow keys where the edges line up
+- Puts the labels of re-routed connectors in org chart containers in the middle
+- Always shows the option that applies the template to the generated shapes
+- Adds the Stacked Leaves type to the org chart layout
+- Leaves Space to buttons and other controls outside of the diagram
+- Closes the field of a property when Escape cancels the edit
+- Updates the connectors of existing shapes when a data source applies a changed template
+- Adds Edit Layout for layout containers
+- Keeps edges on the connection points of the core shapes after a resize
+- Counts the hosts the Connect app loads from that Zero Egress would block
+- Reports the hosts the Confluence Cloud Connect app loads from to the log worker
+- Gives the default instead of NaN points for non-numeric style fractions of the Arrows and Basic shapes
+- Reports no hosts in lockdown strings or without storage in the Connect app
+- Applies the changed style values of a data source template also where shapes were changed
+- Stores the template of the shapes and connectors of data sources
+- Adds Stack from Level to the org chart layout
+- Opens the shape picker with Ctrl+Enter only if the current layer is not locked
+- Hides the tooltip of the sidebar when the explorer opens
+- Asks for access to a Google Drive file in the lightbox of published links
+- Links only cells with a data source and a key
+- Fades the cells of missing rows only while their source fades them
+- Reports the restyled connections of data sources like an arrange action
+- Reads values with line breaks in data sources
+- Removes the changes of a generation of shapes that fails
+- Adds a report of what the Forge app loads from draw.io's hosts
+- Counts the government cloud and leaves the beacon out of /images in the Forge report
+- Keeps edges on the cut-off ends of the Display and Isometric Cube after a resize
+- Adds tests for the connection points of shapes after a resize
+- Updates the vendored drawio-plantuml bundle to commit b85b52c
+- Allows the Google Picker of Allow access in the viewer.diagrams.net CSP [jgraph/drawio-dev#922]
+- Fixes Find & Replace in HTML labels that show data source values with special characters [jgraph/drawio-dev#922]
+- Lays out only the shapes of new rows in data source refreshes with the org chart layout [jgraph/drawio-dev#922]
+- Keeps connections from existing shapes to new ones in CSV imports and data source refreshes with ELK layouts [jgraph/drawio-dev#922]
+- Moves the shapes of unknown references with the rest of org charts in CSV imports [jgraph/drawio-dev#922]
+- Lays out org charts whose managers are hidden [jgraph/drawio-dev#922]
+- Fixes Find & Replace of data source values with quotes in HTML labels [jgraph/drawio-dev#922]
+- Moves the existing connections of re-imported org charts with their shapes [jgraph/drawio-dev#922]
+- Keeps relative links as they are in SVG exports and printouts of the desktop app
+
+21-OCT-2026: 32.6.1
+
+- Adds Explore to the action dialog and a classic option to explore actions
+- Reapply "Lists the text styles that Match Connector changes in its tooltip"
+- Opens the explorer of a #create link without a transition
+- Labels the levels field of the Explore step in the action dialog
+- Opens diagrams with many labels that inherit the text styles of their edge in linear time
+- Renames Match Connector to Use Connector Style
+- Keeps blocked image hosts out of the log worker's DNS lookup URLs
+- Changes many children of a cell with a long style in linear time
+- Uses the default grid size for files with a grid size of 0, a negative size or no number
+- Makes the page names of VSDX exports unique in linear time
+- Removes the listeners of the color window when the editor is destroyed
+- Ignores drag events without dataTransfer in the library, dialog, page tab and layer drag handlers
+- Shows each cell once in the explorer when nested containers are shown
+
+21-OCT-2026: 32.6.0
+
+-  Adds curated connection points to the Atlassian2 Sourcetree logo
+- Adds curated connection points to the P&ID vessels, misc and apparatus element stencils
+- Adds curated connection points to the iOS7 misc stencils
+- Adds connection points to the BPMN choreography participant bands
+- Removes near-duplicate connection points from the Citrix 2 stencils
+- Adds connection points to the SAP AI Agent icons and drops the floating E point of the API icons
+- Adds curated connection points to the Floorplan furniture stencils
+- Fixes auto-routing errors when the core is from an older release
+- Stops service workers from caching two releases or staying on an old one
+- Ignores drops without dataTransfer in the library and dialog drop handlers
+- Keeps service workers working offline after a fallback install and on self-hosted builds
+- Shows line jumps in the selection border of edges
+- Redirects Iconfinder image URLs to the icon cache on icons.diagrams.net
+- Loads Iconfinder images of diagrams from the icon cache of draw.io
+- Keeps links to paths in SVG exports [jgraph/drawio#5809]
+- Maps more Iconfinder icons to the cache and sends the rest back to Iconfinder
+- Sends all Iconfinder images of diagrams through the icon cache route
+- Encodes icon cache URLs in icon search responses
+- Allows local dev servers to embed the editor of embed.diagrams.net
+- Fixes the grid drifting away from shapes at some zoom levels in Firefox [jgraph/drawio#5810]
+- Fixes the selection border of vertical edge labels
+- Fixes merges in embed mode after loading a diagram without page IDs
+- Sends the autosave event in embed mode when a merge adds or removes pages
+- Adds and corrects connection points of the ArchiMate icons
+- Adds connection points to the Basic polygon and stencils and to the UML 2.5 action shapes
+- Fixes keys typed in the inline toolbar triggering diagram shortcuts
+- Adds the inline toolbar for shapes and selections
+- Allows moving the diagram almost out of view in presentation mode and the lightbox [jgraph/drawio#5811]
+- Keeps lightbox and chrome=0 iframes without padding [jgraph/drawio#5811]
+- Fixes memory leaks of closed presentations
+- Transitions the view state on the SVG element
+- Adds the force-directed explorer, spring move and presentation controls
+- Puts the corner connection points of round palette shapes on the ellipse and fixes the UML 2.5 State points
+- Routes connectors live during spring moves
+- Adds a laser pointer and drag panning to presentation mode
+- Keeps connection points of the multiple effect on the front shape [jgraph/drawio#5654]
+- Hides the line and fill options of label cells in the inline toolbar
+- Adds an isGlassable hook to shapes for the glass option
+- Adds the glass option to the title of tables
+- Centers the text button of label cells in the inline toolbar
+- Moves the spring move into extensions.min.js
+- Paints the glass effect on the title of vertical swimlanes
+- Renames the Gap option of labels to Page and writes page again
+- Hides the background color of labels that use the page
+- Makes new labels of edges inherit the text styles of the edge
+- Shows the Page option only for labels of edges
+- Makes the label cells of the edge templates inherit the text styles
+- Adds Match Connector to the Text tab of edge labels
+- Loads the images of the old Arista template from the icon cache
+- Stores the values of the edge in labels that inherit its text styles
+- Shows the inherited color in the color dialogs of edge labels
+- Keeps own web fonts and color schemes of labels that inherit text styles
+- Counts the image and font hosts the CSP of the Confluence Cloud app blocks
+- Updates the stored text styles of labels when their edge changes
+- Fixes taps on the buttons of presentation mode and the explorer on iPhones
+- Shows the glow of the focused cell in presentation mode in Safari and iOS
+- Shows the arrows of the explorer in the colors of the connectors in dark mode
+- Handles double clicks and taps in the explorer as two clicks
+- Fixes VSDX export of images whose URL does not match their type
+- Keeps presentations and explorers that followers open themselves
+- Hides the Explore button of presentation mode for the classic Explore view
+- Keeps the glow of the focused cell in presentation mode after repaints
+- Keeps the original Iconfinder URLs in cell states and falls back to Iconfinder
+- Zooms the explorer around the fingers of a pinch
+- Revert "Keeps the original Iconfinder URLs in cell states and falls back to Iconfinder"
+- Keeps vertical swimlanes and tables with glass upright in VSDX exports
+- Keeps the line spacing of connectors at connection points of shapes with copies
+- Fixes the selection border of vertical edge labels that rotate with the edge or have no formatted text
+- Keeps one offline copy per file for service workers that fall back on install
+- Keeps rotated and flipped tables in place in VSDX exports
+- Keeps the labels of flipped shapes in place in VSDX exports
+- Removes the black outlines of the rows and cells of collapsed tables in VSDX exports
+- Fixes VSDX export of the current page and of pages with the same name
+- Removes the outlines of paths that draw.io does not paint in VSDX exports
+- Keeps labels apart in the explorer and adds levels only if they fit
+- Highlights and explores the shape of a clicked field in presentation mode
+- Replaces Background Color and Page in the Text tab with a Background list
+- Sets the font color of the label if all text is selected while editing
+- Sets the font color of all text in one edit and updates the default in the color window
+- Keeps the connection points of the UML 2.5 actions and the ArchiMate Outcome and Device on the drawing after a resize
+- Keeps the text that flipped shapes paint themselves in place in VSDX exports
+- Highlights the table of a clicked cell and keeps clicks on text in containers on the text in presentation mode
+- Keeps the levels of the explorer when zooming after a pan
+- Lists the text styles that Match Connector changes in its tooltip
+- Revert "Lists the text styles that Match Connector changes in its tooltip"
+
+19-OCT-2026: 32.5.8
+
+- Ends the loops over the label box buckets for far-away cells
+- Ignores drops without dataTransfer on the canvas
+
+19-OCT-2026: 32.5.7
+
+- Keeps edges with their last bend in a label from ending past the bend
+- Folds the selection in the trees plugin when no cells are given
+- Skips typing shim updates after the UI was destroyed
+- Ignores file drops without dataTransfer in the document drop handler
+- Checks the text direction of the label editor with isVerticalTextDirection
+- Records the error log groups of the week of 2026-10-19
+- Checks the text direction of alignText with isVerticalTextDirection
+- Updates DOMPurify from 3.4.16 to 3.4.17
+- Places automatic edge labels in linear time, also in crafted diagrams
+- Update drawio-mermaid bundle (mermaid 12.2.0 port)
+- Folds containers again while the trees plugin is loaded
+
+18-OCT-2026: 32.5.6
+
+- Replaces the page label background with a gap that cuts labels out of edges
+- Adds the multiple effect with copies behind vertices [jgraph/drawio#5654]
+- Fixes custom actions in label links of locked cells, lightbox and viewer [jgraph/drawio#5637]
+- Uses the data of a page in the placeholders of its background page [jgraph/drawio#3104]
+- Adds rounded corners to the document, tape, data storage, or and xor shapes
+- Asks for the Terms of Use at the storage choice and the Authorize dialog
+- Translates the Terms of Use notice into all languages
+- Keeps background page links in the file after exports that resolve them
+- Fixes five console findings from the preprod test of teams
+- Adds labelPerimeter: edges end at labels outside the shape
+- Ends edges on the copies of the multiple effect [jgraph/drawio#5654]
+- Runs each ws cron prune on its own, so one failure can't cut the others short
+- Notes in the ws guide that teams phase 1 and the terms notice are on dev
+- Notes in the ws guide that Terms of Use v1.3 are published
+- Plans the ws teams launch: one release, pilot domains first, two pages
+- Updates wrangler to 4.149.0 in three workers for the sharp librsvg alert
+- Updates CI's wrangler to 4.149.0 for the sharp librsvg alert
+- Adds labelPlacement=auto that puts edge labels above horizontal segments
+- Adds the education endings ac.bd, edu.bd, edu.hu, edu.jm, edu.kh, edu.krd and edu.np to the ws worker
+- Splits Reset > Label Positions from Reset > Waypoints in the Arrange tab
+- Makes new labels of edges cut a gap out of the edge instead of a background
+- Makes Paste Text Style paste the text styles of the last Copy Style
+- Makes labelPlacement=auto choose a free side, a segment that fits and keep clear of bends
+- Notes in the ws guide that drawio-ws has phase 1's schema
+- Syncs the ws worker's education suffixes with the Public Suffix List of 17 Oct 2026
+- Excludes OrgSettings.js and robots.txt from the public repository
+- Records three teams decisions in the ws plan
+- Counts only Google Workspace accounts in the ws worker
+- Runs the MCP search index trigger after the builds instead of on the tag push
+- Takes only release tags in the MCP search index trigger
+- Adds the pilot list and account.diagrams.net to the ws worker
+- Shows the pilot in the admin console
+- Documents the ws pilot and the console's move to account.diagrams.net
+- Keeps the label gap of new edges out of inserted Mermaid and PlantUML diagrams
+- Keeps OrgSettings.js in the internal app.min.js
+- Checks the label gap in the crafted-background codec case
+- Places auto labels where they are handled, after the validation and by their alignment
+- Adds edge label regression tests
+- Routes auto-routed edges around outside labels as they are after the edit
+- Adds url to the #create object to create a diagram from a file at a URL
+- Stops the loading spinner before a #create object with a url is created
+- Keeps the box of an auto-placed label that is moved below or on the line
+- Lets ws org admins invite addresses at secondary domains of a pilot Workspace
+- Shows every domain's real editors in the ws worker, without the pilot cap
+
+17-OCT-2026: 32.5.5
+
+- Adds orgs from their first user, teams, named members and seats to ws
+- Makes the admin console's admins named, with teams, seats and merges
+- Documents ws orgs, teams and the member store, with a backup template
+- Shows people in the app the names of team admins, not their addresses
+- Names inviting and merging orgs by their domains, and people by address
+- Fixes what the security review of ws teams found
+- Cancels a removed admin's merges, and checks DNS merges' domain
+- Keeps the day members last used the teams, and shows inactive ones
+- Lets a failed last-used write fail nothing, and steadies its test
+- Stores people plain by their Google ID, and lets staff erase a person
+- Keeps people's IDs out of other orgs, and erases renamed accounts
+- Notes that education domains get teams, and the open COPPA question
+- Makes each team one domain's, so nobody sees another domain's people
+- Takes people out of other domains' teams when their account moves
+- Gives school domains no teams, and tells schools from universities
+- Keeps universities' subdomains and stuck checks right for schools
+- Reads a confirmed university's subdomains, and marks more listed schools
+- Keeps personal data of all schools' pupils under 18 out, not only under 13
+- Makes every ac. zone a school unless the list or the model says university
+- Marks the ws sign-ins live since release 32.5.4 in the ws guide
+- Puts ws teams behind a launch switch, with the Terms on member rows
+- Asks for the Terms of Use at the console's sign-in steps
+- Records David's teams decisions and the launch switch in the ws docs
+- Fixes stuck size hints if the vertex handler is replaced during a resize [jgraph/drawio#5725]
+- Adds systemColors, lightColor and lightColorVar configuration [jgraph/drawio#5807]
+- Uses system colors for the user interface with systemColors [jgraph/drawio#5807]
+
+16-OCT-2026: 32.5.4
+
+- Deploys the ws worker with every release
+- Removes the old Google Drive licence check and its logging
+- Stops logging the old licence check in license-worker
+- Notes the sign-ins schema on both ws databases
+- Sets up orgs in the ws plan from the hd claim, with DNS only for disputes
+- Makes education domains free and uncounted in ws
+- Adds a list of university domains to the ws education domains
+- Notes the education schema on both ws databases
+- Ends orthogonal ends beside rounded polygons on the rounded corner [jgraph/drawio#5447]
+- Adjusts embed domain filtering
+- Replaces the ws plan with orgs, teams and seats
+- Counts per day what the hd of a ws report says against its address
+- Notes the hd_counts schema on both ws databases
+- Removes Zoom with Mouse Wheel from the menus
+- Keeps Zoom with Mouse Wheel in the menus of the Atlassian products
+- Fixes "mxSettings is not defined" after the image export in the viewer lightbox [DID-20655]
+
+15-OCT-2026: 32.5.3
+
+- Adds a CLAUDE.md for the ws worker
+- Drops the deleted branch from the ws guide's open work
+- Counts Drive sign-ins on the app in a third ws usage sketch
+- Brings the ws guide up to date with the sign-ins and the 15 Oct deploys
+- Logs an org settings save only when it is stored
+- Adds the plan for self-serve orgs, buying and a limited mode to the ws guide
+- Updates stable to 32.5.2
+
+15-OCT-2026: 32.5.2
+
+- Blocks headless Chrome on the embed.diagrams.net editor page
+- Ignores a stored or requested mode for a removed storage [jgraph/drawio#5740]
+- Drops the Dropbox secret from the rotation inventory [jgraph/drawio#5740]
+- Ignores a requested mode for a removed storage in the create dialog [jgraph/drawio#5740]
+- Adds CSPs to the embed, export, Teams config and Lucid importer pages
+- Disables Orthogonal Ends for edges whose ends all have fixed connection points [jgraph/drawio#5447]
+- Ends orthogonal edges on the outline of clouds [jgraph/drawio#5447]
+- Closes the CSP gaps of the editor on preprod's extensionless and unknown paths
+- Inserts the initial text of the label editor as plain text
+- Keeps the drawio-mcp edge snippet's rule on the draw.io zone
+- Ends orthogonal edges vertically or horizontally on shapes turned by a quarter [jgraph/drawio#5447]
+- Hides Orthogonal Ends for isometric connectors [jgraph/drawio#5447]
+- Adds regression tests for the text of the typing shim in the label editor
+- Keeps the data, link and tooltip of cells in Replace and Replace All
+- Uses the admin console's actual Google client
+- Unblocks kopperfield.com on embed.diagrams.net
+- Adds the Confluence Cloud Gliffy migration keys for converter vs version pin warnings and shared macros
+- Keeps the placeholders of labels in Replace and Replace All
+- Unblocks ayoa.com on embed.diagrams.net
+- Uses the icon cache of draw.io for the images of five more templates
+- Uses the icon cache of draw.io for the DCS-7316 image of the Arista template
+- Skips the own-state ring for libraries in the desktop saveFile, so saving a library no longer fails with this.recordOwnState is not a function [jgraph/drawio-desktop#2581]
+- Bump actions/setup-node from 7.0.0 to 7.1.0
+- Bump actions/upload-artifact from 7.0.1 to 7.0.2
+- Counts Google Drive users on app.diagrams.net
+- Updates the vendored drawio-plantuml bundle to commit 8407289
+- Deletes Workspace usage counts 24 months after their month
+- Opens the admin console to every company domain
+- Counts Workspace usage in HyperLogLog sketches
+- Makes the auth workers' state cookie a __Host- cookie
+- Sends a cross-origin opener policy on the admin console
+- Declares the ws preprod environment's empty unsafe bindings
+- Applies the ws schema as a command, not through D1's import
+- Passes the ws schema with --command=, as it starts with a comment
+- Notes when Drive offers to delete the ws usage marker
+- Updates the vendored drawio-plantuml bundle to commit 5ce09a1
+- Sends and logs only the domain in the old Google Drive licence check
+- Revert "Sends a cross-origin opener policy on the admin console"
+- Records why the admin console has no opener policy
+- Hands the admin console's sign-in code back without window.opener
+- Sends the cross-origin opener policy on the admin console again
+- Added Conf Cloud translation key
+- Shows Direction and Flip in the Arrange tab like Align
+- Removes the bold font of the Advanced options in the Text tab
+- Ends outline connections on the rounded corners of polygons
+- Keeps orthogonal ends on clouds orthogonal where the line misses the bumps [jgraph/drawio#5447]
+- Updates the vendored drawio-plantuml bundle to commit 67b216b
+- Bends orthogonal edges onto clouds where a waypoint is level with the bounds but not the bumps [jgraph/drawio#5447]
+- Bends orthogonal edges onto rounded polygons where a waypoint is level with a rounded corner
+- Makes the cloud perimeter a style of its own (perimeter=cloudPerimeter) [jgraph/drawio#5447]
+- Ends orthogonal edges on the pointer of callouts
+- Wipes edges with line jumps in along their path
+
+13-OCT-2026: 32.5.1
+
+- Replaces the matches on all pages with Replace All and All Pages
+- Runs Copy as SVG with Ctrl+Alt+Shift+X when cells are selected
+- Binds Ctrl+Alt+C and Ctrl+Alt+V to Copy Text Style and Paste Text Style
+- Parses the drawing scale in linear time
+- Removes the se.diagrams.net mode and its Google client
+- Offers File > My Diagrams whenever the user is signed in to Google Drive
+- Binds Alt+Shift+K to Edit Connection Points
+- Binds Alt+Shift+Y to Synchronize
+- Sets the console's Google client up with its own secret in the runbook
+- Enables Clear Waypoints and Clear Anchors if any selected vertex has connections
+- Moves the gradient of the page background to the Background dialog
+- Checks the enabled state of actions run with Alt shortcuts
+- Types characters with AltGr instead of running Ctrl+Alt shortcuts
+- Adds Edit Connection Points and Synchronize to the keyboard shortcuts
+- Blocks headless Chrome on the embed.diagrams.net editor page
+- Refuses the editor's path variants on embed.diagrams.net to blocked embedders
+- Announces the GitLab end of support when a file is opened [jgraph/drawio#5773]
+- Adds the admin console's own Google client
+- Deploys every CSP from the repo, the stable channel's from its version
+- Removes the Dropbox storage client [jgraph/drawio#5740]
+- Describes the public repository as a test version of draw.io, with a paid production version for production deployments
+
+13-OCT-2026: 32.5.0
+
+- Uses the app's Material icons in the animation and action dialogs
+- Adds an optional layout container for CSV imports
+- Adds a drawing scale for measure placeholders
+- Adds save conflict scenarios for the monday.com and Nextcloud plugins
+- Handles save conflicts of the monday.com and Nextcloud plugins in one place
+- Adds tests for the conflict dialog choices of GitHub files
+- Keeps the commit message of GitHub saves after a conflict in GitHubFile
+- Adds save tests for web local files
+- Checks if web local files can be saved before writing them
+- Adds a gradient to the background color of pages
+- Removes the sign-in path of the auth worker for clients without the code relay
+- Skips the writes of converged circle layout containers
+- Validates the page background before writing it into CSS and HTML
+- Repaints collapsed tables after a change of their rows or cells
+- Writes only known themes into the color scheme of SVG exports
+- Places the titles of table cells and rows without a title region in the cell
+- Fixes the GraphML import of files with edges
+- Imports GraphML files with long values in linear time
+- Imports GraphML SVG nodes and templates with text outside of Latin-1
+- Applies the converters of GraphML template bindings without a space
+- Adds the server traffic to the failure of p2p-offline-rejoin
+- Removes the status bar texts of mxGraphView and mxSelectionChange
+- Allows horizontal text for the titles of table rows
+- Logs every change made by staff in the admin console
+- Limits the clearance of auto-routed connectors against crafted values
+- Sends the admin console on /stable/ and ac/aj to the latest version
+- Ignores cell colors that reference resources
+- Fixes the realtime test harness for sockets without a client
+- Adds lists to the CSV import
+- Starts and ends the writes of files in one place
+- Exchanges only Teams SSO tokens that a Microsoft 365 host requested
+- Keeps tokens out of caches in the auth worker
+- Keeps Teams tokens out of local storage and the browser history
+- Keeps existing files when a Teams tab creates a new diagram
+- Loads further pages in the OneDrive picker of the first Teams app
+- Logs the client of refused Teams tokens
+- Removes OneDrive from the allowed globals of the implicit globals check
+- Stores no personal data of customers' users in the ws worker
+- Counts Drive users once a month with a marker in their own Drive
+- Matches date placeholders in linear time
+- Limits the loops of the Lucidchart import
+- Ignores Lucidchart classes and arrows named like members of prototypes
+- Adds Lucidchart import tests
+- Limits the org chart fields and text style runs of the Lucidchart import
+- Adds passkey names, an audit log per org and true-up licensing
+- Moves the admin console to its own host, admin.diagrams.net
+- Removes the Google Gemini fallback from the generate/v3 worker
+- Blocks embed.diagrams.net for disallowed embedders with a bare 403
+- Centers the gear icon and the color button in the freehand window
+- Adds a polygon mode to the freehand window
+- Adds recursive resize preview with layouts
+- Uses the physical key for unbound keyboard shortcuts
+- Escapes the label in the autosize of curved text
+- Converges pages without a stored size on the format of the first save
+- Shows the modified date of a merged revision in the status
+- Ignores cells that a patch moves to the root
+- Adds tests for stale etags of Drive saves
+- Removes markup from the measuring element after measuring
+- Measures the labels of the Lucidchart import without loading their content
+- Limits the output of the Lucidchart import
+- Encodes the SVG paths of the Lucidchart import as UTF-8
+- Tests the measuring and the output limits of the Lucidchart import
+- Adds a test for page roots that take the id of a cell of the page
+- Uses the avatar of the app for Lucidchart org chart nodes without an image
+- Uses the icon cache of draw.io for the user icons of yEd
+- Rounds the pointer of callout perimeters in model units in model coordinates
+- Uses the icon cache of draw.io for the people of the CSV example
+- Rounds the snap points of snapToPoint edges in model units in model coordinates
+- Converts points to containers without computing styles
+- Centers graphs in containers with scrollbars at all zoom levels
+- Uses the icon cache of draw.io for the images of the mindmap template
+- Keeps the title of new Confluence Cloud diagrams on rename without a descriptor
+- Stops the panning thread of mxPanningManager when the graph is destroyed
+- Opens file ids with malformed escapes in the URL hash without throwing
+- Saves pages whose compressed data cannot be decompressed unchanged
+- Removes the settings storage listener when the UI is destroyed
+- Records the error log groups of the week of 2026-10-12
+- Update vendored drawio-mermaid to the mermaid 12.1 port
+- Reads absolute offsets of stencil connection points
+- Adds the labelBorderWidth style for the width of label borders
+- Converts the rich text of the Lucidchart import in linear time
+- Tests the rich text of the Lucidchart import
+- Sorts the Lucidchart import with consistent comparators
+- Gives duplicate org chart nodes of the Lucidchart import keys without the time
+- Tests that the Lucidchart import is deterministic
+- Rebuild vendored drawio-mermaid from the merge commit
+- Adds an optional box that scales and rotates multiple selected cells
+- Renames Use for New Connections from Source to Set Shape Connector Default
+- Renames Clear Style for New Connections to Clear Shape Connector Default
+- Draws responsive viewers with fractional bounds at exactly 1:1
+- Ends gestures that the browser or the system cancels
+- Points to the drawusaurus style guide for documenting config switches
+- Centers viewers in the container without moving them into the border
+- Sorts numbers with a consistent comparator
+- Tests the consistent comparator of numbers
+- Fits and shows scrollbars in viewers only if the diagram does not fit
+- Imports Lucidchart texts that are no strings
+- Measures the names of Lucidchart BPMN choreographies as text
+- Keeps the fit of auto-fit viewers without a container width
+- Finds wide edges where they are painted in getCellAt
+- Paints arcs with a zero radius as straight lines
+- Takes the file as the shadow when a merge has no changes
+- Puts the border on the right and bottom of resized viewers once
+- Shrinks fitted viewers to the fitted diagram if the viewer set the height
+- Centers responsive viewers with a container width horizontally again
+- Adds the Confluence Cloud keys for choosing where the Gliffy migration state is kept
+- Sends the Teams SSO token in the request body
+- Generates the Teams V2 file picker channel with crypto
+- Documents why the Teams bot worker accepts unauthenticated requests
+- Keeps twice the border of resized viewers in pages that scroll only horizontally
+- Gives each OAuth client of the auth worker its own secret
+- Extends and contracts parents to the bounding box of rotated children
+- Lets the Teams V2 file picker navigate the top window only after a click
+- Marks the connect-image redirect as accepted
+- Quotes the reason for keeping the connect-image redirect
+- Keeps a model unit of segments shortened by fixed point spacing in model coordinates
+- Tests if points of elbow edges are in a terminal in model units
+- Paints edges at their new location while their waypoints, ends or label are moved
+- Gives viewers with a border below 1 a border of 1
+- Leaves room for the page scrollbar in Confluence viewers that may exceed the page width
+- Adds an option to create viewers when they come near the visible area
+- Keeps the maximum width of responsive viewers that is not in px
+- Shows only https previews in the legacy Jira viewer
+- Loads Jira From URL diagrams through the proxy
+- Escapes the search text in the JQL of the Jira diagram search
+- Encodes the parameters of the Jira license check
+- Encodes ids in the REST paths of the Jira add-ons
+- Tests the Jira Cloud add-ons with crafted issue properties
+- Draws responsive viewers with a CSS border on their container at 1:1
+- Tests if the terminals of elbow edges touch in model units
+- Shows only the moved handle of an edge, at the preview, and no dashed preview with the live preview
+- Finds the common ancestor of cells without cell paths
+- Does not clone the overlays of cells
+- Hides the custom handles of an edge while another handle is moved
+- Leaves orthogonal edges from the outline of slanted shapes beside the waypoint
+- Opens #create links without asking to discard the new diagram
+- Rewrites the #create hash only while the created file is open
+- Derives the label again when a transient style step repaints it
+- Measures the shapeInside text flow only for HTML labels
+- Adds the Confluence Cloud Gliffy migration key for diagrams saved on the macro page
+
+11-OCT-2026: 32.4.5
+
+- Lets the connector toolbar move out of view with its edge when panning
+- Keeps the routing of straight edges in Set New Connection Default
+- Shows the Connect retirement banner in English if it has no translation
+- Counts Drive users by the domain of their verified email
+- Translates the Connect retirement and Gliffy migration keys
+- Notes how a blocked licence report could be caught later
+- Shows the Home screen to all Google Drive users
+- Adds an admin console for organizations, open to draw.io only
+- Renames Set New Connection Default to Use for New Connections from Source
+- Makes Paste Text Style override the formatting inside HTML labels
+- Adds a spacing for auto-routed connectors to the Style tab
+- Adds opacityGroup to apply the opacity to a shape as a whole
+- Ends connectors on the rounded corners of polygons with roundedPerimeter
+- Updates stable to 32.4.5
+- Adds Rounded Perimeter to the properties of the rounded polygon shapes
+- Renames Clear New Connection Default to Clear Style for New Connections
+- Copies the custom properties of shapes before adding the common properties
+
+11-OCT-2026: 32.4.4
+
+- Shows the own preview of each template after templates with an image were listed
+- Hides the Orthogonal property of edges whose routing implies orthogonal ends
+- Turns off the workers.dev addresses of auth-worker, generate-v3 and wellknown
+- Leaves headless Chrome out of the version dashboard counts
+- Ignores objects posted to the Confluence Cloud message listeners
+- Shows an error in the Confluence Cloud viewer if the viewer bundle is missing
+- Fetches the notifications again if their cache is invalid
+- Records the GAE error log pass of 10 October 2026
+- Removes the SQL plugin
+- Removes the WebCola layout plugin
+- Removes the animation plugin
+- Calls the export worker through a service binding
+- Updates stable to 32.4.3
+- Restores the page root with the model root on undo [jgraph/drawio-dev#841]
+- Records the fix of the page root groups [jgraph/drawio-dev#841]
+- Moves the line jumps into the Line section of the Style tab
+- Aligns the font of the arrow and line jump selectors in the Style tab
+- Removes the bold font of the Effects options in the Style tab
+- Renames the Spacing of the line start and end to Offset in the Style tab
+- Adds tooltips to the pattern, line start and line end menus in the Style tab
+- Applies the default shape style to symbols on connectors again
+- Updates the link, tooltip and note icons of cells in one function
+- Deprecates mxGraphModel.mergeChildren, mxUtils.getViewXml and mxGraphViewCodec
+- Builds the Google Drive pickers with one builder
+- Merges the Teams copy of the OneDrive picker into mxODPicker.js
+- Loads the OneDrive SDK only for the picker that is not inline
+- Keeps the data of the storages in one table
+- Shows None of the line start and end like the selects in the Style tab
+- Aligns the Opacity row with the sections in the Style tab
+- Uses the full width of the format panel again
+- Counts viewers as well as editors per Workspace domain and month
+- Sets the D1 databases of the ws worker
+
+09-OCT-2026: 32.4.3
+
+- Updates the link and tooltip icons when the link or tooltip changes
+- Uses the page layout of the editor in exports
+- Removes the drawing code for browsers without SVG
+- Removes the unused copy of the OneDrive SDK
+- Removes the old sign-in callback pages of GitHub, GitLab and Dropbox
+- Removes the unmapped Atlassian sign-in servlets
+- Removes the unused same-window sign-in of the Google Drive client
+- Documents the required implicit-globals check on reviewed
+- Checks for reads of global variables that nothing declares
+- Excludes the nested CLAUDE.md files from the public repository
+- Removes internal process details from files published to the public repository
+- Loads Simple.js and skips mxVsdxCanvas2D.js in public dev mode
+- Removes the /embed.js mapping from the public web.xml
+- Rebuilds the public extensions.min.js when deploying the public repository
+- Generates the public service-worker.js from the files the public repository has
+- Adds the Confluence Cloud Gliffy migration keys for white-filled pictures and files found by attachment ID
+- Saves pages that were edited before realtime was turned on
+- Sets and clears the conflict state of files in one place
+- Opens multi-page files without decoding every page
+- Adds Google Drive save and conflict scenarios to the realtime harness
+- Adds save tests for GitHub files
+- Adds a OneDrive save conflict scenario
+- Handles save conflicts of Drive and OneDrive files in one place
+- Updates stable to 32.4.2
+- Speeds up the libavoid drag previews in large diagrams
+- Fixes shapes dropped on the dangling end of an edge splitting the edge
+- Asks Confluence and Jira Connect users to upgrade to the Forge apps
+- Shows the error of a refused image copy when files are saved remotely
+- Retries the conversion of a file from GitHub after a timeout
+- Shows the preview of templates with an image in the template dialog
+- Shows the data of a drawing that is too large to export in the grapheditor
+- Escapes the image URL in the preview XML of templates with an image
+- Refuses page loads of /proxy and keeps proxied URLs out of search indexes
+- Removes the Pusher hook from the realtime cache
+- Removes the Freemind import, F5 rack, flow and edge connection plugins
+
+09-OCT-2026: 32.4.2
+
+- Removes the vss.draw.io stencil converter page
+- Bounds the resend of skipped notifications to clients that join
+- Updates stable to 32.4.1
+- Adds regression tests for shape painters with loops over a size or style
+- Tests labels, edges, selections and connection points in the shape loop tests
+- Limits the loops of mockup shapes for huge sizes and values
+- Limits the inputs and pins of logic gates, ICs and muxes
+- Limits the fills of P&ID columns and the holders of conveyors
+- Limits the lines of pattern fills and guards the handles of polygons
+- Limits the icons of iOS 7 icon grids and the fields of select bars
+- Limits the stripes of striped Bootstrap buttons and the icons of ratings
+- Limits the hatch lines of shared manufacturing processes
+- Limits the steps of floor plan stairs
+- Limits the steps of dashed wedge arrows v2
+- Limits the connection points of EIP channels and the markers of data channels
+- Limits the segments of lines in the comic style
+- Limits the loop search of tapered arrows
+- Limits the sketch fills for huge shapes and tiny gaps
+- Declares the style pairs of pasteCellStyles as a local variable
+- Declares rSize in the Bootstrap and iOS mockup shapes
+- Checks for new global variables in the shape loop tests
+- Sums the label widths of bars and the parts of pie charts in linear time
+- Paints no custom label for negative pin numbers of ICs
+- Measures bold and italic labels with their font style again
+- Declares sb in the palettes that used the global of the iOS palette
+- Fixes misspelled and unused variables that were assigned as globals
+- Declares local variables that were assigned as implicit globals
+- Adds a check for implicit global variables
+- Records that the Visio conversion buckets and vss.draw.io are deleted
+- More documentation regarding publishing monday.com app
+- Applies a changed view link in an open version dashboard tab
+- Logs malformed Confluence Cloud messages again, without their content
+- Keeps cut cells in the local clipboard when the clipboard write is refused
+- Counts daily, weekly and monthly active browsers on the version dashboard
+- Keeps the version dashboard's daily counts in D1 beyond three months
+- Removes the unused tryVssDraw and vsdNoConfig strings
+- Removes the dead AWS forward for the realtime cache
+- Returns the result of fileLoaded in the desktop app
+- Restores the visible pages when creating the file data fails
+- Invalidates a child once in mxGraph.processChange
+- Passes the event to isMultiTouchEvent in mxGraph.fireMouseEvent
+- Resets the validation state before walking all cells after an incremental validation
+- Numbers new and changed shapes in the number plugin
+- Fixes the .drawio check in the HTML export filename
+- Declares the local variables of the Confluence Cloud plugin
+- Keeps the flag of stale page nodes in page clones
+- Runs the implicit globals check in CI
+- Fixes the movable label handle when the connect handle is visible
+- Runs the shape loop tests in CI
+- Removes Pusher from the real-time sync client
+
+08-OCT-2026: 32.4.1
+
+- Adds a --var flag to the generate/v3 eval runner
+- Paints the numbers of rack cabinets with numDisp=on again
+- Limits the cells of the battery stack for tiny heights and huge widths
+- Limits the segments of zigzag shapes for huge widths
+- Lets the fast-rt shard-load tool read its token from a private file
+- Shows Ctrl+Mousewheel instead of Alt+Mousewheel in the zoom hints
+- Counts browsers once a day per app version for a version dashboard
+- Lists the version dashboard's analytics token in the secret inventory
+- Removes the conversion service fallback from the Visio import
+- Removes the conversion service fallback from the connectors' Visio importer
+- Retires the Visio conversion route in the convert worker
+- Points the vss.draw.io converter page to the app
+
+08-OCT-2026: 32.4.0
+
+- Adds the Confluence Cloud Gliffy migration key for a missing configuration space
+- Moves the builder image and the CI workflows to Node 24
+- Pins the rebuilt Node 24 builder image in the builds
+- Adds github excludes
+- Removes the doc.*/i18n redirect to the retired translations spreadsheet
+- Skips Cloudflare's managed rulesets in the edge drift watch
+- Adds a live test of the realtime cache and relay in production
+- Sends the client log to the promoted GAE version instead of 23-1-5
+- Reads the client error log in the java17 log shape as well as java8
+- Fetches Google Drive files in the proxy worker instead of GAE 23-1-5
+- Moves the GAE deploy to the java21 runtime
+- Filters the Error Reporting console on the message's VERSION= line
+- Sends the proxy worker's Authorization header only to Trello
+- Adds MCP_REPO_TOKEN to the secret rotation list
+- Sends the Trello token only with Trello attachment URLs
+- Fixed monday.com app
+- Notes that the VERSION= console filter was checked on both log shapes
+- Turns off the log worker's workers.dev and preview URLs in its config
+- Updates stable to 32.3.0
+- Opens Microsoft 365 viewer links in the app [jgraph/drawio#5663]
+- Encodes page IDs in links and escapes the iframe embed snippet
+- Changed monday.com app to be monday.com hosted
+- Keeps the focus in dialogs opened from the search box [jgraph/drawio-desktop#2577]
+- Keeps Tab inside modal dialogs [jgraph/drawio-desktop#2577]
+- Sets the secure flag on the token cookie on HTTPS pages
+- Keeps the focus outline of the page list in the Google add-on dialog
+- Shows a spinner on Google add-on panel buttons while the script runs
+- Moves the border width of the Google add-ons into the insert dialog
+- Fixes lost changes after applying file XML in Edit Diagram [jgraph/drawio#5795]
+- Reports realtime edits on a page whose root is not the model root [jgraph/drawio#5795]
+- Adds 45 degree angle guides for edge waypoints and ends [jgraph/drawio#1668] [jgraph/drawio#5794]
+- Mentions the angle guides in the help text of the position guides option
+- Runs the legacy flow, tree and organic layouts on ELK
+- Removes the Legacy Layouts submenu
+- Removes mxHierarchicalLayout, mxCompactTreeLayout, mxRadialTreeLayout and mxFastOrganicLayout
+- Stops sign-in links from signing the browser in to someone else's account
+- URL-encodes the values of the auth worker's token requests
+- Adds the 45 degree angle guides to new connections [jgraph/drawio#1668]
+- Sends Office dialog results only to the add-in on the dialog's own origin
+- Removes mxPartitionLayout and mxEdgeLabelLayout
+- Switches the generate/v3 Mermaid model to Haiku 5.5
+- Hands the sign-in code to the app when its popup lacks the state cookie
+- Stops /teamsToken from setting a refresh token cookie
+- Stops values that OAuth providers repeat from running as script
+- Only accepts a tenant ID or domain as the tenant of /teamsToken
+- Documents how the auth worker binds the sign-in state to the browser
+- Zooms with the mouse wheel and scrolls with trackpads in Chromium and Firefox on macOS
+- Accepts the sign-in code exchange only as a GET
+- Accepts the sign-in code exchange from browsers without Sec-Fetch-Site
+- Stops a taken-over sign-in popup from handing the app someone else's tokens
+- Marks the mouse wheel shortcuts that Zoom with Mouse Wheel swaps
+- Lets self-hosted sign-in work from apps in cross-site iframes
+- Zooms with the mouse wheel and scrolls with precision touchpads on Windows
+- Accepts the configuration message only in embed mode
+- Refuses AI endpoints on draw.io and diagrams.net hosts
+- Accepts only plain text in the resources configuration
+- Checks the state from the URL before using its key in the auth servlets
+- Accepts the sign-in code exchange of the auth servlets only as a GET
+- Paints the ducts of the horizontal routing bank again
+- Snaps rack layouts to units only with rackUnitSize
+- Keeps the settings of embed popups apart from those of the app
+- Uses the unit size of the parent rack for the ducts of routing banks
+- Scales the global shadow with the zoom in model coordinates
+- Reverts the shadow notes in the model coordinates guide
+- Removes the unused TeamsServlet
+- Hears about saves on the realtime socket without Pusher
+- Limits the numbered units of rack cabinets
+- Limits the ducts of huge cable ducts and routing banks
+- Cuts the realtime relay from 64 to 32 shards
+- Adds an eval-only effort override to the generate/v3 worker
+- Routes generate/v3 connectors around shapes with libavoid
+- Removes the fast-rt shard-count guard now that the 32 shards are live
+- Sends nothing to the realtime cache while no other client is connected
+
+06-OCT-2026: 32.3.0
+
+- Places the width handles of the tapered arrow in model units
+- Keeps the padding and border of plain text label backgrounds in screen pixels
+- Adds a test of the custom handles of all shapes with fast rendering
+- Adds translations for the Drive home and Confluence Lucid import keys
+- Stores CF account for cli
+- Keeps the requested scopes when the auth worker retries a token request
+- Stops the fast-rt relay reading request bodies other than the 1 KiB rollout policy
+- Updates the vendored drawio-plantuml bundle to commit 99d935c
+- Updates stable channel to 32.2.0
+- Updates the vendored drawio-plantuml bundle to commit c4251a4
+- Accepts error messages and graceful handling as fixes in the error log pass
+- Adds a design proposal for realtime roles
+- Stops Safari clipping the right edge of the format panel
+- Fixes the property table header in dark mode in Safari
+- Returns labels without markup from Graph.domPurify without calling DOMPurify
+- Skips the HTML conversion of plain text labels in mxSvgCanvas2D
+- Checks sanitized attributes after DOMPurify instead of in an attribute hook
+- Decodes geometry nodes of the wrong type as geometries
+- Ignores cell references to objects that are not cells
+- Fixes the waypoints of layouts for edges without a geometry
+- Fixes the sanitizer for labels with data URIs of a few MB
+- Closes dialogs and menus when the UI is destroyed
+- Ignores page moves with invalid indices
+- Resets settings that are not an object
+- Disables routing for the session after the solver throws
+- Skips cyclic references when encoding objects
+- Skips table column handles for columns without a geometry
+- Skips text updates for labels whose DOM was changed
+- Accepts a clipboard writeText without a promise
+- Skips the user button images if they were removed
+- Validates colors without a 2D canvas context
+- Keeps date placeholders if the date is invalid
+- Stops headless UIs from replacing the unload handler of the page
+- Records the error log groups fixed or handled on 2026-10-06
+- Removes waypoints when an edge segment is moved back to the default route [jgraph/drawio#5761]
+- Disables include directives in mxObjectCodec
+- Decodes the forward references of cells in linear time
+- Stops decoding at a maximum depth instead of overflowing the stack
+- Updates the vendored drawio-plantuml bundle to commit aa1b3cd
+- Loads the org chart layout on demand in atlas-viewer.min.js
+- Moves the realtime patch cache in production from AWS to the relay
+- Adds the Forge-only Confluence Cloud keys for hidden config pages, zips without page IDs and draft notices
+- Moves edge labels with the curve when the route of a curved edge is edited
+- Adds the labelOnCurve style for labels along the painted curve of curved edges
+- Loads deep cell hierarchies in linear time
+- Documents Safari testing via safaridriver
+- Adds excludes
+- Compares geometries in realtime diffs regardless of the order of their keys
+- Diffs only the own properties of cells in realtime diffs
+- Advances the realtime snapshot by patching instead of cloning dirty pages
+- Stops the object codec from decoding into methods or hiding them
+- Skips cell diffs that cannot change the cross-reference resolution of a flush
+- Creates the waypoint arrays of rt-test in the client realm
+- Decodes the geometries of realtime diffs with a new codec
+- Runs the realtime test harness on Chrome for Testing on macOS
+- Runs all headless test harnesses on Chrome for Testing on macOS
+- Warns when a test harness falls back to Google Chrome on macOS
+- Validates and invalidates long chains of connected edges without recursion
+- Adds the Confluence Cloud Gliffy migration keys for state loading failures and reduced pictures
+- Caps proxy worker responses at 20 MB and encodes base64 without per-character strings
+- Adds the desktop update notice, Restart to Update and the Automatic Updates toggle [jgraph/drawio-desktop#2569]
+- Diffs the geometries, values and custom properties of changed cells only
+- Caches the locked states of cells for large selections in deep hierarchies
+- Applies the placeholders checkbox of Edit Data on apply only
+- Changes the ID of a cell in Edit Data with an undoable change
+- Changes the cells of the CSV import through the model
+- Repaints the cells after converting an embedded diagram to sketch
+- Documents the direct size fix-up of imported SVG images without a size
+- Leaves the cells of table rows without a geometry unchanged in TableLayout
+- Changes children through the model in the random test plugin
+- Keeps the original styles of the update plugin demo outside the cells
+- Updates the realtime sync guide for the fixed raw writes of cells
+- Ignores child nodes of models other than root and defs
+- Decodes child nodes only into objects of their own type
+- Documents the geometry decode rule of realtime patches
+- Updates the vendored drawio-plantuml bundle to commit a7c8b27
+- Measures imported SVG images without a size before inserting them
+- Builds CSV import data cells without model changes
+- Adds a runner for Safari checks that never takes the focus
+- Updates the vendored drawio-plantuml bundle to commit 01a5dd4
+- Applies the CSV link and ignore columns to updated cells
+- Ignores numeric cell IDs from 2^52 for the next ID of the model
+- Sorts cells and updates the selection in linear time for deep hierarchies
+- Diffs the reactive delta of a remote patch with the changed cells only
+- Connects new CSV rows to the cells updated by the import
+- Adds regression tests for the CSV import
+- Checks if the selection cells are in the model in linear time
+- Skips the menu label in Toolbar.setMenuText if its span is missing
+- Records the error log groups first seen up to 2026-10-06
+- Ignores cell values in child nodes that are not XML nodes
+- Updates the vendored drawio-plantuml bundle to commit 7678646
+- binary compression moved to stencils.min.js file
+- Changes the ID of a page in Edit Data with an undoable change
+- Validates edge chains with removed terminals like the recursion
+- Replays changes of detached cells on the recorded objects
+- Walks only the patched parents and their ancestors when patching a page
+- Keeps user objects in the XHTML, SVG or MathML namespace on save
+- Updates the vendored drawio-plantuml bundle to commit 4cb1309
+- Converts all pages of an embedded diagram to sketch
+- Keeps whitespace-only blocks of text flow labels on one line in SVG labels
+- Records the error log groups first seen on the evening of 2026-10-06
+- Compares only the cells updated by a flush in full in the cross-reference diff
+- Snaps the CSV import in the undo step of its last layout
+- Counts the sync work of a one-cell edit in the perf-gate scenario
+- Validates the invalid cells in linear time for deep hierarchies
+- Places CSV imports with ELK layout lists at the free insert point
+- Documents the console fallback of the error log skill in more detail
+- Decodes cell styles from files only as strings
+- Records the non-string cell style groups as fixed by d4b0bb8ba9
+- Adds regression tests for deep hierarchies and long edge chains
+- Renames labelOnCurve to curveGeometry
+- Adds line jumps along the painted curve of curved edges with curveGeometry
+- Ignores the attributes of models in mxModelCodec
+- Adds regression tests for decoding untrusted XML with the codecs
+
+05-OCT-2026: 32.2.0
+
+- Reads the state geometry in each step of wipe and pop animations
+- Scales the stroke width in the hit band of strokes in WebKit
+- Updates the graph bounds for repainted states in live previews
+- Ends pinch zooms at the product of their steps if zooms are committed
+- Uses a model unit for pixel constants of routes in model coordinates
+- Rounds shadow offsets of bounding boxes in model units in model coordinates
+- Converts stroke widths of the outline from model units in model coordinates
+- Samples curved arrows for 400% in model units
+- Hardens the hit-test and folding icon checks of test/fast-rendering
+- Keeps the numbers of enumerated cells in exports
+- Fixes browser files marking edits made during a save or rename as saved
+- Documents the drawio-release Cloudflare token and its CSP permissions
+- Fixes browser file renames that a save in progress undid
+- Chains the :not() selectors of updateStatusAction for older browsers
+- Saves to the Drive root folder without the Google Picker API
+- Records the error log groups of the 2026-10-05 pass
+- Accepts hash objects after an encoded hash sign in URLs from Safari
+- Ignores dash patterns without numbers in SVG output
+- Adds missing defaults to shapes that painted NaN with default styles
+- Computes the page layout without floating point noise
+- Keeps the typing shim in the visible area of the diagram
+- Reads the container metrics before the validation of a zoom
+- Zooms pinch gestures in Safari around the center between the fingers
+- Cancels what the first finger started when a pinch gesture starts
+- Updates the translate when the diagram container is resized without a refresh
+- Rounds the fit of the initial view of a page like other fits
+- Floors the translate of exports at the output scale
+- Zooms pinch gestures in Safari around the center between the fingers in the lightbox
+- Passes diagram coordinates to rough.js so sketch fills do not depend on the view translate
+- Fixes VSDX export of images with URL encoded data URIs
+- Enables fast rendering by default in the editor
+- Skips the custom handles of vertices without a geometry
+- Records the fix of the null paint bounds handle group
+- Routes /cache on preprod to the fast-rt patch cache
+- Stops forwarding preprod's /cache to the AWS Lambda
+- Restores app.min.js in the service worker precache and fails the build on oversized entries
+- Formats the radii of ellipses and the rotation centers of labels in SVG output
+- Replaces the loading text with a pulsing logo
+- Removes wip, cleanup and repeated entries from the ChangeLog since 31.1.8
+- Leaves wip, cleanup, build and repeated commit subjects out of the generated ChangeLog
+- Builds the style-to-library map for Open Library in idle time after startup
+- Shows the pulsing logo while the Teams tabs and the Chrome app load
+- Caches the normalized search tags of sidebar entries
+- Points the Teams app V2 at the draw.io for M365 Entra app
+
+04-OCT-2026: 32.1.0
+
+- Adds the patch cache to the fast-rt shards, switched off until the /cache cutover
+- Adds the design for model coordinates
+- Adds fields in model units to cell states
+- Uses a minimum edge bounds size of 1 in model units
+- Uses the scale of the painted shape for flow animations
+- Stores the routed points of line jumps in model units
+- Makes the ellipse perimeter independent of the zoom level
+- Adds painting in model units for zoom and pan without repaint
+- Adds the mc URL parameter for model coordinates
+- Updates the model coordinates design with the status of phases 1 and 2
+- Shortens the patch cache's wait for an earlier save to 3 s and turns off fast-rt's workers.dev address
+- Keeps the hit tolerance of strokes in screen pixels in model coordinates
+- Keeps the crisp offset of strokes in screen pixels in model coordinates
+- Keeps the global shadow in screen pixels in model coordinates
+- Disables model coordinates in WebKit
+- Updates the model coordinates design with the status of phase 3
+- Paints folding icons in model units in model coordinates
+- Checks only the states updated in a validation for screen fields
+- Adds the folding icon and check fixes to the model coordinates status
+- Uses the fast zoom preview in model coordinates
+- Updates the model coordinates design with the status of phase 4
+- Keeps crisp offsets within a quarter pixel at non-integer scales
+- Enables model coordinates by default in Chromium-based browsers
+- Updates the model coordinates docs for the default in Chromium
+- Places the foreignObjects of labels at the labels in model units
+- Allows model coordinates in WebKit with mc=1
+- Enables model coordinates by default in WebKit
+- Updates the model coordinates docs for WebKit
+- Skips a patch cache notice's sender by its relay client ID in cid
+- Sends realtime save notices with their cache entry and other notifications over the socket too
+- Updates stable channel to 31.7.1
+- Holds autosaves in the rt-test encrypted-channel scenario while it counts notification effects
+- Enables model coordinates by default in Firefox
+- Updates the model coordinates docs for Firefox
+- Corrects the duplicate points note in the model coordinates design
+- Sends the Teams SSO token only to the same-origin /teamsToken worker
+- Names the cause of the duplicate points in the model coordinates design
+- Adds no waypoints when a straight edge segment is moved back
+- Removes waypoints of orthogonal edges that are equal to a terminal point
+- Marks the duplicate points as fixed in the model coordinates design
+- Uses model coordinates in the lightbox and viewer instead of CSS transforms
+- Updates the docs for model coordinates in the lightbox and viewer
+- Keeps the hit tolerance of strokes in screen pixels in WebKit
+- Documents the WebKit hit tolerance in the model coordinates design
+- Removes duplicate waypoints of elbow, entity relation and isometric routes
+- Updates the duplicate points note in the model coordinates design
+- Adds the fastRendering configuration for model coordinates in the editor
+- Documents the fastRendering configuration
+- Corrects the old rendering path note in the model coordinates design
+- Keeps the diagram fitted to the window until the zoom changes
+- Fits the window again when the page view, format or scale changes
+- Stops fitting and keeps the zoom if Fit Window is selected again
+- Keeps the graph bounds in model units in sync with setGraphBounds
+- Adds the teamsV2 CSP to the print-csp output and moves its inline scripts out
+- Keeps the initial view fitted to the window until the zoom changes
+- Ends the fit of the initial view when the user scrolls or pans
+- Fixes the view after fitting the window again on resize
+- Removes the fit of the initial view on resize
+- Resolves the guide container once per move instead of once per guide
+- Limits libavoid obstacles to a region around the routed edges
+- Updates only the bounding boxes of redrawn shapes and labels in validate
+- Updates the model coordinates notes on graph bounds and label boxes
+- Measures labels again after fonts or images in labels have loaded
+- Keeps edits made during an in-flight save pending in the rt-test storage stub
+- Adds Add Connection Point to the Edit submenu of the Simple, Sketch and Min themes
+- Moves the teamsV2 CSP out of this branch into the cf-headers pipeline
+- Deploys the CSP response headers from the repo, widened before each release
+- Updates the Teams app V2 manifest tooling to archiver 7
+- Collects the libavoid move preview inputs once per drag
+- Makes fastRendering opt-in in the editor
+- Finds the cell at a point without walking all cells
+- Keeps the graph bounds if a part of the graph is validated
+- Updates the known gaps in the model coordinates design
+- Fixes rhombus indicator shapes of labels
+- Keeps the diagram fitted to the window only with fast rendering
+- Adds the bounding boxes to one rectangle in getBoundingBox
+- Replaces the :has() selector for pressed status actions with a class
+- Adds regression tests for fast rendering
+- Skips parsing the draft if the current page has cells
+- Saves drafts one second after the last change
+- Keeps the graph bounds if a partial validation changes the translate
+- Updates the insert costs in the model coordinates design
+- Attributes the XML serialization of inserts to drafts in the design
+- Adds only the changed bounding boxes to the graph bounds in validate
+- Adds labels measured after fonts or images loaded to the graph bounds
+- Validates only the invalidated cells in validate
+- Replaces the page-wide :has() rules with classes
+- Updates the label measurement cost in the model coordinates design
+- Collects the descendants in one array in filterDescendants
+- Resolves only the styles that may set routing keys in the libavoid walks
+- Skips the methods of objects in mxObjectCodec.encodeObject
+- Saves drafts as plain XML
+- Updates the insert and draft costs in the model coordinates design
+- Caches the inherited member names of each prototype in mxObjectCodec
+- Updates the encoding cost in the model coordinates design
+- Fixes the uneven border of exports with a scale on the export page [jgraph/drawio#5559]
+- Exchanges Teams app V2 sign-in tokens with the V2 Entra app
+- Enables the responsive viewer in Safari
+- Sanitizes each HTML label once per task in the cell renderer
+- Precompiles the default expressions of mxUtils.ltrim and rtrim
+- Asks for every scope the Teams token exchange uses in the teamsV2 consent window
+- Adds zoom stops below 15% in model coordinates and rounds pinch zooms to 1%
+- Zooms by the change of the finger distance for touch pinch gestures
+- Documents the zoom stops below 15% in the model coordinates design
+- Fixes fast zoom and viewbox links in the minimal theme
+- Fixes the crop after viewbox and scroll links in the viewer
+- Fits on the grid of the zoom stops
+- Updates only the cells whose visibility changed for hidden tags
+- Applies the hidden tags of a page before it is rendered in the lightbox
+- Documents the fits on the zoom grid in the model coordinates design
+- Removes the mapping of the canvas transform from the page breaks
+- Rebuilds the browser translation mirror only after labels were repainted
+- Uses zoom stops on the 1% grid for the mouse wheel in model coordinates
+- Documents the mouse wheel zoom stops in the model coordinates design
+- Fits on the 1% grid in model coordinates
+- Makes the scale of the last fit a zoom stop in model coordinates
+- Documents the fits on the 1% grid and the fit stop in the model coordinates design
+- Refits the auto-fit viewer in the frame after a resize
+- Uses the responsive mode for auto-fit in the viewer
+- Adds a padding for the icons of cells to fitting the diagram to the window
+- Replaces ResizeSensor with ResizeObserver in the viewer
+- Keeps the hit tolerance of strokes in screen pixels in the responsive viewer in WebKit
+- Paints folding icons in model units when they are created in model coordinates
+- Applies the camera to the print draw pane in model coordinates without CSS transforms
+- Computes the label bounds in model units in model coordinates
+- Retries opening the database once and shows its error for browser files
+- Fixes saves that never finished while offline, eg. browser files in the offline app
+
+03-OCT-2026: 32.0.2
+
+- Makes the ellipse perimeter independent of the zoom level
+- Fixes Google font URLs with weights or multiple families
+- Fixes initial scroll position of zoomed-out diagrams in resetScrollbars
+- Updates stable channel to 31.7.1
+- Shortens the Set as Default for New Connections label to fit the Format panel
+- Translates the Tapered Arrow title in the connection menus
+- Makes entity relation routes independent of the zoom level
+- Documents the libavoid routing boxes of relative and edge children
+- Restricts extFonts sources and loads CSS2 Google fonts from extFonts
+- Applies fitDiagramOnLoad in all editors instead of only on own domains
+- Fits the diagram once instead of twice when a file is opened
+- Adds no waypoints when a straight edge segment is moved back
+- Removes waypoints of orthogonal edges that are equal to a terminal point
+- Keeps edge labels in place when the route of an edge is edited
+- Adds x and y inputs for the waypoints of an edge to the Arrange panel
+- Adds Alt+Ctrl (Alt+Cmd) to move edge ends onto the grid without connecting
+- Adds Add Connection Point to the context menu and snaps point centers
+- Adds centimeters as a unit
+- Adds a border width option to the Google Workspace and Office add-ons
+- Adds cell metadata to SVG exports of the export page on request
+- Removes duplicate waypoints of elbow, entity relation and isometric routes
+- Spins the refresh icon of the add-on panel while the list loads
+- Keeps margins and footer when a stack child is resized
+- Adds named presets to the image export dialog
+- Translates the Filled Edge, Pipe and Wire titles in the connection menus
+- Adds a page background option for default label backgrounds
+- Shortens the Clear Default for New Connections label in the Format panel
+- Renames Set Default for New Connections to Set New Connection Default
+- Removes the open source claim from the Trello Power-Up description
+- Fixes containers extended too far by shapes picked from the hover arrows
+
+03-OCT-2026: 32.0.1
+
+- Lowers the stencil bundle floor of the release PR integrity check
+
+03-OCT-2026: 32.0.0
+
+- Fixes edge label moving offset in orthogonal edge style
+- Fixes resize of ERD entity shapes via inner rectangle
+- Fixes split curved edge, drops text on edge as label
+- Fixes split on drop for routed edges without waypoints
+- Fixes detection of drop targets under non-drop-targets for sidebar drag
+- Adds drag handles for group padding on transparentBounds groups
+- Adds tapered arrow shape
+- Speeds up loading of the bundled stencil libraries
+- Resolves CSV parent rows before cell IDs and ignores the root and layers as parents
+- Fixes group padding handle error after moving a transparent group
+- Adds curved, rounded and width handles to the tapered arrow
+- Adds live preview of the selection border for group padding handles
+- Adds placement of pasted edge labels at the mouse position
+- Adds fill and gradient to the tapered arrow
+- Adds the tapered arrow to the connection menus
+- Adds a Group Padding section to the Arrange panel
+- Arranges the group padding inputs in two rows below size and position
+- Fixes overhangs at inner rounded corners of the tapered arrow
+- Adds the tapered arrow to the connection popup of the inline toolbar
+- Resizes groups without transparent bounds to new group padding values
+- Matches the text spacing and group padding layouts
+- Paints the dashed preview of custom handle drags below the handles
+- Scales the markers of the tapered arrow and draws its heads in the outline
+- Snaps group padding handles to the grid unless alt is pressed
+- Fixes hardcoded language of print dialog in viewer lightbox
+- Fixes math on page without math after switching pages in viewer
+- Fixes autosize to recurse into nested containers
+- Fixes cut and paste of vertices in trees
+- Fixes Cmd+Shift+V in Safari
+- Fixes diagonal trackpad scrolling without scrollbars
+- Fixes moving of shapes with size 0 or 1
+- Adds click on terminal handles to change arrows
+- Adds row and column striping for tables [4021]
+- Reduces guides for UML classes and tables
+- Uses the same guides for moving cells and inserting from the sidebar
+- Adds Search Templates to the omni search
+- Adds the new window option for links in labels
+- Adds actions for the style of new connections from a shape
+- Waits for the current save before saving again
+- Adds a From Text section to the templates dialog
+- Adds slanted text entries to the Misc palette
+- Halves the stencil bundle and loads bundled stencils about twice as fast
+- Replaces the gae-stub jar in the public build with source
+- Ships the public repository with the stencil bundle instead of the stencil XML
+
+02-OCT-2026: 31.7.1
+
+-  Hyperdisk deliberately deviates from Google's square artwork: the box is cropped to the ink horizontally and the height scaled by sqrt(3)/2 (403.999 x 349.873) for regular flat-top hexagon   proportions; the sidebar entry follows (100 x 86.6).
+- Adds curated connection points to the GCP 2026 stencils and gives Hyperdisk regular hexagon proportions
+- Adds curated connection points to the Network 2025 stencils and exposes them through the icon wrapper shape
+- Adds curated connection points to the Veeam stencils (flat and 3D)
+- Adds curated connection points to the Citrix stencils
+- Connection fix for a Cisco19 stencil
+- Adds the heptagon connection points to the Kubernetes wrapper shapes
+-  Adds curated connection points to the Alibaba Cloud stencils
+- Puts the IBM Cloud actor connection points on the circle
+- Adds curated connection points to the Allied Telesis palette
+- Adds curated connection points to the Cisco Safe palette cells that had none
+- Adds curated connection points to the Dynamics 365 palette
+- Adds curated connection points to the MSCAE image palette entries
+- Adds curated connection points to the SAP palettes
+- Adds curated connection points to the Azure2 palette
+- Adds opt-in anchorsOnOutline style for rounded rectangle connection points
+- Uses anchorsOnOutline for the SAP rounded shapes
+- Resolves perimeter connection points on the rounded outline with roundedPerimeterPoints
+- Renames the SAP rounded shapes' key to roundedPerimeterPoints
+- Stores outline connections on rounded shapes with roundedPerimeterPoints as perimeter points
+- Adds opt-in roundedPerimeterPoints style for connection points on rounded rectangles [jgraph/drawio-dev#701]
+- Removes sanitized style elements with element or CDATA children
+- Scopes nested CSS rules of inlined SVG images
+- Keeps CSS in CDATA sections of inlined SVG images
+- Waits up to 8 hours for the GAE deploy in the release monitor
+- Re-measures the SAP Generic Icons and composite image connection points
+- Scopes style elements in HTML labels to their svg element
+- Re-measures drifted MSCAE and Dynamics 365 connection points
+- Fixes outline connections on flipped rounded rectangles with roundedPerimeterPoints [jgraph/drawio-dev#701]
+- Applies roundedPerimeterPoints with the default and pasted styles [jgraph/drawio-dev#701]
+- Ends floating edges on the rounded outline with roundedPerimeterPoints [jgraph/drawio-dev#701]
+- Adds Rounded Perimeter to the properties of rectangles and labels [jgraph/drawio-dev#701]
+- Renames the roundedPerimeterPoints style to roundedPerimeter [jgraph/drawio-dev#701]
+- Keeps the math text layer in PDFs of the export server
+- Stops macOS Preview breaking the math text layer into lines
+- Steps inline font sizes with the font size of labels [jgraph/drawio#5786]
+- Fixes the swapped shortcut labels of the font size actions
+- Stores the Mermaid defaults version of new diagrams
+- Keeps Mermaid sankey bands visible in dark mode
+- Adds the Mermaid sankey link to the Basic sidebar
+- Adds the Mermaid person shape
+- Adds the Mermaid person shape to the Basic sidebar
+- Loads the web fonts of Mermaid diagrams before parsing them
+- Adds the lifelineColor style to UML lifelines
+- Adds the Mermaid use case actor shape
+- Adds the Mermaid use case actors to the Basic sidebar
+- Lets the Mermaid bundle decide the ELK post-pass of flowcharts
+- Updates drawio-mermaid bundle to 0.1.0+commit.de4624a
+- Updates drawio-mermaid bundle to 0.1.0+commit.3a7b1c1
+- Updates drawio-mermaid bundle to 0.1.0+commit.db3990e
+- Adds collapsedPoints edge style to ignore waypoints for collapsed terminals [jgraph/drawio#4810]
+- Adds fixedPointSpacing style to apply line end spacing to connection points [jgraph/drawio#4822]
+- Shows the offline languages dialog without a controlling service worker
+- Adds PlantUML descriptors to the embed load action
+- Adds collapsed borders rendering for tables [jgraph/drawio#2714]
+- Uses the side flags for borders of cells in collapsed tables [jgraph/drawio#2714]
+- Uses Lane Color for the fill of tables and rows without a title [jgraph/drawio#2714]
+- Resolves inherited colors in collapsed tables from the saved colors [jgraph/drawio#2714]
+- Uses the side flags of rows and cells as visibility in collapsed tables [jgraph/drawio#2714]
+- Uses the lane color for headerless rounded collapsed tables [jgraph/drawio#2714]
+- Returns null from mxPrintPreview.open when the popup is blocked [jgraph/drawio-dev#673]
+- Records the watched path only after the file watch registration succeeds [jgraph/drawio-dev#676]
+- Exempts the last print page from the forced page break with an inline style [jgraph/drawio-dev#674]
+- Reports failed browser storage writes instead of passing a null error [jgraph/drawio-dev#672]
+- Makes edge routing independent of the zoom level
+- Fixes the start point of edge handles started from the graph handler
+- Fixes the col-resize cursor for right-side table headers at zoom levels other than 100%
+- Fixes the drop and connect position for relative sources at zoom levels other than 100%
+- Fixes edge geometry position changing in mxGraph.cellsAdded
+- Fixes new device files with SVG extension written as XML on first write
+- Fixes stack layout with locked cells
+- Disables dropping lanes into lanes
+- Cancels open AI request when template dialog is closed
+- Does not show image resize dialog for PNG+XML
+- Adds previous and next page custom actions
+- Removes required identity for parent-child CSV import
+- Adds jumpLayers style to limit line jumps to the same layer
+- Fixes the container lookup and insert position for relative sources in drop and connect
+- Fixes move cursor in embedded diagrams if no panning possible
+- Adds start and end arrow stroke colors
+- Fixes middle click on broken page link in label
+- Fixes the end point of dangling edges dropped into another parent in drop and connect
+- Adds match count and find previous to find dialog [jgraph/drawio#2887]
+- Blocks pinch that shows tabs in Safari
+- Fixes the parent of cells dropped and connected from relative sources inside their parent container
+- Adds delete multiple entries in library dialog
+- Adds Graph.reservedDataNames for reserved custom data names
+- Adds scratchpad refresh in other tabs
+- Updates the vendored drawio-plantuml bundle to commit c79b15b [jgraph/drawio#5789]
+- Fixes the libavoid routing box of relative children such as ports
+- Fixes the libavoid obstacle box of edge labels
+- Fixes the libavoid routing box of absolute edge children in containers
+- Prefers the nearest shape among guide candidates with the same distance [#103]
+- Checks inherited colors for changes in checkPlaceholderStyles
+- Updates the scrollbars after a view update of a CSV import descriptor
+- Fixes autosize after cellsInserted for CSV updates and text import
+- Adds pasted edge labels back to their edges if the edges still exist
+- Shows connection points with names in the edit shape preview
+- Adds column move handles to tables
+
+01-OCT-2026: 31.7.0
+
+- Stops loading the Pusher library in lockdown mode
+- Stops fetching notifications in lockdown mode
+- Fixes realtime catchup over several saves in Confluence Cloud
+- Lets the MathJax update and comparison run in a cloud container
+- Updates the vendored drawio-plantuml bundle to commit 7e1e88f
+- Updates drawio-elk bundle to 0.1.0+commit.5c1c970
+- Fixes missing XML escaping in the connectRender snippet
+- Fixes missing XML escaping in the Forge connectRender webtrigger
+- Updates drawio-elk bundle to 0.1.0+commit.cbd81ba
+- Adds a model comparison eval to the generate/v3 worker
+- Removes diagram data, file ids and URL parameter values from client logs
+- Conf Cloud space approval translation keys
+- Fixes find window freezing while typing with all pages
+- Stops the realtime cache from re-issuing tokens for used secrets
+- Limits the length and size of realtime cache catchups
+- Removes exception details from realtime cache error responses
+- Checks cached catchup patches against the descriptor checksum
+- Fixes lost descriptor change notifications in realtime sync
+- Updates vendor bundles
+- Stops reporting failed realtime cache uploads as save errors
+- Keeps base64 padding in compressed style resources
+- Rejects non-numeric def references in compressed styles
+- Keeps all references in compressed styles with multiple resources
+- Updates drawio-elk bundle to 0.1.0+commit.0cfcdc4
+- Updates tooling and worker dev dependencies for Dependabot alerts
+- Re-routes libavoid edges after arrange actions and layouts
+- Adds followTerminals edge style that moves waypoints with terminals
+- Frees libavoid route copies so repeated solves route identically
+- Shares libavoid pins and retries connectors libavoid cannot route
+- Routes libavoid edges around rotated, turned and flipped shapes as drawn
+- Updates drawio-mermaid bundle to 0.1.0+commit.8747059
+- Re-routes libavoid edges when a shape is rotated with its handle
+- Makes the libavoid drag preview enforce the jetty stub like the drop
+- Makes followTerminals edges follow transparentBounds terminals
+- Updates drawio-elk bundle to 0.1.0+commit.c50c120
+- Previews the drop's clearance retry when libavoid finds no warm route
+- Points the libavoid docs at the tool server's current core cache
+- Fixes the Google Drive file not found dialog layout and link
+- Fixes clipped Change User dialog after a Google Drive file not found error
+- Added lucid importer app translation keys + fixed its chrome extension
+- Updates drawio-elk bundle to 0.1.0+commit.c6b8e34
+- Adds zoomEvents load option to notify the embed host of zoom changes
+- Caps the size of diagrams inserted by the Google Sheets add-on [jgraph/drawio#5559]
+- Asks again for permissions users unticked in the Google add-ons [jgraph/drawio#5559]
+- Removed tabs from the Lucid import extension permissions
+- Adds the sequence edge style to the edge inline toolbar [jgraph/drawio#5706]
+- Clears innerLoopWaypoints when the inline toolbar resets edge waypoints
+- Limits the Google Workspace add-on submission to smart chips
+- Covers descriptor change notifications over the realtime socket
+- Uses random realtime channel keys for OneDrive and monday.com
+- Conf Cloud: Added translation keys needed for describing config space creation
+- Blocks escape, backslash and quote desync bypasses in the CSS reference check
+- Fixes checkPlaceholderStyles always returning true
+- Restores own-color references and adds parentFillColor/parentStrokeColor
+- Fixes copy-pasted doc comments of Graph style state helpers
+- Fixes lost URL parameters when a #P hash sets the hash property
+- Fixes lost text before a code fence in AI responses
+- Fixes the shadowColor configuration option having no effect
+- Fixes scrollLeft typo in pageSelected
+- Fixes rowspan typo in visitTableCells
+- Fixes spelling and grammar errors in English UI strings
+- Makes English UI labels consistent in capitalization and wording
+- Uses American "color" in the Configuration dialog texts
+- Spells "Double-click" consistently in English tooltips
+- Uses Key+click notation for modifier hints in English tooltips
+- Spells SharePoint with a capital P in English UI texts
+- Updates drawioForWork to "draw.io for Google Workspace"
+- Uppercases CSV, URL, VSDX and ID in English UI messages
+- Writes "app" in lowercase in two Confluence app messages
+- Spells "Zigzag" as one word in the fill style names
+- Writes "Reopen" without a hyphen in the comment actions
+- Names the hiResPreview option "High Resolution Preview" everywhere
+- Writes "custom content" in the Confluence integrity check messages
+- Fixes punctuation in English UI messages
+- Re-routes libavoid edges after flips and the rotation dialog
+- Fires cellsArranged for Edit Geometry and Paste Size
+- Passes the source perimeter to the libavoid new connection preview
+- Moves followTerminals waypoints when a group is rotated or flipped
+- Adds missing resources for the custom GitLab server warning dialog
+- Adds missing doubleClickToEdit resource for the ID in Edit Data
+- Fixes raw justifyfull tooltip in the text toolbar align menu
+- Fixes raw smartFit tooltip in the presentation mode toolbar
+- Adds authorizedIn resource for the popup auth button dialog
+- Makes the PlantUML issue link in the insert dialog translatable
+- Translates the highlight color and open link fields in action dialogs
+- Fixes flow toggle and opacity step labels in the animation dialogs
+- Cancels the animation export on Escape [jgraph/drawio#5777]
+- Closes the video encoder when the MP4 export is cancelled early [jgraph/drawio#5777]
+- Destroys the custom action editor when it is closed
+- Parses the CSS of SVG image symbols for scoping [jgraph/drawio#5726]
+- Fixes xUtils typo in the grapheditor updateDiagramData
+- Fixes operator precedence in the browser files list striping
+- Removes the unreachable Atlas branch of the diagram menu
+- Removes the unused DrawioFile.isMovable and DriveFile.isMovable
+- Ignores a stored Dropbox or Trello mode when the storage is not enabled
+- Keeps non-ASCII letters in imported Visio shape data names
+- Keeps glued edge ends in place when Visio import fits a stencil cell
+- Mirrors edge label offsets with flipped groups in the Visio import
+- Turns off-centre labels of rotated Visio groups only once
+- Glues Visio connectors to the right side of flipped shapes
+- Fixes actions skipping cells whose ID is an Object.prototype name
+- Fixes "Page not found" tooltips for page links with spaces in the viewer
+- Fixes missing Microsoft 365 name and logo in the authorized dialog
+- Removes duplicate auth retry code in DropboxClient
+- Removes duplicate write request code in OneDriveClient
+- Removes duplicate auto-origin code in GraphViewer toolbar
+- Removes duplicate touch tap listener for viewer toolbars
+- Removes duplicate drag and drop code in image and link dialogs
+- Removes duplicate FolderShape.getLabelMargins in Shapes.js
+- Removes duplicate redraw code of the lock and edit icon handles
+- Removes duplicate shapeInside size and direction code in Graph.js
+- Removes duplicate client scan in App.getMainUser and getCurrentUser
+- Removes duplicate shape code in the Lucidchart importer
+- Fixes normalizeModel growing collapsed containers
+- Fixes Find on all pages stopping at matches that are not rendered
+- Removes the no-op p.Rotatio assignments in the Lucidchart UML import
+- Removes the unreachable Console preview from the Edit Data export
+- Fixes GitLab token sent to GitHub and GitHub token sent to GitLab
+- Fixes Microsoft 365 token used by the personal OneDrive client
+- Fixes literal &hellip; in truncated template category names
+- Fixes missing border around the library dialog image area
+- Fixes light template category headers and borders in dark mode
+- Fixes light draft preview border in dark mode
+- Fixes untitled library entry label color in dark mode
+- Uses the dialog hint style for the shapes dialog empty preview
+- Fixes light separators and Drive warning in the storage dialog dark mode
+- Fixes light separators in the splash dialog dark mode
+- Fixes bright polygon dialog grid in dark mode
+- Uses the themed border for the freehand window color swatch
+- Uses the theme error colors for the find window not-found state
+- Adds Ctrl+Enter to apply in the edit diagram dialog
+- Adds Ctrl+Enter to insert in the text / mermaid / PlantUML dialog
+- Adds Ctrl+Enter to apply in the edit shape dialog
+- Uses app error dialogs instead of native alerts in the edit data dialog
+- Uses the dialog button style for the connection points Add button
+- Uses the standard title and help icon in the create dialog
+- Right-aligns the image dialog buttons
+- Right-aligns the page and layer picker buttons
+- Uses a standard h3 title in the edit shape dialog
+- Removes inline title styles from the markup dialog
+- Uses the standard button spacing in the plugins dialog
+- Uses the standard button spacing in the grapheditor link dialog
+- Uses the 14px button margin in the crop image dialog
+- Uses the standard button margin in the compact shapes dialog
+- Adds a tooltip to the email button in the embed dialog
+- Adds a tooltip to the color dialog dropper button
+- Removes doubled control gaps in the edit data dialog rows
+- Uses the dialog hint style for the embed dialog size label
+- Uses the dialog hint style for the revision dialog file info
+- Fixes missing Cancel in the template dialog when cancelFirst is off
+- Honors cancelFirst in the animation and custom action dialog footer
+- Honors cancelFirst for the Close button in the embed dialog
+- Holds unconfirmed live deletes in the realtime grace window
+- Scopes the realtime merge veto to colliding inserts
+- Keeps the newer-version dialog latched while its reload waits
+- Extracts the shared claimant walk of patchPages and patchCellRecursive
+- Uses CSS whitespace when scoping the CSS of SVG image symbols [jgraph/drawio#5726]
+- Prefixes fonts and keyframes declared in SVG image symbols [jgraph/drawio#5726]
+- Fixes clipped bottom border of the inline OneDrive picker
+- Fixes quadratic trimming of Visio shape data names
+- Fixes quadratic time in mxUtils.rtrim
+- Rejects Edit Data property names that make diagrams unreadable
+- Fixes six dialog borders that the browser dropped as invalid CSS
+- Moves the polygon and connection points actions to diagramly
+- Adds an overridable hook for the Edit Data export
+- Adds a mixed values state to Edit Link for selections with different links
+- Turns edge label offsets with rotated groups in the Visio import
+- Fixes copy-pasted doc comments of the file classes
+- Fixes copy-pasted doc comments of the library classes
+- Fixes copy-pasted doc comments of the storage clients
+- Fixes copy-pasted doc comments in Graph and EditorUi of the grapheditor
+- Fixes copy-pasted doc comments of App, EditorUi and Pages
+- Re-routes libavoid edges after Edit Style and turning a swimlane
+- Re-routes libavoid edges after replacing the shape of a vertex
+- Removes the redundant styleChanged event of the Flip buttons
+- Renames cfgFontCssHelp to cfgCustomPresetColorsHelp
+- Documents the title margin of the revision dialog
+- Shows the cell ID in Edit Data as regular text
+- Fixes a global variable in GitLabClient.insertFile
+- Updates the metadata of OneDrive libraries after saving
+- Removes the unused includeCellId argument of createSvgImageExport
+- Binds SVG export popups only to the icon wrappers of the export
+- Passes the icons option through the svgdata plugin
+- Resolves snapToPoint anchors for the current style of the terminal
+- Re-routes libavoid edges after style edits of their ends
+- Fixes ignored jetty sizes in libavoid routing
+- Routes new edges to the snapToPoint anchors of new terminals
+- Re-routes libavoid edges after style writes outside Edit Style
+- Removes the dead styledev style input
+- Turns edge label text with rotated groups in the Visio import
+- Adds drawio-plantuml to the ant bundles target
+- Updates drawio-mermaid bundle to 0.1.0+commit.00cb88f
+- Updates the Confluence Connect PrismJS copy to 1.30.0
+
+29-SEP-2026: 31.6.1
+
+- Keeps the embed filename before the buttons when the title changes
+- Fixes the noLabel check for disabled font colors [jgraph/drawio#4694]
+- Translation keys for embed macro pinned version
+- Makes the math text layer selectable in macOS Preview
+- Resizes autosize cells with math when math typesetting is turned on or off
+- Fixes the hover state of the autosize button in the Arrange panel
+- Fixes blank edge style toolbar icons after load
+- Fixes autosize of labels with AsciiMath
+- Updates stable to next release
+- Fixes undo shortcuts in the color picker window [jgraph/drawio-desktop#2395]
+- Shows month names in revision history dates [jgraph/drawio#5234]
+- Hardens realtime message decoding on encrypted channels
+- Fixes saving diagrams in the Notion extension [jgraph/drawio#5785]
+- Updates Notion extension to 1.3.4
+- Added Conf Cloud deep scan translation keys
+- Keeps lockdown saves off the realtime cache
+
+28-SEP-2026: 31.6.0
+
+- Limits PDF object stream scans to one pass [jgraph/drawio-dev#572]
+- Makes PDF inline and referenced Subject scans linear [jgraph/drawio-dev#572]
+- Skips math typesetting in exports of pages without math
+- Applies MathJax safe filters at startup
+- Uses the rotated Picker API key and explains the multi-account error in the Google add-ons [jgraph/drawio#5559]
+- Adds a regression suite for the Visio importer
+- Keeps referer paths, file names and client IPs out of the convert worker logs
+- Keeps proxied URLs, referer paths and OAuth state out of the edge logs
+- Adds a Google Workspace add-on worker (smart chips, Docs @-menu, Chat)
+- Removes the temporary realtime release telemetry [jgraph/drawio-dev#677]
+- Puts the fast-rt channel listing behind the admin secret and removes its shard reset
+- Serves the fast-rt socket totals from a 15 s cache instead of reading all 64 shards per request
+- Applies every color from the color window to the selected text [jgraph/drawio#5783]
+- Keeps the text selected after changing its color in Firefox [jgraph/drawio#5783]
+- Uses the sequence edge style for the UML 2.5 lifelines [jgraph/drawio#5706]
+- Adds Visio import tests for color injection into labels and styles
+- Accepts only valid colors in the Visio importer
+- Adds Visio import tests for font name and text direction injection into labels
+- Accepts only safe font names and text directions in the Visio importer
+- Reports CSS injected into labels in the Visio import security scan
+- Adds a Diagrams panel and simpler insert and update to the Google add-ons [jgraph/drawio#5559]
+- Uses the sequence edge style in the sequence templates [jgraph/drawio#5706]
+- Lists each template once in the template search
+- Fixes diagram sizes, empty pages and the My Drive filter in the Google add-ons [jgraph/drawio#5559]
+- Adds an authenticated licence endpoint that counts Workspace editors per domain and month
+- Stops the auth worker redirecting OAuth tokens to another site
+- Applies the security review to the licence endpoint
+- Adds a Google Drive home screen behind a flag
+- Moves HomeDialog out of Dialogs.js into its own file
+- Converts binary Visio files in the browser before the Visio import
+- Stops the Home screen clipping focus rings in Firefox
+- Points Shared with me at the Picker and scopes the Home CSS
+- Removes the old Visio import experiments in etc/vsdx
+- Removes the unused Visio batch converter in etc/vsdx-convert
+- Removes excludes for Visio folders that no longer exist
+- Fixes the Visio codec check in the connectors' importer
+- Keeps the Drive descriptor when the latest version needs an import
+- Records the error log groups of the week of 2026-09-28
+- Adds a synchronous single-file MathJax bundle build
+- Adds a comparison harness for the MathJax bundle
+- Loads MathJax from the single-file bundle for SVG output
+- Adds a Visio import test for the display text of text fields
+- Shows Visio's display text for text fields in the Visio importer
+- Adds the formula source as invisible text to math in PDF export and print
+- Drops the CHTML math output (math-output=html)
+- Sanitizes AsciiMath output with the MathJax safe filters
+- Makes MathJax typesetting synchronous in the bundle
+- Removes the asynchronous MathJax retry handling
+- Loads the MathJax bundle in the embed script
+- Replaces MathJax's separate components with the bundle
+- Loads MathJax only when math is first typeset
+- Makes the MathJax safe filters fail closed
+- Hides the empty properties section in the Edit Data dialog
+- Stops the format panel clipping focus rings of full-width controls
+- Centers the wait toggle icon in the animation step list
+- Corrects the VSDX module guide
+- Notes who loads the standalone Visio importer page
+- Removes the unused conf-vsdx-enabled worker
+- Filters the My Drive tab of the Google Drive pickers by file type
+- Hides animation step controls that have no effect
+- Labels the layer and tag pickers' clear button "None" in the action dialog
+- Widens the URL field of the Open step in the action editor
+- Highlights cells revealed earlier in a custom-link click like the preview
+- Lines up the animation step rows and keeps chips from being overlapped
+- Starts the page animation after a page switch in presentation mode
+- Keeps the animation dialog buttons inside a narrow dialog
+- Converts binary Visio files in the browser in the connectors' importer
+- Explains excluded-cell conflicts in the action dialog's no-effect warning
+- Resolves page links with spaces and flags malformed ones in the Open step
+- Hides the connectors of cells hidden by a transient toggle, show or hide
+- Shows the link as tooltip for cells in locked layers and names custom links
+- Shows legacy layer IDs in custom links as layers in the action editor
+- Keeps the sources in Cloudflare Pages branch previews and opens them in dev mode
+- Fixes the misspelled content type in Google Drive uploads
+- Updates the binary Visio converter bundle
+- Moves the Visio import test data to the drawio-visio-test repository
+- Adds number and page number overrides of master text to the field test
+- Moves the MathJax ui/safe hardening into the bundle's source
+- Uses the master's Format for field values that an instance overrides
+- Wraps the fields of wide animation step rows instead of scrolling them away
+- Adds regular hexagon to the Basic palette [jgraph/drawio#4434]
+- Disables drop target on EIP Message Endpoint shapes [jgraph/drawio-desktop#2030]
+- Connects two selected shapes when clicking an edge in the sidebar [jgraph/drawio-desktop#1962]
+- Adds expand option to open custom config libraries expanded [jgraph/drawio#4662]
+- Adds missing viewBox to Azure SVG icons
+- Changes the default border for PDF export to 0 [jgraph/drawio#5682]
+- Adds mobile device container to the C4 palette [jgraph/drawio#4704]
+- Shows the grid size in the current unit in Page Setup [jgraph/drawio#604]
+- Adds autoscroll near window edges when dragging with hidden side panels [jgraph/drawio#5044]
+- Adds math typesetting to tooltips if math is enabled [jgraph/drawio#5041]
+- Adds Shift+Insert paste shortcut [jgraph/drawio#5699]
+- Adds a search filter to the Property panel [jgraph/drawio#5771]
+- Adds fullscreen option to the fullscreen button of embedded lightbox toolbars [jgraph/drawio#5372]
+- Ignores freehand strokes while panning with Space+drag [jgraph/drawio#4595]
+- Adds unflipStencilText style to keep stencil text readable in flipped shapes [jgraph/drawio#5462]
+- Finds and reveals cells inside collapsed containers in Find [jgraph/drawio#4733]
+- Moves only cells in the same column or row when folding with move cells [jgraph/drawio#5414]
+- Shows tooltips while hovering with a pen [jgraph/drawio-desktop#2189]
+- Shows the shape unrotated in the connection points dialog [jgraph/drawio#4108]
+- Hides fill option for line shapes in the format panel [jgraph/drawio#4816]
+- Fixes transparent background for PNG export with a diagram background [jgraph/drawio-desktop#1905]
+- Sorts SharePoint sites alphabetically in the OneDrive picker [jgraph/drawio#2870]
+- Enlarges the hit area of small folding icons [jgraph/drawio#4337]
+- Shows bundled keyboard shortcuts in a dialog in the desktop app [jgraph/drawio-desktop#1130]
+- Makes the MathJax ui/safe filters fail closed
+- Grows Visio shapes to the extent of their drawing in the importer
+- Ignores non-JSON icon search responses in the sidebar search
+- Restores the bounding box when wipe and pop animations stop [jgraph/drawio#5777]
+- Adds palettes, per-frame delays and changed-rectangle frames to the GIF encoder [jgraph/drawio#5777]
+- Adds GIF and MP4 export of page step animations [jgraph/drawio#5777]
+- Renders Visio library references at each master's drawing scale
+- Applies older Visio themes in the importer
+- Finds Visio themes by their theme scheme ID in the importer
+- Pairs only master entries with Visio library references
+- Shares the text edit code of the MathJax source loaders
+- Replaces the unflipStencilText style with a flip-shape stencil text attribute [jgraph/drawio#5462]
+- Gives the MathJax bundle its own global, DrawioMathJax
+- Wraps the View step's fields in narrow animation dialogs
+- Rotates Visio text blocks around their pin and mirrors them with flips
+- Places the text of rotated and flipped Visio lines with their transform
+- Shows flipped shapes unflipped in the connection points dialog [jgraph/drawio#4108]
+- Fixes hidden label after applying a style to a shape with disabled font color [jgraph/drawio#4694]
+- Routes rotated, flipped and reversed Visio lines with their transform
+- Fixes window.open returning a Promise for blank windows in the desktop app
+- Keeps the preview button on its row's field line in Safari animation dialogs
+- Draws Visio group geometry in front of the members
+- Places Visio shapes turned or flipped around an off-center pin
+- Keeps numeric text sizes through the MathJax safe filters
+- Fills Visio geometry with holes like Visio's even-odd rule
+- Keeps the open stencil path apart while the importer writes it
+- Mirrors the members of flipped Visio groups
+- Draws Visio lines with a custom line pattern thin
+- Fills Visio shapes whose theme gradient overrides FillPattern 0
+- Shows the tags button in the Confluence Cloud lightbox [jgraph/drawio#5548]
+- Shows shapes without their direction in the connection points dialog [jgraph/drawio#4108]
+- Rounds connection point offsets in the connection points dialog [jgraph/drawio#4108]
+- Passes target and features for blank windows in the desktop app
+- Updates the vendored drawio-plantuml bundle to commit 050d5db
+- Keeps edge terminals in the offscreen copy of the animation export [jgraph/drawio#5777]
+- Reports errors after the last frame of the animation export [jgraph/drawio#5777]
+- Adds npm run update for new MathJax releases
+
 25-SEP-2026: 31.5.3
 
 - Keeps UML sequence messages at their own y [jgraph/drawio#5706]
@@ -16,7 +2043,6 @@
 - Places messages from hover arrow clicks on the next free row [jgraph/drawio#5706]
 - Switches the generate/v3 premium draw.io model to Opus 5.5
 - Updates drawio-mermaid bundle to 0.1.0+commit.1277371 [DID-20220]
-- Reduces stale duration
 - Updates DOMPurify from 3.4.15 to 3.4.16
 - Adds a smoke test for DOMPurify updates
 - Updates jszip from 3.10.0 to 3.10.1
@@ -33,7 +2059,6 @@
 - Limits PDF attachment and object stream scans [jgraph/drawio-dev#572]
 - Restricts chromeless back and refresh URLs to same origin [jgraph/drawio-confluence#99]
 - Fixes search tag keys for stencil names with several spaces [jgraph/drawio#5738]
-- Reports Mermaid input with nothing to draw instead of dropping it
 - Reports Mermaid input with nothing to draw instead of dropping it
 - Adds drive.file Editor add-ons for Google Docs, Sheets and Slides [jgraph/drawio#5559]
 - Shows plugin menu items in the menubar and menu buttons [hediet/vscode-drawio#532]
@@ -167,7 +2192,6 @@
 - Locks the execute-time resolution in undo-stale case 9
 - Keeps cross-page replays on their own page and marks both trees dirty
 - Canonicalizes the replayed child in the target tree
-- WIP: intent-frozen execute-time resolution (redesign in progress)
 - Adds the editor-semantics layer guarding base editor behavior
 - Disconnects dangling terminals from dirty pages before the flush diff
 - Adds provenance and history forensics to the dirty-tracking alert
@@ -191,7 +2215,6 @@
 - Fixes configured default edge font not applied to new edges and edge labels
 - Bump actions/checkout from 6.1.0 to 7.0.1
 - Updates tooling dependencies
-- Tooling build fixes
 - Updates wrangler version
 - Removes plantuml and emf references
 - Adds Archimate v4 shapes
@@ -215,7 +2238,6 @@
 - Stops replays from resolving to removed objects
 - Resends unconfirmed changes when the first peer appears
 - Freezes replay intentions for all property changes
-- Resends unconfirmed changes when the first peer appears
 - Announces joining clients so stale rosters heal
 - Keeps resent content current and restores revisions through sync
 - Adds exploratory scenarios and a real-P2P test layer
@@ -304,10 +2326,6 @@
 - Adds a descendants flag to the cell selector of custom actions
 - Starts the GAE Cloud Build from the release push instead of the trigger that never fired
 - Requires the served version id in the release monitor's deploy poll and shows the GAE build on the dashboard
-- Records that the GAE push trigger fired once on 31.4.6 and failed on its log bucket access
-- Updates the release runbook from the 31.4.6 run [jgraph/drawio-dev#690]
-- Compares the release-monitor source against the preprod tip, not the dispatch ref [jgraph/drawio-dev#690]
-- Build of version 31.4.6
 - Adds a follow mode that keeps collaborators on the presenter's view
 - Makes Dropbox opt-in only and stops loading its SDK [jgraph/drawio#5740]
 - Stops offering GitLab as a save target [jgraph/drawio#5773]
@@ -414,7 +2432,6 @@
 - Rejects IPv6 transition prefixes in the server SSRF guard [GHSA-xj4f-x55f-699c]
 - Stops stale image callbacks drawing ghost copies of Confluence attachment images after fit-on-load [jgraph/drawio-dev#658]
 - Fixes local print preview head CSS: closes the malformed shadow-suppression rule that swallowed the MathJax print rule and configured font CSS, writes app CSS into the style element unescaped with the style end tag neutralized, rewrites Google font URLs on pages 2+ and suppresses the unnamed @page rule when named page CSS is in use
-- Removes unused code
 - Derives export to PDF via print and server-side image export from EXPORT_URL instead of hand-set flags, treats null, empty and the public build placeholder as no export service and fails the canvas-unavailable fallbacks instead of posting to a dead URL [jgraph/drawio-dev#660]
 - Adds reindexInst3 resource for the Jira re-indexing page note that indexing pauses while the computer is asleep or offline [jgraph/drawio-jira-forge#1]
 - Gives the Google API loader the page's CSP nonce in the Drive editor
@@ -473,7 +2490,6 @@
 
 - Rebuilds the Gliffy bundle with the validated page background
 - fix: upgrade commons-codec:commons-codec from 1.22.0 to 1.22.1
-- Updates excludes
 - Conf Cloud: Added Atlassian migration mapping support
 - Points the Confluence draft 415 message at Attachment Checker's exception setting
 - Added a marker style tooltipCell=1 to find the cell having the tooltip in a group & updated gliffy importer [DID-19972]
@@ -499,12 +2515,10 @@
 - Update vendored drawio-plantuml bundle to commit 919e054
 - Fixes java<TAB>script: bypass and two unsanitized link sinks [jgraph/drawio-dev#624]
 - Denies data attributes by default in the DOMPurify config [jgraph/drawio-dev#625]
-- Build for confluence testing
 - Block javascript: URLs with tab in the scheme in MathJax labels
 
 13-AUG-2026: 31.2.2
 
-- Corrected version format
 - Make editor Gliffy import local-only, drop conversion-service callers [#618]
 - Stop offering Dropbox as a save target [#5740]
 - Add Gliffy migration workspace design document

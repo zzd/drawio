@@ -4,12 +4,8 @@
  */
 
 /**
- * Constructs a new point for the optional x and y coordinates. If no
- * coordinates are given, then the default values for <x> and <y> are used.
- * @constructor
- * @class Implements a basic 2D point. Known subclassers = {@link mxRectangle}.
- * @param {number} x X-coordinate of the point.
- * @param {number} y Y-coordinate of the point.
+ * Constructs a new application for the given editor in the given container.
+ * If lightbox is null, it is derived from the URL parameters.
  */
 App = function(editor, container, lightbox)
 {
@@ -25,10 +21,19 @@ App = function(editor, container, lightbox)
 		if (file != null)
 		{
 			EditorUi.logEvent({category: ((this.editor.autosave) ? 'ON' : 'OFF') +
-				'-AUTOSAVE-FILE-' + file.getHash(), action: 'changed',
+				'-AUTOSAVE-FILE-' + EditorUi.getLogHash(file.getHash()), action: 'changed',
 				label: 'autosave_' + ((this.editor.autosave) ? 'on' : 'off')});
 		}
 	}));
+
+	// Counts this browser for the version dashboard once per day, and
+	// again every hour so tabs that stay open for days are counted too
+	if (!App.versionPingStarted)
+	{
+		App.versionPingStarted = true;
+		App.pingVersion();
+		window.setInterval(App.pingVersion, 3600000);
+	}
 
 	// Reloads this tab when a release channel switch (flagged by
 	// switchReleaseChannel in any tab) activates the other channel's
@@ -207,11 +212,6 @@ App.ERROR_UNKNOWN = 'unknown';
 App.MODE_GOOGLE = 'google';
 
 /**
- * Dropbox mode
- */
-App.MODE_DROPBOX = 'dropbox';
-
-/**
  * OneDrive Mode
  */
 App.MODE_ONEDRIVE = 'onedrive';
@@ -257,19 +257,35 @@ App.MODE_EMBED = 'embed';
 App.MODE_ATLAS = 'atlas';
 
 /**
- * Sets the delay for autosave in milliseconds. Default is 2000.
+ * Storages by mode: the property of the client in the App (client), the
+ * resource key of the name (title), the first character of the hash of
+ * files (char), the logo in IMAGE_PATH (logo), the logo of the app icon
+ * on hover and its size (iconLogo, iconLogoSize) and the start page (url).
+ * Has no prototype, as modes come from URLs and storage.
  */
-App.DROPBOX_APPKEY = window.DRAWIO_DROPBOX_ID;
+App.storages = Object.create(null);
 
-/**
- * Sets URL to load the Dropbox SDK from
- */
-App.DROPBOX_URL = 'js/dropbox/Dropbox-sdk.min.js';
-
-/**
- * Sets URL to load the Dropbox dropins JS from.
- */
-App.DROPINS_URL = 'https://www.dropbox.com/static/api/2/dropins.js';
+App.storages[App.MODE_GOOGLE] = {client: 'drive', title: 'googleDrive', char: 'G',
+	logo: 'google-drive-logo.svg', iconLogo: 'google-drive-logo-white.svg',
+	url: 'https://drive.google.com/?authuser=0'};
+App.storages[App.MODE_ONEDRIVE] = {client: 'oneDrive', title: 'oneDrive', char: 'W',
+	logo: 'onedrive-logo.svg', iconLogo: 'onedrive-logo-white.svg',
+	url: 'https://onedrive.live.com/'};
+App.storages[App.MODE_M365] = {client: 'm365', title: 'm365', char: 'M',
+	logo: 'onedrive-logo.svg'};
+App.storages[App.MODE_GITHUB] = {client: 'gitHub', title: 'github', char: 'H',
+	logo: 'github-logo.svg', iconLogo: 'github-logo-white.svg',
+	url: 'https://github.com/'};
+App.storages[App.MODE_GITLAB] = {client: 'gitLab', title: 'gitlab', char: 'A',
+	logo: 'gitlab-logo.svg', iconLogo: 'gitlab-logo-white.svg', iconLogoSize: '90%',
+	// Configurable (see Init.js)
+	get url() { return window.DRAWIO_GITLAB_URL; }};
+App.storages[App.MODE_TRELLO] = {client: 'trello', title: 'trello', char: 'T',
+	logo: 'trello-logo.svg', iconLogo: 'trello-logo-white-orange.svg',
+	url: 'https://trello.com/'};
+App.storages[App.MODE_DEVICE] = {title: 'device', logo: 'osa_drive-harddisk.png',
+	url: 'https://get.draw.io/'};
+App.storages[App.MODE_BROWSER] = {title: 'browser', logo: 'osa_database.png'};
 
 /**
  * OneDrive Client JS (file/folder picker). This is a slightly modified version to allow using accessTokens.
@@ -285,21 +301,6 @@ App.TRELLO_URL = 'https://api.trello.com/1/client.js';
  * Trello JQuery dependency
  */
 App.TRELLO_JQUERY_URL = 'js/jquery/jquery-3.6.0.min.js';
-
-/**
- * Specifies the key for the pusher project.
- */
-App.PUSHER_KEY = '1e756b07a690c5bdb054';
-
-/**
- * Specifies the key for the pusher project.
- */
-App.PUSHER_CLUSTER = 'eu';
-
-/**
- * Specifies the URL for the pusher API.
- */
-App.PUSHER_URL = window.PUSHER_URL || 'https://js.pusher.com/7.0.3/pusher.min.js';
 
 /**
  * SimplePeer library 
@@ -323,37 +324,32 @@ App.startTime = new Date();
  * Defines plugin IDs for loading via p URL parameter. Update the table at
  * https://www.drawio.com/doc/faq/supported-url-parameters
  */
-App.pluginRegistry = {'4xAKTrabTpTzahoLthkwPNUn': 'plugins/explore.js',
-	'ex': 'plugins/explore.js',
+App.pluginRegistry = {'ex': 'plugins/explore.js',
 	'ac': 'plugins/connect.js', 'acj': 'plugins/connectJira.js',
 	'ac148': 'plugins/cConf-1-4-8.js', 'ac148cmnt': 'plugins/cConf-comments.js', 
 	'nxtcld': 'plugins/nextcloud.js',
 	'monday': 'plugins/monday.js',
 	'svgdata': 'plugins/svgdata.js',
-	'number': 'plugins/number.js', 'sql': 'plugins/sql.js',
+	'number': 'plugins/number.js',
 	'props': 'plugins/props.js', 'text': 'plugins/text.js',
-	'anim': 'plugins/animation.js', 'update': 'plugins/update.js',
-	'trees': 'plugins/trees/trees.js', 'import': 'plugins/import.js',
+	'update': 'plugins/update.js',
+	'trees': 'plugins/trees/trees.js',
 	'replay': 'plugins/replay.js', 'anon': 'plugins/anonymize.js',
-	'tr': 'plugins/trello.js', 'f5': 'plugins/rackF5.js',
-	'webcola': 'plugins/webcola/webcola.js', 'rnd': 'plugins/random.js',
-	'page': 'plugins/page.js', 'tags': 'plugins/tags.js'};
+	'tr': 'plugins/trello.js',
+	'rnd': 'plugins/random.js',
+	'tags': 'plugins/tags.js'};
 
 App.publicPlugin = [
 	'ex',
 	'svgdata',
 	'number',
-	'sql',
 	'props',
 	'text',
-	'anim',
 	'update',
 	'trees',
-//	'import',
 	'replay',
 	'anon',
-	'webcola',
-//	'rnd', 'page',
+//	'rnd',
 	'tags'
 ];
 
@@ -439,6 +435,19 @@ App.getStoredMode = function()
 };
 
 /**
+ * Function: isKnownMode
+ *
+ * Returns true if the given mode has a storage or is embed or atlas. Stored
+ * and requested modes may be for a storage that has been removed (eg.
+ * dropbox).
+ */
+App.isKnownMode = function(mode)
+{
+	return App.storages[mode] != null ||
+		mode == App.MODE_EMBED || mode == App.MODE_ATLAS;
+};
+
+/**
  * Static Application initializer executed at load-time.
  */
 (function()
@@ -447,12 +456,6 @@ App.getStoredMode = function()
 	{
 		if (urlParams['offline'] != '1')
 		{
-			// Switches to dropbox mode for db.draw.io
-			if (window.location.hostname == 'db.draw.io' && urlParams['mode'] == null)
-			{
-				urlParams['mode'] = 'dropbox';
-			}
-			
 			App.mode = urlParams['mode'];
 		}
 		
@@ -497,49 +500,16 @@ App.getStoredMode = function()
 					}
 				}
 	
-				// Dropbox support is ending, the client is only loaded with an explicit db=1
-				// KNOWN: Picker does not work in IE11 (https://dropbox.zendesk.com/requests/1650781)
-				if (typeof window.DropboxClient === 'function')
-				{
-					if (urlParams['db'] == '1' && isSvgBrowser &&
-						(document.documentMode == null || document.documentMode > 9))
-					{
-						// Immediately loads client
-						if (App.mode == App.MODE_DROPBOX || (window.location.hash != null &&
-							window.location.hash.substring(0, 2) == '#D'))
-						{
-							mxscript(App.DROPBOX_URL, function()
-							{
-								// Must load this after the dropbox SDK since they use the same namespace
-								mxscript(App.DROPINS_URL, null, 'dropboxjs', App.DROPBOX_APPKEY, true);
-							});							
-						}
-						else if (urlParams['chrome'] == '0')
-						{
-							window.DropboxClient = null;
-						}
-					}
-					else
-					{
-						// Disables loading of client
-						window.DropboxClient = null;
-					}
-				}
-				
-				// Loads OneDrive for all browsers but IE6/IOS if not disabled or if enabled and in embed mode
+				// Enables OneDrive for all browsers but IE6/IOS if not disabled or if enabled and in embed mode
 				if (typeof window.OneDriveClient === 'function')
 				{
 					if (urlParams['od'] != '0' && (navigator.userAgent == null ||
 						navigator.userAgent.indexOf('MSIE') < 0 || document.documentMode >= 10))
 					{
-						// Immediately loads client
-						if (App.mode == App.MODE_ONEDRIVE || App.mode == App.MODE_M365 || (window.location.hash != null &&
-							(window.location.hash.substring(0, 2) == '#W' || window.location.hash.substring(0, 2) == '#M')))
-						{
-							//Editor.oneDriveInlinePicker can be set with configuration which is done later, so load it all time
-							mxscript(App.ONEDRIVE_URL);
-						}
-						else if (urlParams['chrome'] == '0')
+						// Disables the client in chromeless mode unless a OneDrive file is opened
+						if (urlParams['chrome'] == '0' && App.mode != App.MODE_ONEDRIVE && App.mode != App.MODE_M365 &&
+							(window.location.hash == null || (window.location.hash.substring(0, 2) != '#W' &&
+							window.location.hash.substring(0, 2) != '#M')))
 						{
 							window.OneDriveClient = null;
 						}
@@ -746,6 +716,84 @@ App.setReleaseChannel = function(channel)
 };
 
 /**
+ * Counts this browser once per UTC day for each app version it runs, for
+ * the version dashboard (release-monitor /versions). The stamps stay in
+ * localStorage, so the request carries no cookie or ID: only the version,
+ * the hostname, whether the stable channel's service worker serves the
+ * page, and whether this is the browser's first ping of the day (d), of
+ * the week starting on Monday (w) and of the month (m), which give the
+ * daily, weekly and monthly actives. Without localStorage each page load
+ * counts once a day.
+ */
+App.pingVersion = function()
+{
+	var now = new Date();
+	var day = now.toISOString().substring(0, 10);
+
+	if (EditorUi.enableLogging && urlParams['dev'] != '1' &&
+		App.lastVersionPing != day)
+	{
+		var week = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(),
+			now.getUTCDate() - (now.getUTCDay() + 6) % 7)).toISOString().substring(0, 10);
+		var month = day.substring(0, 7);
+		var key = '.drawio-version-ping';
+		var stamp = null;
+		App.lastVersionPing = day;
+
+		try
+		{
+			stamp = (isLocalStorage) ? JSON.parse(localStorage.getItem(key)) : null;
+		}
+		catch (e)
+		{
+			// ignore
+		}
+
+		stamp = (stamp != null && typeof stamp === 'object') ? stamp : {};
+		var versions = (stamp.d == day && Array.isArray(stamp.v)) ? stamp.v : [];
+
+		if (mxUtils.indexOf(versions, EditorUi.VERSION) < 0)
+		{
+			var stable = false;
+
+			try
+			{
+				var sw = ('serviceWorker' in navigator) ?
+					navigator.serviceWorker.controller : null;
+				stable = sw != null && sw.scriptURL.indexOf('/stable/') >= 0;
+			}
+			catch (e)
+			{
+				// ignore
+			}
+
+			try
+			{
+				var img = new Image();
+				img.src = window.DRAWIO_LOG_URL + '/log?ping=1' +
+					'&v=' + encodeURIComponent(EditorUi.VERSION) +
+					'&host=' + encodeURIComponent(window.location.hostname) +
+					((stable) ? '&channel=stable' : '') +
+					((versions.length == 0) ? '&d=1' : '') +
+					((stamp.w != week) ? '&w=1' : '') +
+					((stamp.m != month) ? '&m=1' : '');
+				versions.push(EditorUi.VERSION);
+
+				if (isLocalStorage)
+				{
+					localStorage.setItem(key, JSON.stringify({d: day,
+						v: versions, w: week, m: month}));
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
+		}
+	}
+};
+
+/**
  * Rate-limited (one report per day) logging for service worker failures,
  * plus a distinct-day failure counter for the stable channel that drives
  * the automatic fallback to beta in App.main.
@@ -922,8 +970,14 @@ App.main = function(callback, createUi)
 
 		// Replaces light-dark color functions with light colors for older browsers
 		Editor.loadCompatibleCss();
-		
+
 		App.isMainCalled = true;
+
+		// Declares the language of the user interface for screen readers, which
+		// is the default language if there are no resources for mxLanguage
+		document.documentElement.setAttribute('lang', (mxLanguage != null &&
+			mxResources.isLanguageSupported(mxLanguage)) ? mxLanguage :
+			mxClient.defaultLanguage);
 
 		// Detects Android tablets using Chrome's "Request Desktop Site"
 		// mode where the user agent shows Linux instead of Android.
@@ -1087,21 +1141,16 @@ App.main = function(callback, createUi)
 				// ignore
 			}
 			
-			// Loads Pusher API
-			if (('ArrayBuffer' in window) && !mxClient.IS_CHROMEAPP && !EditorUi.isElectronApp &&
+			// Loads SimplePeer for WebRTC between collaborators (fast-sync=1)
+			if (urlParams['fast-sync'] == '1' && ('ArrayBuffer' in window) &&
+				!mxClient.IS_CHROMEAPP && !EditorUi.isElectronApp &&
 				DrawioFile.SYNC == 'auto' && (urlParams['embed'] != '1' ||
-				(urlParams['embedRT'] == '1' && urlParams['lockdown'] != '1')) && 
+				urlParams['embedRT'] == '1') && urlParams['lockdown'] != '1' &&
 				urlParams['local'] != '1' &&
 				(urlParams['chrome'] != '0' || urlParams['rt'] == '1') &&
 				urlParams['stealth'] != '1' && urlParams['offline'] != '1')
 			{
-				// TODO: Check if async loading is fast enough
-				mxscript(App.PUSHER_URL);
-				
-				if (urlParams['fast-sync'] == '1')
-				{
-					mxscript(App.SIMPLE_PEER_URL);
-				}
+				mxscript(App.SIMPLE_PEER_URL);
 			}
 			
 			// Loads plugins
@@ -1387,40 +1436,8 @@ App.main = function(callback, createUi)
 
 						if (window.mxscript != null)
 						{
-							// Dropbox support is ending, the SDK is only loaded with an explicit db=1
-							// KNOWN: Picker does not work in IE11 (https://dropbox.zendesk.com/requests/1650781)
-							if (typeof window.DropboxClient === 'function' &&
-								window.Dropbox == null && window.DrawDropboxClientCallback != null &&
-								urlParams['db'] == '1' && isSvgBrowser &&
-								(document.documentMode == null || document.documentMode > 9))
-							{
-								mxscript(App.DROPBOX_URL, function()
-								{
-									// Must load this after the dropbox SDK since they use the same namespace
-									mxscript(App.DROPINS_URL, function()
-									{
-										DrawDropboxClientCallback();
-									}, 'dropboxjs', App.DROPBOX_APPKEY);
-								});
-							}
-							// Disables client
-							else if (typeof window.Dropbox === 'undefined')
-							{
-								window.DropboxClient = null;
-							}
-							
-							// Loads OneDrive for all browsers but IE6/IOS if not disabled or if enabled and in embed mode
-							if (typeof window.OneDriveClient === 'function' &&
-								(typeof OneDrive === 'undefined' && window.DrawOneDriveClientCallback != null &&
-								(((urlParams['embed'] != '1' && urlParams['od'] != '0') || (urlParams['embed'] == '1' &&
-								urlParams['od'] == '1')) && (navigator.userAgent == null ||
-								navigator.userAgent.indexOf('MSIE') < 0 || document.documentMode >= 10))))
-							{
-								//Editor.oneDriveInlinePicker can be set with configuration which is done later, so load it all time
-								mxscript(App.ONEDRIVE_URL, window.DrawOneDriveClientCallback);
-							}
-							// Disables client
-							else if (typeof window.OneDrive === 'undefined')
+							// Disables the OneDrive client if the UI did not create one
+							if (ui.oneDrive == null)
 							{
 								window.OneDriveClient = null;
 							}
@@ -1432,7 +1449,7 @@ App.main = function(callback, createUi)
 							{
 								mxscript(App.TRELLO_JQUERY_URL, function()
 								{
-									// Must load this after the dropbox SDK since they use the same namespace
+									// Must load this after jQuery since the Trello client needs it
 									mxscript(App.TRELLO_URL, function()
 									{
 										DrawTrelloClientCallback();
@@ -1617,6 +1634,17 @@ App.main = function(callback, createUi)
 						{
 							mxEvent.removeListener(window, 'message', configHandler);
 							Editor.configure(data.config);
+
+							// A popup shares the storage of the app, so the settings of each
+							// opener are kept apart from those of the app (frames have their
+							// own storage per site, see storage partitioning)
+							if (op == window.opener)
+							{
+								Editor.configurationKey += '@' + evt.origin;
+								Editor.settingsKey += '@' + evt.origin;
+								mxSettings.key = Editor.settingsKey;
+							}
+
 							mxSettings.load();
 
 							if (data.config.darkColor != null)
@@ -1675,16 +1703,32 @@ App.main = function(callback, createUi)
 					}
 				}
 		
-				// Loads configuration from local storage
+				// Loads configuration from local storage, on top of the cached
+				// settings of the user's organization (App.updateOrgSettings)
 				if (isLocalStorage && localStorage != null && urlParams['embed'] != '1')
 				{
 					var configData = localStorage.getItem(Editor.configurationKey);
+					var orgData = (typeof OrgSettings !== 'undefined') ?
+						localStorage.getItem(OrgSettings.cacheKey) : null;
 		
-					if (configData != null)
+					if (configData != null || orgData != null)
 					{
 						try
 						{
-							configData = JSON.parse(configData);
+							configData = (configData != null) ? JSON.parse(configData) : null;
+
+							// A broken cache must not stop the user's own configuration
+							try
+							{
+								if (orgData != null)
+								{
+									configData = OrgSettings.merge(JSON.parse(orgData), configData);
+								}
+							}
+							catch (e)
+							{
+								// ignore
+							}
 							
 							if (configData != null)
 							{
@@ -1874,10 +1918,8 @@ App.prototype.initializeViewerMode = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Initializes the UI and creates the clients for the enabled storage
+ * services. Does nothing if the app runs in a blocked frame.
  */
 App.prototype.init = function()
 {
@@ -1977,46 +2019,39 @@ App.prototype.init = function()
 	}
 
 	/**
-	 * Lazy-loading for individual backends
+	 * Creates the OneDrive client. The OneDrive SDK is only loaded for the
+	 * picker that is not inline (see Editor.oneDriveInlinePicker).
 	 */
-	if (urlParams['embed'] != '1' || urlParams['od'] == '1')
+	if (typeof window.OneDriveClient === 'function' &&
+		(urlParams['embed'] != '1' || urlParams['od'] == '1'))
 	{
-		/**
-		 * Creates onedrive client if all required libraries are available.
-		 */
-		var initOneDriveClient = mxUtils.bind(this, function()
+		try
 		{
-			if (typeof OneDrive !== 'undefined')
-			{
-				try
-				{
-					this.oneDrive = new OneDriveClient(this);
-					
-					this.oneDrive.addListener('userChanged', mxUtils.bind(this, function()
-					{
-						this.updateButtonContainer();
-						this.restoreLibraries();
-						this.checkReleaseChannel(this.oneDrive);
-					}));
-					
-					// Notifies listeners of new client
-					this.fireEvent(new mxEventObject('clientLoaded', 'client', this.oneDrive));
-				}
-				catch (e)
-				{
-					if (window.console != null)
-					{
-						console.log('OneDriveClient disabled: ' + e.message);
-					}
-				}	
-			}
-			else if (window.DrawOneDriveClientCallback == null)
-			{
-				window.DrawOneDriveClientCallback = initOneDriveClient;
-			}
-		});
+			this.oneDrive = new OneDriveClient(this);
 
-		initOneDriveClient();
+			if (!this.oneDrive.inlinePicker && typeof window.OneDrive === 'undefined' &&
+				window.mxscript != null)
+			{
+				mxscript(App.ONEDRIVE_URL, null, null, null, true);
+			}
+
+			this.oneDrive.addListener('userChanged', mxUtils.bind(this, function()
+			{
+				this.updateButtonContainer();
+				this.restoreLibraries();
+				this.checkReleaseChannel(this.oneDrive);
+			}));
+
+			// Notifies listeners of new client
+			this.fireEvent(new mxEventObject('clientLoaded', 'client', this.oneDrive));
+		}
+		catch (e)
+		{
+			if (window.console != null)
+			{
+				console.log('OneDriveClient disabled: ' + e.message);
+			}
+		}
 	}
 
 	if (urlParams['ms365'] != '0' && !EditorUi.isElectronApp &&
@@ -2110,13 +2145,9 @@ App.prototype.init = function()
 						{
 							this.updateButtonContainer();
 							this.restoreLibraries();
-
-							if (urlParams['dev'] != '1')
-							{
-								this.checkLicense();
-							}
-
+							this.updateOrgSettings();
 							this.checkReleaseChannel(this.drive);
+							this.recordTermsInDrive();
 						}))
 						
 						// Notifies listeners of new client
@@ -2154,53 +2185,6 @@ App.prototype.init = function()
 		initDriveClient();
 	}
 
-	if (urlParams['db'] == '1')
-	{
-		/**
-		 * Creates dropbox client if all required libraries are available.
-		 */
-		var initDropboxClient = mxUtils.bind(this, function()
-		{
-			if (typeof Dropbox === 'function')
-			{
-				/**
-				 * Clears dropbox client callback.
-				 */
-				window.DrawDropboxClientCallback = null;
-				
-				/**
-				 * Holds the x-coordinate of the point.
-				 */
-				try
-				{
-					this.dropbox = new DropboxClient(this);
-					
-					this.dropbox.addListener('userChanged', mxUtils.bind(this, function()
-					{
-						this.updateButtonContainer();
-						this.restoreLibraries();
-					}));
-					
-					// Notifies listeners of new client
-					this.fireEvent(new mxEventObject('clientLoaded', 'client', this.dropbox));
-				}
-				catch (e)
-				{
-					if (window.console != null)
-					{
-						console.log('DropboxClient disabled: ' + e.message);
-					}
-				}
-			}
-			else if (window.DrawDropboxClientCallback == null)
-			{
-				window.DrawDropboxClientCallback = initDropboxClient;
-			}
-		});
-
-		initDropboxClient();
-	}
-
 	if (urlParams['embed'] != '1')
 	{
 		this.setGraphEnabled(false);
@@ -2213,8 +2197,28 @@ App.prototype.init = function()
 		else
 		{
 			this.mode = App.mode;
+
+			// Ignores a stored or requested mode for a storage that has been
+			// removed (eg. dropbox) and forgets it if it was stored, so that
+			// the start shows the storage and draft dialogs as before
+			if (this.mode != null && !App.isKnownMode(this.mode))
+			{
+				if (this.mode == App.getStoredMode())
+				{
+					this.clearMode();
+				}
+
+				this.mode = null;
+			}
+			// Ignores a stored or requested mode for a storage whose support has
+			// ended unless it was enabled explicitly (tr=1), so that the
+			// storage can be changed instead of opening a picker that is missing
+			else if (this.mode == App.MODE_TRELLO && !this.isModeEnabled(this.mode))
+			{
+				this.mode = null;
+			}
 		}
-		
+
 		// Add to Home Screen dialog for mobile devices
 		if ('serviceWorker' in navigator && !this.editor.isChromelessView() &&
 			(mxClient.IS_ANDROID || mxClient.IS_IOS))
@@ -2241,18 +2245,25 @@ App.prototype.init = function()
 				{
 					this.showDownloadDesktopBanner();
 				}
-
-				// Fits diagram to window
-				if (Editor.fitDiagramOnLoad)
-				{
-					this.fitInitialView();
-				}
 			}));
 		}
-		
+
 		// Checks if the cache is alive (also runs when the first file
 		// starts to sync, eg. in embed mode, see DrawioFileSync.start)
 		DrawioFileSync.checkCacheAlive(this);
+	}
+
+	// Fits the diagram after fileLoaded as the page fit in pageSelected is
+	// skipped while the file is opening (embed mode fits after setFileData)
+	if (!this.editor.chromeless || this.editor.editable)
+	{
+		this.editor.addListener('fileLoaded', mxUtils.bind(this, function()
+		{
+			if (Editor.fitDiagramOnLoad)
+			{
+				this.fitInitialView();
+			}
+		}));
 	}
 
 	this.updateHeader();
@@ -2302,6 +2313,8 @@ App.prototype.init = function()
 				{
 					this.appIconClicked(evt);
 				}));
+
+				this.initKeyboardButton(this.icon);
 			}
 			
 			this.menubar.container.insertBefore(this.icon, this.menubar.container.firstChild);
@@ -2470,20 +2483,16 @@ App.prototype.isDriveDomain = function()
 };
 
 /**
- * Returns the pusher instance for notifications. Creates the instance of none exists.
+ * Pads the diagram of the lightbox and chrome=0 only if they are not in a
+ * frame, eg. an iframe of Embed > IFrame, where the padding would always show
+ * scrollbars and the mouse wheel would move the diagram out of view.
+ * Presentation mode and the lightbox of the viewer are padded, as they are
+ * EditorUi instances.
  */
-App.prototype.getPusher = function()
+App.prototype.isChromelessDiagramPadded = function()
 {
-	if (this.pusher == null && typeof window.Pusher === 'function')
-	{
-		this.pusher = new Pusher(App.PUSHER_KEY,
-		{
-			cluster: App.PUSHER_CLUSTER,
-			encrypted: true
-		});
-	}
-	
-	return this.pusher;
+	return window.self === window.top &&
+		EditorUi.prototype.isChromelessDiagramPadded.apply(this, arguments);
 };
 
 /**
@@ -2810,62 +2819,521 @@ App.prototype.switchReleaseChannel = function()
 };
 
 /**
- * Checks license in the case of Google Drive storage.
- * IMPORTANT: Do not change this function without consulting
- * the privacy lead. No personal information must be sent.
+ * Hook for subclassers to handle the licence of the user's domain, which
+ * App.reportDriveUse gets from the ws worker.
  */
-App.prototype.checkLicense = function()
+App.prototype.handleLicense = function(lic, domain)
 {
-	var driveUser = this.drive.getUser();
-	var email = (driveUser != null) ? driveUser.email : null;
-	
-	if (!this.isOffline() && !this.editor.chromeless && email != null && driveUser.id != null)
+	// Hook for subclassers to handle license response
+};
+
+/**
+ * Hosts where the app reports Google Drive views and edits to the ws worker
+ * (App.reportDriveUse), and where it reads the organization's settings. Only
+ * hosts whose /ws/* goes to the worker (its README): elsewhere the requests
+ * would go to the App Engine origin.
+ */
+App.driveUsageHosts = ['app.diagrams.net', 'preprod.diagrams.net'];
+
+/**
+ * Hosts where the steps that start using draw.io (the storage choice, the
+ * authorization of a storage) say that continuing accepts the draw.io Terms
+ * of Use (App.prototype.createTermsNotice): draw.io's own. Never a copy that
+ * someone else hosts, the desktop app, or the apps for Confluence and Jira,
+ * which have a licence agreement of their own.
+ */
+App.termsHosts = ['app.diagrams.net', 'preprod.diagrams.net'];
+
+/**
+ * The version of the Terms of Use, the number at the end of the page
+ * (App.termsUrl), the same as the ws worker's TERMS_VERSION.
+ */
+App.termsVersion = '1.3';
+
+/**
+ * The pages the Terms of Use notice links to.
+ */
+App.termsUrl = 'https://www.drawio.com/trust/terms-of-use';
+App.privacyUrl = 'https://www.drawio.com/trust/';
+
+/**
+ * Key of the record of the Terms of Use accepted in this browser:
+ * {version, accepted}, the version and when.
+ */
+App.termsKey = '.drawio-terms';
+
+/**
+ * Mail providers of personal Google accounts, whose users don't see Extras >
+ * Organization Admin. The same list as PERSONAL_DOMAINS in the ws worker's
+ * lib.js (its tests compare them), which never admits or counts them.
+ */
+App.personalMailDomains = ['gmail.com', 'googlemail.com',
+	'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'hotmail.co.uk',
+	'hotmail.fr', 'hotmail.de', 'hotmail.it', 'hotmail.es', 'live.co.uk',
+	'live.fr', 'live.de', 'live.nl', 'live.it', 'live.ca', 'live.com.au',
+	'outlook.fr', 'outlook.de', 'outlook.es', 'outlook.it', 'outlook.jp',
+	'yahoo.com', 'ymail.com', 'rocketmail.com', 'yahoo.co.uk', 'yahoo.fr',
+	'yahoo.de', 'yahoo.it', 'yahoo.es', 'yahoo.ca', 'yahoo.com.au',
+	'yahoo.co.in', 'yahoo.co.jp', 'yahoo.com.br', 'aol.com', 'icloud.com',
+	'me.com', 'mac.com', 'proton.me', 'protonmail.com', 'pm.me',
+	'tutanota.com', 'gmx.com', 'gmx.de', 'gmx.net', 'gmx.at', 'gmx.ch',
+	'web.de', 't-online.de', 'mail.com', 'yandex.ru', 'yandex.com',
+	'mail.ru', 'qq.com', '163.com', '126.com', 'sina.com', 'naver.com',
+	'daum.net', 'hanmail.net', 'orange.fr', 'free.fr', 'laposte.net',
+	'libero.it', 'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',
+	'btinternet.com', 'rediffmail.com'];
+
+/**
+ * The admin console's own host for each app host (AdminPage.js sends the
+ * browser there too). Elsewhere, such as preprod, the console is admin.html
+ * next to the app.
+ */
+App.adminConsoleUrls = {'app.diagrams.net': 'https://admin.diagrams.net/'};
+
+/**
+ * Returns the address of the admin console (Extras > Organization Admin).
+ */
+App.getAdminConsoleUrl = function()
+{
+	return (Object.prototype.hasOwnProperty.call(App.adminConsoleUrls, window.location.hostname)) ?
+		App.adminConsoleUrls[window.location.hostname] : new URL('admin.html', window.location.href).href;
+};
+
+/**
+ * Returns true if Extras > Organization Admin is shown: Google Drive users
+ * with a company address (not App.personalMailDomains) on the hosts of the ws
+ * worker, which checks every request anyway (ADMIN_DOMAINS).
+ */
+App.prototype.isOrganizationAdminVisible = function()
+{
+	var user = (this.drive != null) ? this.drive.getUser() : null;
+	var email = (user != null && typeof user.email === 'string') ? user.email.toLowerCase() : '';
+	var at = email.lastIndexOf('@');
+	var domain = (at > 0) ? email.substring(at + 1) : '';
+
+	return urlParams['embed'] != '1' && !this.isOfflineApp() &&
+		App.driveUsageHosts.indexOf(window.location.hostname) >= 0 &&
+		domain.indexOf('.') > 0 && App.personalMailDomains.indexOf(domain) < 0;
+};
+
+/**
+ * Gets the settings of the Drive user's organization once per page load and
+ * caches them (OrgSettings.cacheKey), or removes the cache if there are none.
+ * The app applies the cache on its next start, below the user's own
+ * configuration (App.main), so start-up never waits for this request.
+ */
+App.prototype.updateOrgSettings = function()
+{
+	if (typeof OrgSettings !== 'undefined' && isLocalStorage && this.drive != null &&
+		!this.orgSettingsRequested && !this.isOffline() && urlParams['embed'] != '1' &&
+		App.driveUsageHosts.indexOf(window.location.hostname) >= 0)
 	{
-		// Only the domain and hashed user ID are transmitted. This code was reviewed and deemed
-		// compliant by dbenson 2021-09-01.
-		var at = email.lastIndexOf('@');
-		var domain = (at >= 0) ? email.substring(at + 1) : '';
-		var userId = Editor.crc32(driveUser.id);
-		
-		if (domain.toLowerCase() !== 'gmail.com')
+		this.orgSettingsRequested = this.drive.getOrgSettings(function(result)
 		{
-			// Timestamp is workaround for cached response in certain environments
-			mxUtils.post('/license', 'domain=' + encodeURIComponent(domain) + '&id=' + encodeURIComponent(userId) + 
-					'&ts=' + new Date().getTime(),
-				mxUtils.bind(this, function(req)
+			try
+			{
+				var settings = (result.rev > 0) ? OrgSettings.filter(result.settings) : {};
+
+				if (Object.keys(settings).length > 0)
 				{
-					try
-					{
-						if (req.getStatus() >= 200 && req.getStatus() <= 299)
-						{
-							var value = req.getText();
-							
-							if (value.length > 0)
-							{
-								var lic = JSON.parse(value);
-								
-								if (lic != null)
-								{
-									this.handleLicense(lic, domain);
-								}
-							}
-						}
-					}
-					catch (e)
-					{
-						// ignore
-					}
-				}));
+					localStorage.setItem(OrgSettings.cacheKey, JSON.stringify(
+						{rev: result.rev, settings: settings}));
+				}
+				else
+				{
+					localStorage.removeItem(OrgSettings.cacheKey);
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
+		}, function()
+		{
+			// Keeps the cache
+		});
+	}
+};
+
+/**
+ * Reports to the licence endpoint (DriveClient.checkLicense) the first time
+ * each month that the user opens (usage is 'view') or saves (usage is 'edit')
+ * a Google Drive diagram. The endpoint adds the user to the viewers or
+ * editors of their domain this month and stores nothing about the user (its
+ * sketches ignore a user sent again, but each request is a write), so
+ * the user's own Drive remembers that they were counted: the usage marker in
+ * draw.io's app data folder (DriveClient.getUsageMarker), read before and
+ * written after each count, and cached in this browser. A first edit counts
+ * as a view too if the month has none yet. Users without the email or
+ * drive.appdata scope aren't counted and are asked again the next day.
+ * Reports run one at a time, once per page load and usage at most, and
+ * opening and editing never wait for them or depend on them.
+ */
+App.prototype.reportDriveUse = function(usage)
+{
+	var user = (this.drive != null) ? this.drive.getUser() : null;
+
+	if ((usage == 'view' || usage == 'edit') && user != null && user.id != null &&
+		!this.isOffline() && urlParams['dev'] != '1' && this.drive.hasIdToken() &&
+		App.driveUsageHosts.indexOf(window.location.hostname) >= 0)
+	{
+		var id = usage + '-' + user.id;
+		this.driveUsageReported = this.driveUsageReported || {};
+
+		if (!this.driveUsageReported[id] && !this.isDriveUseCounted(user, usage))
+		{
+			this.driveUsageReported[id] = true;
+			this.driveUsageQueue = this.driveUsageQueue || [];
+			this.driveUsageQueue.push({user: user, usage: usage});
+
+			if (!this.driveUsageBusy)
+			{
+				this.nextDriveUse();
+			}
 		}
 	}
 };
 
 /**
- * Returns true if the current domain is for the new drive app.
+ * Returns the key of the browser's cache of the usage marker of the user.
  */
-App.prototype.handleLicense = function(lic, domain)
+App.prototype.getDriveUseKey = function(user)
 {
-	// Hook for subclassers to handle license response
+	return '.drive-usage-' + Editor.crc32(user.id);
+};
+
+/**
+ * Returns the browser's cache of the usage marker of the user: {view, edit,
+ * wait}, the months the user was counted and the day not to ask before.
+ */
+App.prototype.getDriveUseCache = function(user)
+{
+	var cache = null;
+
+	try
+	{
+		cache = (isLocalStorage) ? JSON.parse(localStorage.getItem(this.getDriveUseKey(user))) : null;
+	}
+	catch (e)
+	{
+		// ignore
+	}
+
+	return {view: (cache != null && typeof cache.view === 'string') ? cache.view : null,
+		edit: (cache != null && typeof cache.edit === 'string') ? cache.edit : null,
+		wait: (cache != null && typeof cache.wait === 'string') ? cache.wait : null};
+};
+
+/**
+ * Stores the browser's cache of the usage marker of the user.
+ */
+App.prototype.setDriveUseCache = function(user, cache)
+{
+	try
+	{
+		if (isLocalStorage)
+		{
+			localStorage.setItem(this.getDriveUseKey(user), JSON.stringify(
+				{view: cache.view, edit: cache.edit, wait: cache.wait}));
+		}
+	}
+	catch (e)
+	{
+		// ignore
+	}
+};
+
+/**
+ * Returns true if this browser knows that the user was counted for the usage
+ * this month, or must not ask before tomorrow.
+ */
+App.prototype.isDriveUseCounted = function(user, usage)
+{
+	var today = new Date().toISOString().substring(0, 10);
+	var cache = this.getDriveUseCache(user);
+
+	return cache[usage] == today.substring(0, 7) || cache.wait == today;
+};
+
+/**
+ * Runs the next report of reportDriveUse: reads the usage marker, sends what
+ * it hasn't counted this month, then writes it. Fails open.
+ */
+App.prototype.nextDriveUse = function()
+{
+	var next = (this.driveUsageQueue != null) ? this.driveUsageQueue.shift() : null;
+	this.driveUsageBusy = next != null;
+
+	if (next == null || this.drive == null || this.isDriveUseCounted(next.user, next.usage))
+	{
+		if (next != null)
+		{
+			this.nextDriveUse();
+		}
+
+		return;
+	}
+
+	var user = next.user;
+	var today = new Date().toISOString().substring(0, 10);
+	var month = today.substring(0, 7);
+	var done = mxUtils.bind(this, function()
+	{
+		this.nextDriveUse();
+	});
+
+	this.drive.getUsageMarker(mxUtils.bind(this, function(marker)
+	{
+		// The drive could be another user's by now
+		if (this.drive == null || this.drive.getUser() == null || this.drive.getUser().id != user.id)
+		{
+			done();
+
+			return;
+		}
+
+		// What this browser knows was counted is, even if the marker missed it
+		var cache = this.getDriveUseCache(user);
+		marker.view = (cache.view == month) ? month : marker.view;
+		marker.edit = (cache.edit == month) ? month : marker.edit;
+
+		var counts = {};
+		counts[next.usage] = marker[next.usage] != month;
+		counts.view = counts.view || (counts.edit && marker.view != month);
+
+		if (!counts.view && !counts.edit)
+		{
+			this.setDriveUseCache(user, {view: marker.view, edit: marker.edit});
+			done();
+		}
+		else if (!this.drive.checkLicense(counts, mxUtils.bind(this, function(lic)
+		{
+			// Not counted without the email scope: asks again tomorrow
+			if (lic.reason == 'unknown')
+			{
+				this.setDriveUseCache(user, {view: marker.view, edit: marker.edit, wait: today});
+				done();
+			}
+			// Personal accounts are never counted: doesn't ask again this month
+			else if (lic.reason == 'personal')
+			{
+				this.setDriveUseCache(user, {view: month, edit: month});
+				done();
+			}
+			else
+			{
+				marker.view = (counts.view) ? month : marker.view;
+				marker.edit = (counts.edit) ? month : marker.edit;
+				this.setDriveUseCache(user, marker);
+
+				// Only into the Drive of the user who was counted
+				if (this.drive != null && this.drive.getUser() != null &&
+					this.drive.getUser().id == user.id)
+				{
+					this.drive.setUsageMarker(marker, done, done);
+					this.handleLicense(lic, null);
+				}
+				else
+				{
+					done();
+				}
+			}
+		}), done))
+		{
+			done();
+		}
+	}), mxUtils.bind(this, function(err)
+	{
+		// Without the drive.appdata scope the user can't be counted only once
+		// a month, so isn't counted, and is asked again tomorrow
+		if (err != null && (err.status == 401 || err.status == 403))
+		{
+			var cache = this.getDriveUseCache(user);
+			cache.wait = today;
+			this.setDriveUseCache(user, cache);
+		}
+
+		done();
+	}));
+};
+
+/**
+ * Reports the user's first save of a Google Drive diagram this month
+ * (App.reportDriveUse), called by DriveFile after each save.
+ */
+App.prototype.reportDriveEdit = function()
+{
+	this.reportDriveUse('edit');
+};
+
+/**
+ * Returns true if the steps that start using draw.io ask for the Terms of
+ * Use: on draw.io's own hosts (App.termsHosts), not in development mode
+ * (dev=1) or embed mode, which has no such steps.
+ */
+App.prototype.isTermsAsked = function()
+{
+	return urlParams['dev'] != '1' && urlParams['embed'] != '1' &&
+		App.termsHosts.indexOf(window.location.hostname) >= 0;
+};
+
+/**
+ * Returns the line next to the button of a step that starts using draw.io
+ * (StorageDialog, AuthDialog), whose click accepts the Terms of Use
+ * (acceptTerms): "By continuing you agree to the Terms of Use and have read
+ * the Privacy Policy", with links. The Privacy Policy is a notice, never
+ * agreed to. Null where the Terms aren't asked for (isTermsAsked). Text and
+ * links only, written as text.
+ */
+App.prototype.createTermsNotice = function()
+{
+	if (!this.isTermsAsked())
+	{
+		return null;
+	}
+
+	var link = mxUtils.bind(this, function(url, label)
+	{
+		var a = document.createElement('a');
+		a.setAttribute('href', url);
+		a.setAttribute('target', '_blank');
+		a.setAttribute('rel', 'noopener noreferrer');
+		mxUtils.write(a, label);
+
+		mxEvent.addListener(a, 'click', mxUtils.bind(this, function(evt)
+		{
+			this.openLink(url);
+			mxEvent.consume(evt);
+		}));
+
+		return a;
+	});
+
+	var links = {'{1}': link(App.termsUrl, mxResources.get('termsOfUse', null, 'Terms of Use')),
+		'{2}': link(App.privacyUrl, mxResources.get('privacyPolicy', null, 'Privacy Policy'))};
+	var parts = mxResources.get('termsNotice', null, 'By continuing you agree to the {1} and ' +
+		'have read the {2}.').split(/(\{[12]\})/);
+	var notice = document.createElement('p');
+	notice.className = 'geDialogHint';
+	notice.style.whiteSpace = 'normal';
+	notice.style.lineHeight = '1.2em';
+
+	for (var i = 0; i < parts.length; i++)
+	{
+		if (Object.prototype.hasOwnProperty.call(links, parts[i]))
+		{
+			notice.appendChild(links[parts[i]]);
+		}
+		else
+		{
+			mxUtils.write(notice, parts[i]);
+		}
+	}
+
+	return notice;
+};
+
+/**
+ * Records that the user accepted the Terms of Use with the button of a step
+ * that showed the notice (createTermsNotice): the version and when, in this
+ * browser and, if the step was for Google Drive (peer), in the user's own
+ * Drive once they are signed in (recordTermsInDrive). Nothing goes to
+ * draw.io's servers.
+ */
+App.prototype.acceptTerms = function(peer)
+{
+	if (this.isTermsAsked())
+	{
+		var record = this.getTermsRecord();
+
+		if (record == null || record.version !== App.termsVersion)
+		{
+			this.setTermsRecord({version: App.termsVersion, accepted: new Date().toISOString()});
+		}
+
+		if (peer != null && peer == this.drive)
+		{
+			this.termsDrivePending = true;
+			this.recordTermsInDrive();
+		}
+	}
+};
+
+/**
+ * Writes the Terms of Use the user accepted at a step for Google Drive
+ * (acceptTerms) to draw.io's app data folder of their Drive, once they are
+ * signed in, unless it holds the current version. Fails quietly: without
+ * the drive.appdata scope (403) the browser's record stays; an expired
+ * token or no network tries again at the next sign-in.
+ */
+App.prototype.recordTermsInDrive = function()
+{
+	var user = (this.drive != null) ? this.drive.getUser() : null;
+	var record = this.getTermsRecord();
+
+	if (this.termsDrivePending && user != null && !this.isOffline() &&
+		record != null && record.version === App.termsVersion)
+	{
+		this.termsDrivePending = false;
+
+		var retry = mxUtils.bind(this, function(err)
+		{
+			this.termsDrivePending = err == null || err.status != 403;
+		});
+
+		this.drive.getTermsRecord(App.termsVersion, mxUtils.bind(this, function(stored)
+		{
+			if (stored.version !== App.termsVersion && this.drive != null && this.drive.getUser() != null &&
+				this.drive.getUser().id == user.id)
+			{
+				this.drive.setTermsRecord({id: stored.id, version: record.version,
+					accepted: record.accepted}, function()
+				{
+					// Done
+				}, retry);
+			}
+		}), retry);
+	}
+};
+
+/**
+ * Returns the record of the Terms of Use accepted in this browser,
+ * {version, accepted}, or null.
+ */
+App.prototype.getTermsRecord = function()
+{
+	var record = null;
+
+	try
+	{
+		record = (isLocalStorage) ? JSON.parse(localStorage.getItem(App.termsKey)) : null;
+	}
+	catch (e)
+	{
+		// ignore
+	}
+
+	return (record != null && typeof record.version === 'string') ? {version: record.version,
+		accepted: (typeof record.accepted === 'string') ? record.accepted : null} : null;
+};
+
+/**
+ * Stores the record of the Terms of Use accepted in this browser.
+ */
+App.prototype.setTermsRecord = function(record)
+{
+	try
+	{
+		if (isLocalStorage)
+		{
+			localStorage.setItem(App.termsKey, JSON.stringify({version: record.version,
+				accepted: record.accepted}));
+		}
+	}
+	catch (e)
+	{
+		// ignore
+	}
 };
 
 /**
@@ -3016,10 +3484,9 @@ App.prototype.onBeforeUnload = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Updates the document title with the title of the current file and the app
+ * name, or the name of the current page in lightbox view and the simple
+ * theme.
  */
 App.prototype.updateDocumentTitle = function()
 {
@@ -3105,6 +3572,7 @@ App.prototype.getThumbnail = function(width, fn, border)
 				graph.mathEnabled = page.viewState.mathEnabled;
 				bgImg = page.viewState.backgroundImage;
 				graph.setBackgroundImage(bgImg);
+				graph.setMeasureScale(page.viewState.measureScale);
 			}
 
 			graph.getGlobalVariable = function(name)
@@ -3286,10 +3754,8 @@ App.prototype.getThumbnail = function(width, fn, border)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Overrides setMode to update Editor.useLocalStorage and the tooltip of the
+ * app icon, and to store the mode if remember is true.
  */
 (function()
 {
@@ -3318,10 +3784,6 @@ App.prototype.getThumbnail = function(width, fn, border)
 					if (mode == App.MODE_GOOGLE)
 					{
 						this.appIcon.setAttribute('title', mxResources.get('openIt', [mxResources.get('googleDrive')]));
-					}
-					else if (mode == App.MODE_DROPBOX)
-					{
-						this.appIcon.setAttribute('title', mxResources.get('openIt', [mxResources.get('dropbox')]));
 					}
 					else if (mode == App.MODE_ONEDRIVE)
 					{
@@ -3366,9 +3828,8 @@ App.prototype.getThumbnail = function(width, fn, border)
 })();
 
 /**
- * Function: authorize
- * 
- * Authorizes the client, gets the userId and calls <open>.
+ * Opens the URL of the current file, or of its folder if Alt is pressed, or
+ * the start page of the storage of the current file.
  */
 App.prototype.appIconClicked = function(evt)
 {
@@ -3377,43 +3838,14 @@ App.prototype.appIconClicked = function(evt)
 	var url = (file != null) ? (mxEvent.isAltDown(evt) ?
 		file.getFolderUrl() : file.getFileUrl()) : null;
 
-	if (url != null)
+	var storage = (mode != null) ? App.storages[mode] : null;
+
+	if (url == null)
 	{
-		this.openLink(url);
+		url = (storage != null && storage.url != null) ? storage.url : 'https://www.drawio.com/';
 	}
-	else if (mode == App.MODE_GOOGLE)
-	{
-		this.openLink('https://drive.google.com/?authuser=0');
-	}
-	else if (mode == App.MODE_ONEDRIVE)
-	{
-		this.openLink('https://onedrive.live.com/');
-	}
-	else if (mode == App.MODE_DROPBOX)
-	{
-		this.openLink('https://www.dropbox.com/');
-	}
-	else if (mode == App.MODE_GITHUB)
-	{
-		this.openLink('https://github.com/');
-	}
-	else if (mode == App.MODE_GITLAB)
-	{
-		this.openLink(DRAWIO_GITLAB_URL);
-	}
-	else if (mode == App.MODE_TRELLO)
-	{
-		this.openLink('https://trello.com/');
-	}
-	else if (mode == App.MODE_DEVICE)
-	{
-		this.openLink('https://get.draw.io/');
-	}
-	else
-	{
-		this.openLink('https://www.drawio.com/');
-	}
-	
+
+	this.openLink(url);
 	mxEvent.consume(evt);
 };
 
@@ -3659,7 +4091,8 @@ App.prototype.showRefreshDialog = function(title, message)
 };
 
 /**
- * Called in start after the spinner stops.
+ * Shows the given message in a closable alert that hides itself after a
+ * delay.
  */
 App.prototype.showAlert = function(message)
 {
@@ -3667,6 +4100,7 @@ App.prototype.showAlert = function(message)
 	{
 		var div = document.createElement('div');
 		div.className = 'geAlert';
+		div.setAttribute('role', 'alert');
 		div.style.zIndex = 2e9; 
 		div.style.left = '50%';
 		div.style.top = '-100%';
@@ -3686,6 +4120,7 @@ App.prototype.showAlert = function(message)
 		close.style.display = 'block';
 		close.setAttribute('title', mxResources.get('close'));
 		close.innerHTML = mxResources.get('close');
+		Editor.initKeyboardButton(close);
 		div.appendChild(close);
 		
 		mxEvent.addListener(close, 'click', function(evt)
@@ -3723,10 +4158,9 @@ App.prototype.showAlert = function(message)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Starts the app after initialization. Restores the libraries, installs the
+ * global error and hash change handlers and opens the diagram specified in
+ * the URL, or shows the splash screen.
  */
 App.prototype.start = function()
 {
@@ -3800,7 +4234,10 @@ App.prototype.start = function()
 						lastId = id;
 						var file = this.getCurrentFile();
 
-						if (file == null || file.getHash() != id)
+						// A file created from a #create link is also the file of
+						// the hash it was rewritten to (see executeCreateObject)
+						if (file == null || (file.getHash() != id &&
+							file.createdHash != id))
 						{
 							this.loadFile(id, true);
 						}
@@ -4051,7 +4488,13 @@ App.prototype.start = function()
 						this.fileLoaded(new LocalFile(this, xml, null));
 						
 						this.editor.graph.setEnabled(false);
-						this.mode = urlParams['mode'];
+						var mode = urlParams['mode'];
+
+						// Ignores a requested mode for a storage that has been removed
+						// or that is not enabled (trello without tr=1), as in init
+						this.mode = (mode != null && App.isKnownMode(mode) &&
+							(mode != App.MODE_TRELLO || this.isModeEnabled(mode))) ?
+							mode : null;
 						var title = urlParams['title'];
 		
 						if (title != null)
@@ -4227,10 +4670,10 @@ App.prototype.start = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Creates a new diagram from the given create object, whose data can be
+ * XML, CSV, Mermaid or a prompt for generating a diagram, or is loaded from
+ * its url, and invokes done. Applies the optional layouts and stores the
+ * resulting XML in the URL hash.
  */
 App.prototype.executeCreateObject = function(value, done)
 {
@@ -4247,6 +4690,8 @@ App.prototype.executeCreateObject = function(value, done)
 				value.filename : this.defaultFilename,
 				xml, null, null, mxUtils.bind(this, function()
 				{
+					var file = this.getCurrentFile();
+
 					if (urlParams['pv'] != null)
 					{
 						this.setPageVisible(urlParams['pv'] == '1');
@@ -4293,13 +4738,41 @@ App.prototype.executeCreateObject = function(value, done)
 						// without re-running them.
 						value.type = 'xml';
 						value.compressed = true;
-						value.data = Graph.compress((value.layout != null ||
-							value.applyLayouts) ?
-							mxUtils.getXml(this.editor.getGraphXml()) : xml);
+						var data = xml;
+
+						if (value.layout != null || value.applyLayouts)
+						{
+							// Keeps the Alt Text of the page (see createMermaidPageXml)
+							data = mxUtils.getXml((this.currentPage != null &&
+								this.currentPage.getAlt() != null) ?
+								this.getXmlFileData(null, null, true) :
+								this.editor.getGraphXml());
+						}
+
+						value.data = Graph.compress(data);
 						delete value.layout;
 						delete value.applyLayouts;
-						window.location.hash = 'create=' +
-							encodeURIComponent(JSON.stringify(value));
+						var hash = 'create=' + encodeURIComponent(JSON.stringify(value));
+
+						// fileLoaded has cleared the hash for the new file, and
+						// the hashchange handler compares the result with the
+						// hash from before the load. Any rewrite that differs
+						// from the link (Mermaid, CSV, another encoder, a host
+						// that re-encodes the link) would load the link again
+						// and ask to discard the changes. Skipped if another
+						// file was opened while a layout ran.
+						if (file != null && file == this.getCurrentFile())
+						{
+							file.createdHash = hash;
+							window.location.hash = hash;
+						}
+
+						// explore: opens the explorer for a cell of a page with
+						// a number of levels (see EditorUi.openExplorer)
+						if (value.explore != null)
+						{
+							this.openExplorer(value.explore);
+						}
 					});
 
 					// layout: run the requested layout (a preset name or
@@ -4333,6 +4806,60 @@ App.prototype.executeCreateObject = function(value, done)
 				}), true, null, true);
 		});
 
+		// url: loads the data from the given URL like a template, via the
+		// proxy where CORS isn't enabled. For the xml type (the default) the
+		// diagram is taken from the file: a .drawio or .xml file, an editable
+		// SVG or PNG, or a Visio, Gliffy or Lucidchart file. Other types use
+		// the text of the file. The hash written after the diagram was created
+		// carries the data, so a reload doesn't load the URL again.
+		if (value.url != null && value.data == null)
+		{
+			var url = String(value.url);
+			delete value.url;
+			this.spinner.spin(document.body, mxResources.get('loading'));
+
+			this.loadTemplate(url, mxUtils.bind(this, function(text)
+			{
+				// Each type starts its own spinner as without a URL, and the
+				// generate type only runs if it can start it
+				this.spinner.stop();
+
+				try
+				{
+					if (value.type == null || value.type == 'xml')
+					{
+						var node = (text != null) ? this.editor.extractGraphModel(
+							mxUtils.parseXml(text).documentElement, true) : null;
+
+						if (node == null)
+						{
+							throw new Error(mxResources.get('invalidOrMissingFile'));
+						}
+
+						value.type = 'xml';
+						value.data = mxUtils.getXml(node);
+					}
+					else
+					{
+						value.data = text;
+					}
+
+					delete value.compressed;
+					this.executeCreateObject(value, done);
+				}
+				catch (e)
+				{
+					this.handleError(e, mxResources.get('errorLoadingFile'));
+				}
+			}), mxUtils.bind(this, function(e)
+			{
+				this.spinner.stop();
+				this.handleError(e, mxResources.get('errorLoadingFile'));
+			}));
+
+			return;
+		}
+
 		var data = value.data;
 
 		if (value.compressed)
@@ -4349,24 +4876,33 @@ App.prototype.executeCreateObject = function(value, done)
 					this.handleError(e);
 				});
 
+				// A created diagram is new, so it gets the defaults version of
+				// new diagrams unless the link names one (eg. to match a preview
+				// that was rendered with another version)
+				var version = (value.version != null) ? String(value.version) :
+					EditorUi.getInsertMermaidVersion();
+
 				if (value.image)
 				{
 					// image:true creates the diagram as a static SVG image cell
 					// (carrying the mermaid source for re-editing), matching the
 					// legacy image insert. New images follow the configured Mermaid
 					// config, or keep the legacy look when unset (parseMermaidImage).
+					// The diagram is the page, so its text alternative becomes
+					// the Alt Text of the page (see createMermaidPageXml)
 					this.parseMermaidImage(data, mxUtils.bind(this, function(xml)
 					{
-						createDiagram(xml);
-					}), onMermaidError);
+						createDiagram(this.createMermaidPageXml(xml));
+					}), onMermaidError, version);
 				}
 				else
 				{
 					this.parseMermaidDiagram(data, null, mxUtils.bind(this, function(xml)
 					{
-						createDiagram(mxMermaidToDrawio.wrapGroup(xml, data,
-							EditorUi.getInsertMermaidConfig()));
-					}), onMermaidError);
+						createDiagram(this.createMermaidPageXml(mxMermaidToDrawio.wrapGroup(
+							xml, data, EditorUi.getInsertMermaidConfig(),
+							(version != null) ? {version: version} : null)));
+					}), onMermaidError, null, version);
 				}
 			}
 			else
@@ -4460,9 +4996,27 @@ App.prototype.openGenerateDialog = function(prompt)
 };
 
 /**
- * Generate a diagram for the given description.
+ * Returns true if templates can be inserted (see Insert, Template).
  */
-App.prototype.openTemplateDialog = function(generatePrompt)
+App.prototype.isTemplateSearchSupported = function()
+{
+	return this.insertTemplateEnabled && !this.isOffline() &&
+		this.editor.graph.isEnabled();
+};
+
+/**
+ * Opens the templates dialog with the given search terms.
+ */
+App.prototype.searchTemplates = function(terms)
+{
+	this.openTemplateDialog(null, terms);
+};
+
+/**
+ * Opens the templates dialog for inserting a template with the optional
+ * prompt for generating a diagram and the optional search terms.
+ */
+App.prototype.openTemplateDialog = function(generatePrompt, searchTerms)
 {
 	var graph = this.editor.graph;
 	
@@ -4482,7 +5036,8 @@ App.prototype.openTemplateDialog = function(generatePrompt)
 				graph.scrollCellToVisible(graph.getSelectionCell());
 			}
 		}), null, null, null, null, null, null, null, null, null, null,
-			false, mxResources.get('insert'), null, null, generatePrompt);
+			false, mxResources.get('insert'), null, null, generatePrompt,
+			null, true);
 
 		this.showDialog(dlg.container, 620, 460, true, true, mxUtils.bind(this, function()
 		{
@@ -4490,6 +5045,11 @@ App.prototype.openTemplateDialog = function(generatePrompt)
 		}));
 		
 		dlg.init();
+
+		if (searchTerms != null && searchTerms.length > 0)
+		{
+			dlg.searchTemplates(searchTerms);
+		}
 	}
 };
 
@@ -4681,10 +5241,175 @@ App.prototype.checkDrafts = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the Home screen (HomeDialog) can be shown: the full app
+ * with Google Drive, never with ?home=0. HomeDialog.js is only bundled next
+ * to DriveClient.js (app.min.js).
+ */
+App.prototype.isHomeAvailable = function()
+{
+	return this.drive != null && typeof HomeDialog === 'function' &&
+		urlParams['home'] != '0' && !this.editor.chromeless &&
+		urlParams['embed'] != '1' && urlParams['noFileMenu'] != '1' &&
+		!mxClient.IS_CHROMEAPP && !EditorUi.isElectronApp;
+};
+
+/**
+ * Returns true if the Home screen replaces the splash dialog: in Google Drive
+ * mode.
+ */
+App.prototype.isHomeEnabled = function()
+{
+	return this.mode == App.MODE_GOOGLE && this.isHomeAvailable();
+};
+
+/**
+ * Returns true if File > My Diagrams opens the Home screen: in Google Drive
+ * mode, or whenever the user is signed in to Google Drive, whatever the
+ * storage of the current diagram.
+ */
+App.prototype.isMyDiagramsEnabled = function()
+{
+	return this.isHomeAvailable() && (this.mode == App.MODE_GOOGLE ||
+		this.drive.getUser() != null || this.drive.userId != null);
+};
+
+/**
+ * Shows the Home screen. Opened with no file (at startup, or after the new
+ * diagram dialog is cancelled), closing it creates a blank diagram, like the
+ * splash dialog. Background clicks don't close it, since that would create
+ * that diagram by accident.
+ */
+App.prototype.showHome = function()
+{
+	if (!this.isMyDiagramsEnabled())
+	{
+		return;
+	}
+
+	var startup = this.getCurrentFile() == null;
+	var dlg = new HomeDialog(this, startup);
+	var w = Math.max(280, Math.min(960, window.innerWidth - 96));
+	var h = Math.max(320, Math.min(640, window.innerHeight - 96));
+
+	this.showDialog(dlg.container, w, h, true, true, mxUtils.bind(this, function(cancel, isEsc)
+	{
+		dlg.destroy();
+
+		if ((cancel || isEsc) && startup && this.getCurrentFile() == null)
+		{
+			var prev = Editor.useLocalStorage;
+			this.createFile(this.defaultFilename, null, null, null, null, null, null,
+				urlParams['local'] != '1');
+			Editor.useLocalStorage = prev;
+		}
+	}), null, null, null, true);
+
+	dlg.init();
+};
+
+/**
+ * Returns true if a Google Drive file that returned 404 asks for access
+ * (showDriveAccessDialog) instead of showing an error: where the Home screen
+ * can show, and in the lightbox and viewer of published links, which only
+ * open Drive files each user opened with draw.io before. Not in a frame,
+ * where the Picker would need the origin of the top page.
+ */
+App.prototype.isDriveAccessAvailable = function()
+{
+	return this.isHomeAvailable() || (this.drive != null &&
+		this.editor.isChromelessView() && urlParams['embed'] != '1' &&
+		window.self === window.top);
+};
+
+/**
+ * Asks for access to a Google Drive file that returned 404 (drive.file only
+ * sees files the user created or picked with draw.io). Allow access opens
+ * the Google Picker limited to that file, and picking it grants the file and
+ * loads it. Returns false if the Picker isn't available.
+ */
+App.prototype.showDriveAccessDialog = function(id, changeUserFn, cancelFn)
+{
+	if (this.drive == null || !DriveClient.isFileId(id) ||
+		typeof google === 'undefined' || google.picker == null)
+	{
+		return false;
+	}
+
+	var div = document.createElement('div');
+	div.className = 'geHomeAccess';
+
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, mxResources.get('allowAccessTitle', null, 'Allow access to this diagram'));
+	div.appendChild(hd);
+
+	var user = this.drive.getUser();
+	var msg = document.createElement('div');
+	msg.style.lineHeight = 'normal';
+	mxUtils.write(msg, mxResources.get('allowAccessMessage', [(user != null && user.email != null) ?
+		user.email : mxResources.get('googleDrive')], 'draw.io can only open the Google Drive files ' +
+		'you choose. Select this diagram in the Google file picker to open it. If it isn\'t listed, ' +
+		'it doesn\'t exist or isn\'t shared with {1}.'));
+	div.appendChild(msg);
+
+	// Secondary actions as links, so the buttons are only Cancel and Allow access
+	var links = document.createElement('div');
+	links.className = 'geHomeLinks';
+
+	var openInDrive = mxUtils.button(mxResources.get('openInGoogleDrive', null,
+		'Open in Google Drive'), mxUtils.bind(this, function()
+	{
+		// The file viewer shows Drive's own page for missing or inaccessible
+		// files, where /open?id= shows a generic 404 page
+		this.openLink('https://drive.google.com/file/d/' + encodeURIComponent(id) + '/view');
+	}));
+	openInDrive.className = 'geHomeLink';
+	links.appendChild(openInDrive);
+
+	if (changeUserFn != null)
+	{
+		var changeUser = mxUtils.button(mxResources.get('changeUser'), mxUtils.bind(this, function()
+		{
+			this.hideDialog();
+			changeUserFn();
+		}));
+		changeUser.className = 'geHomeLink';
+		links.appendChild(changeUser);
+	}
+
+	div.appendChild(links);
+
+	var dlg = new CustomDialog(this, div, mxUtils.bind(this, function()
+	{
+		this.drive.pickDiagrams({fileIds: [id], title: mxResources.get('allowAccessTitle', null,
+			'Allow access to this diagram')}, mxUtils.bind(this, function(docs)
+		{
+			if (docs.length > 0)
+			{
+				this.loadFile('G' + docs[0].id, true);
+			}
+			else if (cancelFn != null)
+			{
+				cancelFn();
+			}
+		}), cancelFn);
+	}), cancelFn, mxResources.get('allowAccess', null, 'Allow access'));
+
+	// Escape closes the dialog without the Cancel button
+	this.showDialog(dlg.container, 420, null, true, false, function(cancel, isEsc)
+	{
+		if (isEsc && cancelFn != null)
+		{
+			cancelFn();
+		}
+	});
+
+	return true;
+};
+
+/**
+ * Shows the dialog for selecting the storage if no mode is set or force is
+ * true, followed by the splash dialog or the home screen. Closing the splash
+ * dialog creates a blank diagram.
  */
 App.prototype.showSplash = function(force)
 {
@@ -4698,6 +5423,13 @@ App.prototype.showSplash = function(force)
 	
 	var showSecondDialog = mxUtils.bind(this, function()
 	{
+		if (this.isHomeEnabled())
+		{
+			this.showHome();
+
+			return;
+		}
+
 		var dlg = new SplashDialog(this);
 		
 		this.showDialog(dlg.container, 340, (mxClient.IS_CHROMEAPP ||
@@ -4734,7 +5466,8 @@ App.prototype.showSplash = function(force)
 			showSecondDialog();
 		}), rowLimit);
 		
-		this.showDialog(dlg.container, (rowLimit < 3) ? 200 : 300,
+		// With the Terms of Use notice, the height of the content
+		this.showDialog(dlg.container, (rowLimit < 3) ? 200 : 300, (dlg.notice != null) ? null :
 			((serviceCount > 3) ? 320 : 210), true, false);
 	}
 	else if (urlParams['create'] == null)
@@ -4744,10 +5477,8 @@ App.prototype.showSplash = function(force)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Adds a globe icon with an optional label for the language menu to the
+ * given element and returns the icon.
  */
 App.prototype.addLanguageMenu = function(elt, addLabel, right)
 {
@@ -4953,7 +5684,8 @@ App.prototype.createFileSystemOptions = function(name)
 };
 
 /**
- * Loads the given file handle as a local file.
+ * Shows the save file picker with the given options and passes the file
+ * handle and its File object to success.
  */
 App.prototype.showSaveFilePicker = function(success, error, opts)
 {
@@ -4980,10 +5712,8 @@ App.prototype.showSaveFilePicker = function(success, error, opts)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Shows the file picker for opening a file in the given or current storage
+ * mode.
  */
 App.prototype.pickFile = function(mode)
 {
@@ -5144,10 +5874,8 @@ App.prototype.pickFile = function(mode)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Shows the file picker for opening a library in the given or current
+ * storage mode and adds the picked library to the sidebar.
  */
 App.prototype.pickLibrary = function(mode)
 {
@@ -5176,15 +5904,14 @@ App.prototype.pickLibrary = function(mode)
 		}
 	});
 	
-	if (mode == App.MODE_GOOGLE || mode == App.MODE_DROPBOX || mode == App.MODE_ONEDRIVE ||
+	if (mode == App.MODE_GOOGLE || mode == App.MODE_ONEDRIVE ||
 		mode == App.MODE_GITHUB || mode == App.MODE_GITLAB || mode == App.MODE_TRELLO)
 	{
 		var peer = (mode == App.MODE_GOOGLE) ? this.drive :
 			((mode == App.MODE_ONEDRIVE) ? this.oneDrive :
 			((mode == App.MODE_GITHUB) ? this.gitHub :
 			((mode == App.MODE_GITLAB) ? this.gitLab :
-			((mode == App.MODE_TRELLO) ? this.trello :
-			this.dropbox))));
+			this.trello)));
 		
 		if (peer != null)
 		{
@@ -5299,10 +6026,10 @@ App.prototype.pickLibrary = function(mode)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Saves the given images as a library with the given name. If file is null,
+ * a new library is created in a folder picked for the given or current
+ * storage mode, otherwise the given library is renamed if needed and saved.
+ * Invokes fn after saving or on error.
  */
 App.prototype.saveLibrary = function(name, images, file, mode, noSpin, noReload, fn)
 {
@@ -5365,15 +6092,6 @@ App.prototype.saveLibrary = function(name, images, file, mode, noSpin, noReload,
 				else if (mode == App.MODE_TRELLO && this.trello != null && this.spinner.spin(document.body, mxResources.get('inserting')))
 				{
 					this.trello.insertLibrary(name, xml, mxUtils.bind(this, function(newFile)
-					{
-						this.spinner.stop();
-						this.hideDialog(true);
-						this.libraryLoaded(newFile, images);
-					}), error, folderId);
-				}
-				else if (mode == App.MODE_DROPBOX && this.dropbox != null && this.spinner.spin(document.body, mxResources.get('inserting')))
-				{
-					this.dropbox.insertLibrary(name, xml, mxUtils.bind(this, function(newFile)
 					{
 						this.spinner.stop();
 						this.hideDialog(true);
@@ -5461,7 +6179,10 @@ App.prototype.saveLibrary = function(name, images, file, mode, noSpin, noReload,
 };
 
 /**
- * Adds the label menu items to the given menu and parent.
+ * Saves the current file under its title. Shows a dialog for the filename
+ * and location instead if forceDialog is true, if the file has no title or
+ * valid file handle, or if no storage mode is set. Invokes success after
+ * saving.
  */
 App.prototype.saveFile = function(forceDialog, success)
 {
@@ -5669,10 +6390,9 @@ App.prototype.saveFile = function(forceDialog, success)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Loads the template from the given URL, via the proxy if CORS is not
+ * enabled, and passes its diagram data to onload. Visio, Gliffy, Lucidchart
+ * and PNG files are converted.
  */
 App.prototype.loadTemplate = function(url, onload, onerror, templateFilename, asLibrary)
 {
@@ -5763,44 +6483,22 @@ App.prototype.loadTemplate = function(url, onload, onerror, templateFilename, as
  */
 App.prototype.getModeForChar = function(char)
 {
-	if (char == 'G')
+	if (char != null)
 	{
-		return App.MODE_GOOGLE;
+		for (var mode in App.storages)
+		{
+			if (App.storages[mode].char == char)
+			{
+				return mode;
+			}
+		}
 	}
-	else if (char == 'D')
-	{
-		return App.MODE_DROPBOX;
-	}
-	else if (char == 'W')
-	{
-		return App.MODE_ONEDRIVE;
-	}
-	else if (char == 'M') {
-		return App.MODE_M365;
-	}
-	else if (char == 'H')
-	{
-		return App.MODE_GITHUB;
-	}
-	else if (char == 'A')
-	{
-		return App.MODE_GITLAB;
-	}
-	else if (char == 'T')
-	{
-		return App.MODE_TRELLO;
-	}
-	else
-	{
-		return null;
-	}
+
+	return null;
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the storage for the given mode is available and enabled.
  */
 App.prototype.isModeEnabled = function(mode)
 {
@@ -5819,12 +6517,6 @@ App.prototype.isModeEnabled = function(mode)
 	else if (mode == App.MODE_GITLAB)
 	{
 		return this.gitLab != null;
-	}
-	else if (mode == App.MODE_DROPBOX)
-	{
-		return typeof window.DropboxClient === 'function' && urlParams['db'] == '1' &&
-			mxClient.IS_SVG && (document.documentMode == null ||
-				document.documentMode > 9);
 	}
 	else if (mode == App.MODE_ONEDRIVE)
 	{
@@ -5856,20 +6548,15 @@ App.prototype.isModeEnabled = function(mode)
 
 /**
  * Returns true if the peer for the given mode has been loaded.
- * For Dropbox, the picker must have also been loaded.
  */
 App.prototype.isModeReady = function(mode)
 {
-	return this.getServiceForName(mode) != null &&
-		(mode != App.MODE_DROPBOX ||
-		typeof Dropbox.choose !== 'undefined');
+	return this.getServiceForName(mode) != null;
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the given file data with the compressed diagrams replaced by their
+ * XML. Returns the data unchanged if it cannot be parsed.
  */
 App.prototype.uncompressPages = function(data)
 {
@@ -5908,10 +6595,9 @@ App.prototype.uncompressPages = function(data)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Creates a new file with the given title and data, or an empty diagram, in
+ * the given or current storage mode and passes it to fileCreated. Temporary
+ * files are created as local files without a storage mode.
  */
 App.prototype.createFile = function(title, data, libs, mode, done, replace, folderId, tempFile, clibs, success)
 {
@@ -5978,10 +6664,6 @@ App.prototype.createFile = function(title, data, libs, mode, done, replace, fold
 			{
 				this.trello.insertFile(title, data, fileCreated, error, false, folderId);
 			}
-			else if (mode == App.MODE_DROPBOX && this.dropbox != null)
-			{
-				this.dropbox.insertFile(title, data, fileCreated, error);
-			}
 			else if (mode == App.MODE_ONEDRIVE && this.oneDrive != null)
 			{
 				this.oneDrive.insertFile(title, data, fileCreated, error, false, folderId);
@@ -6000,12 +6682,9 @@ App.prototype.createFile = function(title, data, libs, mode, done, replace, fold
 				
 				this.showSaveFilePicker(mxUtils.bind(this, function(fileHandle, desc)
 				{
-					var file = new LocalFile(this, data, desc.name, null, fileHandle, desc);
-					
-					file.saveFile(desc.name, false, mxUtils.bind(this, function()
-					{
-						this.fileCreated(file, libs, replace, done, clibs, success);
-					}), error, true);
+					// File is written in fileCreated to use the format of the file name
+					this.fileCreated(new LocalFile(this, data, desc.name, null, fileHandle, desc),
+						libs, replace, done, clibs, success);
 				}), mxUtils.bind(this, function(e)
 				{
 					if (e.name != 'AbortError')
@@ -6030,10 +6709,9 @@ App.prototype.createFile = function(title, data, libs, mode, done, replace, fold
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Saves the data of the given new file, which needs the ID of the file for
+ * the redirect, and opens the file in a new window if replace is false or in
+ * this window otherwise. The given libraries are loaded after opening.
  */
 App.prototype.fileCreated = function(file, libs, replace, done, clibs, success)
 {
@@ -6175,17 +6853,14 @@ App.prototype.fileCreated = function(file, libs, replace, done, clibs, success)
 			}
 		});
 
-		// Updates data in memory for local files
-		if (file.constructor == LocalFile)
+		// Updates data in memory for local files without a file handle
+		if (file.constructor == LocalFile && file.fileHandle == null)
 		{
 			fn();
 		}
 		else
 		{
-			file.saveFile(file.getTitle(), false, mxUtils.bind(this, function()
-			{
-				fn();
-			}), mxUtils.bind(this, function(resp)
+			var saveError = mxUtils.bind(this, function(resp)
 			{
 				complete();
 
@@ -6193,16 +6868,29 @@ App.prototype.fileCreated = function(file, libs, replace, done, clibs, success)
 				{
 					this.handleError(resp);
 				}
-			}));
+			});
+
+			// Writes the data created above for new local files with a file handle
+			if (file.constructor == LocalFile)
+			{
+				file.saveFile(file.getTitle(), false, fn, saveError, true);
+			}
+			else
+			{
+				file.saveFile(file.getTitle(), false, mxUtils.bind(this, function()
+				{
+					fn();
+				}), saveError);
+			}
 		}
 	}
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Loads the file with the given ID, or the given file if it is already
+ * loaded. If a file is open and sameWindow is false, a dialog offers to open
+ * the file in a new window. Asks before discarding changes unless force is
+ * true.
  */
 App.prototype.loadFile = function(id, sameWindow, file, success, force)
 {
@@ -6552,13 +7240,28 @@ App.prototype.loadFile = function(id, sameWindow, file, success, force)
 					else
 					{
 						var peerChar = id.charAt(0);
-						id = decodeURIComponent(id.substring(1));
+						// Malformed hashes are passed on as-is so that the service reports the error
+						id = mxUtils.safeDecodeURIComponent(id.substring(1));
 
 						peer.getFile(id, mxUtils.bind(this, function(file)
 						{
 							this.spinner.stop();
 							this.fileLoaded(file);
 							var currentFile = this.getCurrentFile();
+
+							// Counts the user as a viewer of the month. Must never
+							// stop a diagram from opening.
+							if (mode == App.MODE_GOOGLE && currentFile != null && currentFile == file)
+							{
+								try
+								{
+									this.reportDriveUse('view');
+								}
+								catch (e)
+								{
+									// ignore
+								}
+							}
 							
 							if (currentFile == null)
 							{
@@ -6643,9 +7346,10 @@ App.prototype.loadFile = function(id, sameWindow, file, success, force)
 					}
 				});
 
-				// Dropbox support has ended, explains where the files are instead of
-				// showing a generic service error. Opening still works with db=1.
-				if (mode == App.MODE_DROPBOX && this.getServiceForName(mode) == null)
+				// Dropbox support has ended and there is no mode for its hashes
+				// any more, so explain where the files are instead of showing a
+				// generic service error (old #D links stay around for years).
+				if (id.charAt(0) == 'D')
 				{
 					this.spinner.stop();
 
@@ -6702,10 +7406,8 @@ App.prototype.loadFile = function(id, sameWindow, file, success, force)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns the tooltip for the given library, which contains its title, hash
+ * and storage name.
  */
 App.prototype.getLibraryStorageHint = function(file)
 {
@@ -6728,10 +7430,6 @@ App.prototype.getLibraryStorageHint = function(file)
 	{
 		tip += ' (' + mxResources.get('trello') + ')';
 	}
-	else if (file.constructor == DropboxLibrary)
-	{
-		tip += ' (' + mxResources.get('dropbox') + ')';
-	}
 	else if (file.constructor == OneDriveLibrary)
 	{
 		tip += ' (' + mxResources.get('oneDrive') + ')';
@@ -6749,7 +7447,7 @@ App.prototype.getLibraryStorageHint = function(file)
 };
 
 /**
- * Updates action states depending on the selection.
+ * Loads the custom libraries from the settings and the clibs URL parameter.
  */
 App.prototype.restoreLibraries = function()
 {
@@ -6773,7 +7471,8 @@ App.prototype.restoreLibraries = function()
 };
 
 /**
- * Updates action states depending on the selection.
+ * Loads the libraries with the given IDs into the sidebar and invokes done
+ * when all libraries are loaded.
  */
 App.prototype.loadLibraries = function(libs, done)
 {
@@ -7000,13 +7699,6 @@ App.prototype.loadLibraries = function(libs, done)
 									peer = this.trello;
 								}
 							}
-							else if (service == 'D')
-							{
-								if (this.dropbox != null && this.dropbox.getUser() != null)
-								{
-									peer = this.dropbox;
-								}
-							}
 							else if (service == 'W')
 							{
 								if (this.oneDrive != null && this.oneDrive.getUser() != null)
@@ -7051,10 +7743,9 @@ App.prototype.loadLibraries = function(libs, done)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Updates the notification, comment, share and user buttons for the current
+ * file and theme. Notifications are not fetched if skipNotifications is
+ * true.
  */
 App.prototype.updateButtonContainer = function(skipNotifications)
 {
@@ -7192,12 +7883,14 @@ App.prototype.updateButtonContainer = function(skipNotifications)
 					this.buttonContainer.appendChild(this.userButton);
 				}
 
-				// Workaround for invalid images when page is unloading
-				if (!this.unloading)
+				// Updates user image
+				var userImg = this.userButton.getElementsByClassName('geUserAvatar')[0];
+				var syncImg = this.userButton.getElementsByTagName('img')[0];
+
+				// Workaround for invalid images when page is unloading and for
+				// images that were removed outside of the app
+				if (!this.unloading && userImg != null && syncImg != null)
 				{
-					// Updates user image
-					var userImg = this.userButton.getElementsByClassName('geUserAvatar')[0];
-					var syncImg = this.userButton.getElementsByTagName('img')[0];
 					var title = mxResources.get('changeUser');
 					var user = this.getMainUser();
 
@@ -7274,7 +7967,9 @@ App.prototype.updateButtonContainer = function(skipNotifications)
  */
 App.prototype.fetchAndShowNotification = function(target, subtarget)
 {
-	if (this.fetchingNotif || NOTIFICATIONS_URL == null)
+	// Plugins call this directly (eg. Confluence Cloud), so the offline
+	// check of updateButtonContainer (which includes lockdown) is repeated
+	if (this.fetchingNotif || NOTIFICATIONS_URL == null || this.isOffline())
 	{
 		return;	
 	}
@@ -7311,7 +8006,11 @@ App.prototype.fetchAndShowNotification = function(target, subtarget)
 	}
 	catch(e) {} //Ignore
 	
-	if ((cachedNotif == null || cachedNotif.ts + 24 * 60 * 60 * 1000 < Date.now())) //Cache for one day
+	// Cache for one day. A cache without a timestamp or a list of notifications
+	// is fetched again (NaN < Date.now() is false and would use it forever).
+	if (cachedNotif == null || typeof cachedNotif.ts !== 'number' ||
+		!Array.isArray(cachedNotif.notifs) ||
+		cachedNotif.ts + 24 * 60 * 60 * 1000 < Date.now())
 	{
 		this.fetchingNotif = true;
 		//Fetch all notifications and store them, then filter client-side
@@ -7326,7 +8025,7 @@ App.prototype.fetchAndShowNotification = function(target, subtarget)
 					//Process and sort
 					notifs.sort(function(a, b)
 					{
-						return b.timestamp - a.timestamp;
+						return mxUtils.compareNumbers(b.timestamp, a.timestamp);
 					});
 
 					if (isLocalStorage)
@@ -7537,15 +8236,15 @@ App.prototype.showNotification = function(notifs, lsReadFlag)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Saves the current file, or saves it with the given name if the name
+ * differs from its title, and invokes done after a successful save. Failed
+ * saves can be retried.
  */
 App.prototype.save = function(name, done)
 {
 	var file = this.getCurrentFile();
 	var acceptResponse = true;
+	var saveFile = null;
 
 	var success = mxUtils.bind(this, function()
 	{
@@ -7563,7 +8262,34 @@ App.prototype.save = function(name, done)
 
 	var error = mxUtils.bind(this, function(err)
 	{
-		if (acceptResponse)
+		// Waits for a save operation in progress, eg. an autosave, and saves
+		// again with the spinner still active instead of showing the busy
+		// error (the spinner timeout ends the wait with a timeout error)
+		if (acceptResponse && err != null && err.code == App.ERROR_BUSY &&
+			file.savingFile && saveFile != null)
+		{
+			file.afterSave(mxUtils.bind(this, function()
+			{
+				if (acceptResponse)
+				{
+					if (this.getCurrentFile() != file)
+					{
+						acceptResponse = false;
+						this.spinner.stop();
+					}
+					else if (file.isModified())
+					{
+						saveFile();
+					}
+					else
+					{
+						// Changes were saved by the save in progress
+						success();
+					}
+				}
+			}));
+		}
+		else if (acceptResponse)
 		{
 			acceptResponse = false;
 
@@ -7608,6 +8334,25 @@ App.prototype.save = function(name, done)
 	if (file != null && this.spinner.spin(document.body,
 		mxResources.get('saving'), error, 3 * this.timeout))
 	{
+		saveFile = mxUtils.bind(this, function()
+		{
+			try
+			{
+				if (name == file.getTitle())
+				{
+					file.save(true, success, error);
+				}
+				else
+				{
+					file.saveAs(name, success, error)
+				}
+			}
+			catch (err)
+			{
+				error(err);
+			}
+		});
+
 		try
 		{
 			this.clearStatus();
@@ -7617,14 +8362,7 @@ App.prototype.save = function(name, done)
 				this.editor.graph.stopEditing();
 			}
 
-			if (name == file.getTitle())
-			{
-				file.save(true, success, error);
-			}
-			else
-			{
-				file.saveAs(name, success, error)
-			}
+			saveFile();
 		}
 		catch (err)
 		{
@@ -7648,38 +8386,9 @@ App.prototype.getExtensionForService = function(name)
  */
 App.prototype.getServiceForName = function(name)
 {
-	if (name == App.MODE_GOOGLE)
-	{
-		return this.drive;
-	}
-	else if (name == App.MODE_ONEDRIVE)
-	{
-		return this.oneDrive;
-	}
-	else if (name == App.MODE_M365)
-	{
-		return this.m365;
-	}
-	else if (name == App.MODE_DROPBOX)
-	{
-		return this.dropbox;
-	}
-	else if (name == App.MODE_GITHUB)
-	{
-		return this.gitHub;
-	}
-	else if (name == App.MODE_GITLAB)
-	{
-		return this.gitLab;
-	}
-	else if (name == App.MODE_TRELLO)
-	{
-		return this.trello;
-	}
-	else
-	{
-		return null;
-	}
+	var storage = (name != null) ? App.storages[name] : null;
+
+	return (storage != null && storage.client != null) ? this[storage.client] : null;
 };
 
 /**
@@ -7687,17 +8396,11 @@ App.prototype.getServiceForName = function(name)
  */
 App.prototype.getTitleForService = function(name)
 {
-	if (name == App.MODE_GOOGLE)
+	var storage = (name != null) ? App.storages[name] : null;
+
+	if (storage != null)
 	{
-		return mxResources.get('googleDrive');
-	}
-	else if (name == App.MODE_ONEDRIVE)
-	{
-		return mxResources.get('oneDrive');
-	}
-	else if (name == App.MODE_M365)
-	{
-		return mxResources.get('m365');
+		return mxResources.get(storage.title);
 	}
 	else
 	{
@@ -7724,7 +8427,9 @@ App.prototype.pickFolder = function(mode, fn, enabled, direct, force, returnPick
 		{
 			resume();
 			
-			if (evt.action == google.picker.Action.PICKED)
+			// Value of google.picker.Action.PICKED, which is not defined if
+			// the root folder was picked without loading the Picker API
+			if (evt.action == 'picked')
 			{
 				var folderId = null;
 				
@@ -7800,23 +8505,7 @@ App.prototype.pickFolder = function(mode, fn, enabled, direct, force, returnPick
  */
 App.prototype.exportFile = function(data, filename, mimeType, base64Encoded, mode, folderId)
 {
-	if (mode == App.MODE_DROPBOX)
-	{
-		if (this.dropbox != null && this.spinner.spin(document.body, mxResources.get('saving')))
-		{
-			// LATER: Add folder picker
-			this.dropbox.insertFile(filename, (base64Encoded) ? this.base64ToBlob(data, mimeType) :
-				data, mxUtils.bind(this, function()
-			{
-				this.spinner.stop();
-			}), mxUtils.bind(this, function(resp)
-			{
-				this.spinner.stop();
-				this.handleError(resp);
-			}));
-		}
-	}
-	else if (mode == App.MODE_GOOGLE)
+	if (mode == App.MODE_GOOGLE)
 	{
 		if (this.drive != null && this.spinner.spin(document.body, mxResources.get('saving')))
 		{
@@ -7930,10 +8619,8 @@ App.prototype.exportFile = function(data, filename, mimeType, base64Encoded, mod
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Updates the filename, the editable state, the document title and the URL
+ * hash for the current file and fires a fileDescriptorChanged event.
  */
 App.prototype.descriptorChanged = function()
 {
@@ -7995,13 +8682,13 @@ App.prototype.descriptorChanged = function()
 };
 
 /**
- * Adds the listener for automatically saving the diagram for local changes.
+ * Shows the authorization dialog for the given storage peer. Invokes fn with
+ * the remember option and a function that closes the dialog.
  */
 App.prototype.showAuthDialog = function(peer, showRememberOption, fn, closeFn)
 {
 	var resume = this.spinner.pause();
-	
-	this.showDialog(new AuthDialog(this, peer, showRememberOption, mxUtils.bind(this, function(remember)
+	var dlg = new AuthDialog(this, peer, showRememberOption, mxUtils.bind(this, function(remember)
 	{
 		try
 		{
@@ -8021,7 +8708,12 @@ App.prototype.showAuthDialog = function(peer, showRememberOption, fn, closeFn)
 				this.editor.setStatus(mxUtils.htmlEntities(e.message));
 			}));
 		}
-	})).container, 300, (showRememberOption) ? 180 : 140, true, true, mxUtils.bind(this, function(cancel)
+	}));
+
+	// Room for three lines of the Terms of Use notice (the logo loads later,
+	// so the content can't be measured)
+	this.showDialog(dlg.container, 300, ((showRememberOption) ? 180 : 140) + ((dlg.notice != null) ? 70 : 0),
+		true, true, mxUtils.bind(this, function(cancel)
 	{
 		if (closeFn != null)
 		{
@@ -8209,13 +8901,17 @@ App.prototype.convertFile = function(url, filename, mimeType, extension, success
 		    	{
 		    		error({code: App.ERROR_UNKNOWN});
 		    	}
-			}, false, this.timeout, function()
+			}, false, this.timeout, mxUtils.bind(this, function()
 		    {
 		    	if (error != null)
 				{
-					error({code: App.ERROR_TIMEOUT, retry: fn});
+					error({code: App.ERROR_TIMEOUT, retry: mxUtils.bind(this, function()
+					{
+						this.convertFile(url, filename, mimeType, extension,
+							success, error, executeRequest, headers);
+					})});
 				}
-		    }, headers);
+		    }), headers);
 		}
 		else if (executeRequest != null)
 		{
@@ -8247,6 +8943,9 @@ App.prototype.updateHeader = function()
 			this.appIconClicked(evt);
 		}));
 
+		this.initKeyboardButton(this.appIcon);
+		this.appIcon.setAttribute('aria-label', mxResources.get('draw.io'));
+
 		mxEvent.addListener(this.appIcon, 'mouseover', mxUtils.bind(this, function()
 		{
 			var file = this.getCurrentFile();
@@ -8254,36 +8953,12 @@ App.prototype.updateHeader = function()
 			if (file != null)
 			{
 				var mode = file.getMode();
+				var storage = (mode != null) ? App.storages[mode] : null;
 				
-				if (mode == App.MODE_GOOGLE)
+				if (storage != null && storage.iconLogo != null)
 				{
-					this.appIcon.style.backgroundImage = 'url(' + IMAGE_PATH + '/google-drive-logo-white.svg)';
-					this.appIcon.style.backgroundSize = '70%';
-				}
-				else if (mode == App.MODE_DROPBOX)
-				{
-					this.appIcon.style.backgroundImage = 'url(' + IMAGE_PATH + '/dropbox-logo-white.svg)';
-					this.appIcon.style.backgroundSize = '70%';
-				}
-				else if (mode == App.MODE_ONEDRIVE)
-				{
-					this.appIcon.style.backgroundImage = 'url(' + IMAGE_PATH + '/onedrive-logo-white.svg)';
-					this.appIcon.style.backgroundSize = '70%';
-				}
-				else if (mode == App.MODE_GITHUB)
-				{
-					this.appIcon.style.backgroundImage = 'url(' + IMAGE_PATH + '/github-logo-white.svg)';
-					this.appIcon.style.backgroundSize = '70%';
-				}
-				else if (mode == App.MODE_GITLAB)
-				{
-					this.appIcon.style.backgroundImage = 'url(' + IMAGE_PATH + '/gitlab-logo-white.svg)';
-					this.appIcon.style.backgroundSize = '90%';
-				}
-				else if (mode == App.MODE_TRELLO)
-				{
-					this.appIcon.style.backgroundImage = 'url(' + IMAGE_PATH + '/trello-logo-white-orange.svg)';
-					this.appIcon.style.backgroundSize = '70%';
+					this.appIcon.style.backgroundImage = 'url(' + IMAGE_PATH + '/' + storage.iconLogo + ')';
+					this.appIcon.style.backgroundSize = (storage.iconLogoSize != null) ? storage.iconLogoSize : '70%';
 				}
 			}
 		}));
@@ -8358,7 +9033,7 @@ App.prototype.updateHeader = function()
 			mxEvent.consume(evt);
 		}));
 
-		mxEvent.preventDefault(this.fullscreenElement);
+		this.initKeyboardButton(this.fullscreenElement);
 
 		this.addListener('formatWidthChanged', mxUtils.bind(this, function()
 		{
@@ -8381,7 +9056,7 @@ App.prototype.updateHeader = function()
 			mxEvent.consume(evt);
 		}));
 
-		mxEvent.preventDefault(toggleFormatElement);
+		this.initKeyboardButton(toggleFormatElement);
 
 		var toggleFormatPanel = mxUtils.bind(this, function()
 		{
@@ -8415,7 +9090,7 @@ App.prototype.updateHeader = function()
 				mxEvent.consume(evt);
 			}));
 
-			mxEvent.preventDefault(toggleElement);
+			this.initKeyboardButton(toggleElement);
 			
 			// Enable compact mode for small screens except for Firefox where the height is wrong
 			if (!mxClient.IS_FF && screen.height <= 740 && typeof toggleElement.click !== 'undefined')
@@ -8504,39 +9179,29 @@ App.prototype.updateFullscreenState = function()
 };
 
 /**
- * Adds the listener for automatically saving the diagram for local changes.
+ * Returns the user of the first client in the given list that has a user.
+ */
+App.prototype.getFirstClientUser = function(clients)
+{
+	for (var i = 0; i < clients.length; i++)
+	{
+		if (clients[i] != null && clients[i].getUser() != null)
+		{
+			return clients[i].getUser();
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Returns the user for the user button and accounts menu.
  */
 App.prototype.getMainUser = function()
 {
-	var user = null;
-
 	// LATER: Trello no user issue
-	if (this.drive != null && this.drive.getUser() != null)
-	{
-		user = this.drive.getUser();
-	}
-	else if (this.oneDrive != null && this.oneDrive.getUser() != null)
-	{
-		user = this.oneDrive.getUser();
-	}
-	else if (this.m365 != null && this.m365.getUser() != null)
-	{
-		user = this.m365.getUser();
-	}
-	else if (this.dropbox != null && this.dropbox.getUser() != null)
-	{
-		user = this.dropbox.getUser();
-	}
-	else if (this.gitHub != null && this.gitHub.getUser() != null)
-	{
-		user = this.gitHub.getUser();
-	}
-	else if (this.gitLab != null && this.gitLab.getUser() != null)
-	{
-		user = this.gitLab.getUser();
-	}
-
-	return user;
+	return this.getFirstClientUser([this.drive, this.oneDrive,
+		this.m365, this.gitHub, this.gitLab]);
 };
 
 /**
@@ -8878,37 +9543,6 @@ App.prototype.toggleUserPanel = function()
 			}
 		});
 		
-		if (this.dropbox != null)
-		{
-			addUser(this.dropbox.getUser(), IMAGE_PATH + '/dropbox-logo.svg', mxUtils.bind(this, function()
-			{
-				var file = this.getCurrentFile();
-
-				if (file != null && file.constructor == DropboxFile)
-				{
-					var doLogout = mxUtils.bind(this, function()
-					{
-						this.dropbox.logout();
-						window.location.hash = '';
-					});
-					
-					if (!file.isModified())
-					{
-						doLogout();
-					}
-					else
-					{
-						this.confirm(mxResources.get('allChangesLost'), null, doLogout,
-							mxResources.get('cancel'), mxResources.get('discardChanges'));
-					}
-				}
-				else
-				{
-					this.dropbox.logout();
-				}
-			}), mxResources.get('dropbox'));
-		}
-
 		if (this.oneDrive != null)
 		{
 			addUser(this.oneDrive.getUser(), IMAGE_PATH + '/onedrive-logo.svg', this.oneDrive.noLogout? null : mxUtils.bind(this, function()
@@ -9099,31 +9733,9 @@ App.prototype.toggleUserPanel = function()
 //TODO Use this function to get the currently logged in user
 App.prototype.getCurrentUser = function()
 {
-	var user = null;
-	
-	if (this.drive != null && this.drive.getUser() != null)
-	{
-		user = this.drive.getUser();
-	}
-	else if (this.oneDrive != null && this.oneDrive.getUser() != null)
-	{
-		user = this.oneDrive.getUser();
-	}
-	else if (this.m365 != null && this.m365.getUser() != null)
-	{
-		user = this.m365.getUser();
-	}
-	else if (this.dropbox != null && this.dropbox.getUser() != null)
-	{
-		user = this.dropbox.getUser();
-	}
-	else if (this.gitHub != null && this.gitHub.getUser() != null)
-	{
-		user = this.gitHub.getUser();
-	}
 	//TODO Trello no user issue
-	
-	return user;
+	return this.getFirstClientUser([this.drive, this.oneDrive,
+		this.m365, this.gitHub]);
 };
 
 /**

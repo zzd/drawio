@@ -15,9 +15,6 @@ if (window.mxIsElectron == null || urlParams['embed'] == '1')
 // isLocalStorage controls access to local storage
 window.isLocalStorage = window.isLocalStorage || false;
 
-// Disables loading settings in configured mode
-window.mxLoadSettings = window.mxLoadSettings || urlParams['configure'] != '1';
-
 // Checks for SVG support
 window.isSvgBrowser = true;
 
@@ -37,14 +34,12 @@ window.DRAWIO_LIGHTBOX_URL = window.DRAWIO_LIGHTBOX_URL || 'https://viewer.diagr
 window.EXPORT_URL = (typeof window.EXPORT_URL === 'undefined') ?
 	'https://convert.diagrams.net/node/export' : window.EXPORT_URL;
 window.DRAW_MATH_URL = window.DRAW_MATH_URL || 'math4/es5';
-window.VSS_CONVERT_URL = window.VSS_CONVERT_URL || 'https://convert.diagrams.net/VsdConverter/api/converter';
 window.REALTIME_URL = window.REALTIME_URL || window.DRAWIO_SERVER_URL + 'cache';
 window.DRAWIO_GITLAB_URL = window.DRAWIO_GITLAB_URL || 'https://gitlab.com';
 window.DRAWIO_GITLAB_ID = window.DRAWIO_GITLAB_ID || '2b14debc5feeb18ba65358d863ec870e4cc9294b28c3c941cb3014eb4af9a9b4';
 window.DRAWIO_GITHUB_URL = window.DRAWIO_GITHUB_URL || 'https://github.com';
 window.DRAWIO_GITHUB_API_URL = window.DRAWIO_GITHUB_API_URL || 'https://api.github.com';
 window.DRAWIO_GITHUB_ID = window.DRAWIO_GITHUB_ID || 'Iv1.98d62f0431e40543';
-window.DRAWIO_DROPBOX_ID = window.DRAWIO_DROPBOX_ID || 'jg02tc0onwmhlgm';
 window.SAVE_URL = window.SAVE_URL || window.DRAWIO_SERVER_URL + 'save';
 window.PROXY_URL = window.PROXY_URL || window.DRAWIO_SERVER_URL + 'proxy';
 window.DRAWIO_VIEWER_URL = window.DRAWIO_VIEWER_URL || null;
@@ -53,6 +48,11 @@ window.NOTIFICATIONS_URL = window.NOTIFICATIONS_URL || ((/.*\.draw\.io$/.test(wi
 	window.DRAWIO_SERVER_URL + 'notifications' : null);
 window.RT_WEBSOCKET_URL = window.RT_WEBSOCKET_URL || ('wss://' + ((window.location.hostname == 'test.draw.io') ?
 	'app.diagrams.net' : window.location.hostname) + '/rt');
+// AI diagram generation (generate/v3 worker), on the own origin of the hosts
+// that route it and on www.draw.io for all others
+window.GENERATE_URL = window.GENERATE_URL || (((/^(www|ac|aj)\.draw\.io$/.test(window.location.hostname) ||
+	window.location.hostname == 'app.diagrams.net') ? window.location.origin :
+	'https://www.draw.io') + '/generate/v3');
 // Maximum AI prompt length on the Atlassian deployments (applied to
 // Editor.maxPublicPromptLength on ac.draw.io / aj.draw.io / Forge CDN hosts,
 // 0 disables the limit); must not exceed the generate/v3 worker's
@@ -286,6 +286,22 @@ if (urlParams['embedInline'] == '1')
 	}
 }
 
+// The configuration message (configure=1) is only accepted in embed mode,
+// where the host supplies and receives the diagram anyway. Otherwise any
+// opener could configure the app that has the user's storage and sign-ins.
+if (urlParams['configure'] == '1' && urlParams['embed'] != '1')
+{
+	delete urlParams['configure'];
+
+	if (window.console != null)
+	{
+		console.log('Ignored configure=1 without embed=1');
+	}
+}
+
+// Disables loading settings in configured mode
+window.mxLoadSettings = window.mxLoadSettings || urlParams['configure'] != '1';
+
 /**
  * Global function for loading local files via servlet
  */
@@ -465,30 +481,11 @@ if (urlParams['offline'] == '1' || urlParams['demo'] == '1' ||
 {
 	urlParams['picker'] = (urlParams['gapi-stealth'] == '1') ? '1' : '0';
 	urlParams['gapi'] = (urlParams['gapi-stealth'] == '1') ? '1' : '0';
-	urlParams['db'] = '0';
 	urlParams['od'] = '0';
 	urlParams['gh'] = '0';
 	urlParams['gl'] = '0';
 	urlParams['tr'] = '0';
 	urlParams['ms365'] = '0';
-}
-
-// Do not insert code between above and below blocks
-// se mode. Ensure this comes after the block above. 
-if (window.location.hostname == 'se.diagrams.net')
-{
-	urlParams['db'] = '0';
-	urlParams['od'] = '0';
-	urlParams['gh'] = '0';
-	urlParams['gl'] = '0';
-	urlParams['tr'] = '0';
-	urlParams['ms365'] = '0';
-	urlParams['plugins'] = '0';
-	urlParams['mode'] = 'google';
-	urlParams['lockdown'] = '1'; // Do not want to apply lockdown true to above block
-
-	window.DRAWIO_GOOGLE_APP_ID = window.DRAWIO_GOOGLE_APP_ID || '184079235871';
-	window.DRAWIO_GOOGLE_CLIENT_ID = window.DRAWIO_GOOGLE_CLIENT_ID || '184079235871-pjf5nn0lff27lk8qf0770gmffiv9gt61.apps.googleusercontent.com';
 }
 
 // Disables Trello client by default

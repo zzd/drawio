@@ -785,6 +785,16 @@
 	STYLE_OPACITY: 'opacity',
 
 	/**
+	 * Variable: STYLE_OPACITY_GROUP
+	 *
+	 * Defines the key for applying the opacity to the shape as a whole in
+	 * SVG, so that overlapping parts of the shape (eg. the stroke over the
+	 * fill or a marker over its line) do not get darker. Possible values
+	 * are 0 and 1. Default is 0. Value is "opacityGroup".
+	 */
+	STYLE_OPACITY_GROUP: 'opacityGroup',
+
+	/**
 	 * Variable: STYLE_FILL_OPACITY
 	 * 
 	 * Defines the key for the fill opacity style. The type of the value is 
@@ -1005,7 +1015,9 @@
 	 * Defines the key for the fill color. Possible values are all HTML color
 	 * names or HEX codes, as well as special keywords such as 'swimlane,
 	 * 'inherit' or 'indicated' to use the color code of a related cell or the
-	 * indicator shape. Value is "fillColor".
+	 * indicator shape, 'parentFillColor' or 'parentStrokeColor' to use the
+	 * respective color of the parent and 'strokeColor' to use the stroke color
+	 * of the cell. Value is "fillColor".
 	 */
 	STYLE_FILLCOLOR: 'fillColor',
 
@@ -1043,8 +1055,10 @@
 	 * Defines the key for the gradient color. Possible values are all HTML color
 	 * names or HEX codes, as well as special keywords such as 'swimlane,
 	 * 'inherit' or 'indicated' to use the color code of a related cell or the
-	 * indicator shape. This is ignored if no fill color is defined. Value is
-	 * "gradientColor".
+	 * indicator shape, 'parentFillColor' or 'parentStrokeColor' to use the
+	 * respective color of the parent and 'fillColor' or 'strokeColor' to use
+	 * the respective color of the cell. This is ignored if no fill color is
+	 * defined. Value is "gradientColor".
 	 */
 	STYLE_GRADIENTCOLOR: 'gradientColor',
 
@@ -1068,7 +1082,9 @@
 	 * Defines the key for the strokeColor style. Possible values are all HTML
 	 * color names or HEX codes, as well as special keywords such as 'swimlane,
 	 * 'inherit', 'indicated' to use the color code of a related cell or the
-	 * indicator shape or 'none' for no color. Value is "strokeColor".
+	 * indicator shape, 'parentFillColor' or 'parentStrokeColor' to use the
+	 * respective color of the parent, 'fillColor' to use the fill color of the
+	 * cell or 'none' for no color. Value is "strokeColor".
 	 */
 	STYLE_STROKECOLOR: 'strokeColor',
 
@@ -1299,6 +1315,15 @@
 	 * HTML color names or HEX codes. Value is "labelBorderColor".
 	 */
 	STYLE_LABEL_BORDERCOLOR: 'labelBorderColor',
+
+	/**
+	 * Variable: STYLE_LABEL_BORDER_WIDTH
+	 *
+	 * Defines the key for the width of the label border in pixels (see
+	 * <STYLE_LABEL_BORDERCOLOR>). The border is scaled with the zoom and a
+	 * width of 0 hides it. Default is 1. Value is "labelBorderWidth".
+	 */
+	STYLE_LABEL_BORDER_WIDTH: 'labelBorderWidth',
 
 	/**
 	 * Variable: STYLE_LABEL_PADDING
@@ -1595,6 +1620,14 @@
 	STYLE_ENDFILLCOLOR: 'endFillColor',
 
 	/**
+	 * Variable: STYLE_ENDSTROKECOLOR
+	 * 
+	 * Defines the key for the endStrokeColor style. If not specified then the
+	 * stroke color is used to stroke the markers. Value is "endStrokeColor".
+	 */
+	STYLE_ENDSTROKECOLOR: 'endStrokeColor',
+
+	/**
 	 * Variable: STYLE_STARTFILL
 	 * 
 	 * Defines the key for the startFill style. Use 0 for no fill or 1 (default)
@@ -1610,6 +1643,14 @@
 	 * stroke color is used to fill the markers. Value is "startFillColor".
 	 */
 	STYLE_STARTFILLCOLOR: 'startFillColor',
+
+	/**
+	 * Variable: STYLE_STARTSTROKECOLOR
+	 * 
+	 * Defines the key for the startStrokeColor style. If not specified then the
+	 * stroke color is used to stroke the markers. Value is "startStrokeColor".
+	 */
+	STYLE_STARTSTROKECOLOR: 'startStrokeColor',
 
 	/**
 	 * Variable: STYLE_DASHED
@@ -1716,6 +1757,19 @@
 	STYLE_TARGET_PERIMETER_SPACING: 'targetPerimeterSpacing',
 
 	/**
+	 * Variable: STYLE_FIXED_POINT_SPACING
+	 *
+	 * Defines the key for the fixed point spacing style. If this is 1 then
+	 * <STYLE_SOURCE_PERIMETER_SPACING> and <STYLE_TARGET_PERIMETER_SPACING>
+	 * of the edge also apply to ends that are attached to a fixed connection
+	 * point: after routing, such an end is moved by the spacing towards its
+	 * neighbouring point of the route (away from it for negative values) but
+	 * never past it. Possible values are 1 and 0 (default). This style only
+	 * applies to edges. Value is "fixedPointSpacing".
+	 */
+	STYLE_FIXED_POINT_SPACING: 'fixedPointSpacing',
+
+	/**
 	 * Variable: STYLE_PERIMETER_SPACING
 	 * 
 	 * Defines the key for the perimeter spacing. This is the distance between
@@ -1727,6 +1781,22 @@
 	 * "perimeterSpacing".
 	 */
 	STYLE_PERIMETER_SPACING: 'perimeterSpacing',
+
+	/**
+	 * Variable: STYLE_LABEL_PERIMETER
+	 * 
+	 * Defines the key for the label perimeter style of a vertex. If this is 1
+	 * and the label of the vertex is placed outside the shape on one side (a
+	 * verticalLabelPosition of top or bottom with a labelPosition of center,
+	 * or a labelPosition of left or right with a verticalLabelPosition of
+	 * middle), then edges that meet the vertex on that side end at the far
+	 * edge of the label instead of crossing the label to the shape, as in
+	 * cloud architecture diagrams. Edges on the other sides are unchanged.
+	 * Rotated and flipped vertices are not affected. Possible values are 1
+	 * and 0 (default). See <mxGraphView.getLabelPerimeterSide>. Value is
+	 * "labelPerimeter".
+	 */
+	STYLE_LABEL_PERIMETER: 'labelPerimeter',
 
 	/**
 	 * Variable: STYLE_SPACING
@@ -1937,6 +2007,19 @@
 	 * 1. See <mxGraph.isCellBendable>. Value is "bendable".
 	 */
 	STYLE_BENDABLE: 'bendable',
+
+	/**
+	 * Variable: STYLE_COLLAPSED_POINTS
+	 *
+	 * Defines the key for the collapsedPoints style. This specifies if the
+	 * control points of an edge are used while one of its terminals is
+	 * replaced by a collapsed ancestor in the view. If this is 0 then the
+	 * edge is routed as if it had no control points in that case. The stored
+	 * points are not changed and are used again once the terminals are
+	 * visible. Possible values are 0 or 1. Default is 1. See
+	 * <mxGraphView.isCollapsedPointsIgnored>. Value is "collapsedPoints".
+	 */
+	STYLE_COLLAPSED_POINTS: 'collapsedPoints',
 
 	/**
 	 * Variable: STYLE_MOVABLE

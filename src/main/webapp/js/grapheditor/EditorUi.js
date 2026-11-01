@@ -38,12 +38,6 @@ EditorUi = function(editor, container, lightbox)
 		return bounds;
 	};
 
-	// Faster scrollwheel zoom is possible with CSS transforms
-	if (graph.useCssTransforms)
-	{
-		this.lazyZoomDelay = 0;
-	}
-	
 	// Installs selection state listener
 	this.selectionStateListener = mxUtils.bind(this, function(sender, evt)
 	{
@@ -106,10 +100,14 @@ EditorUi = function(editor, container, lightbox)
 			{
 				var model = graph.getModel();
 
-				// Edge labels (vertex children of edges) only update the text styles
-				// of the edge default so they stay consistent with the edge's own
-				// label and never touch the vertex default (see pasteCellStyles)
-				var isEdgeLabel = model.isVertex(cell) && model.isEdge(model.getParent(cell));
+				// Edge labels (text or edgeLabel children of edges) only update the
+				// text styles of the edge default so they stay consistent with the
+				// edge's own label and never touch the vertex default (see
+				// pasteCellStyles). Other children of edges, such as symbols, set
+				// the vertex default.
+				var pairs = (typeof cell.style === 'string') ? cell.style.split(';') : [];
+				var isEdgeLabel = model.isVertex(cell) && model.isEdge(model.getParent(cell)) &&
+					(mxUtils.indexOf(pairs, 'text') >= 0 || mxUtils.indexOf(pairs, 'edgeLabel') >= 0);
 
 				if (model.isEdge(cell) || isEdgeLabel)
 				{
@@ -126,7 +124,9 @@ EditorUi = function(editor, container, lightbox)
 					graph.pasteStylesToText = false;
 				}
 
-				var style = graph.getCellStyle(cell, false);
+				// Text styles that edge labels inherit are taken from the edge
+				var style = graph.resolveInheritedLabelStyles(cell,
+					graph.getCellStyle(cell, false));
 				var values = [];
 				var keys = [];
 
@@ -222,7 +222,7 @@ EditorUi = function(editor, container, lightbox)
 		// browser extend a native selection out to document.body, which sits outside the
 		// per-container onselectstart handlers below. The editor never selects the page
 		// chrome, so cancel any selectstart that targets the body/root element.
-		document.addEventListener('selectstart', function(evt)
+		var selectStartHandler = function(evt)
 		{
 			var src = mxEvent.getSource(evt);
 
@@ -230,7 +230,14 @@ EditorUi = function(editor, container, lightbox)
 			{
 				evt.preventDefault();
 			}
-		}, true);
+		};
+
+		document.addEventListener('selectstart', selectStartHandler, true);
+
+		this.destroyFunctions.push(function()
+		{
+			document.removeEventListener('selectstart', selectStartHandler, true);
+		});
 
 		// Disables text selection while not editing and no dialog visible
 		if (this.container == document.body && (!this.editor.chromeless ||
@@ -364,11 +371,16 @@ EditorUi = function(editor, container, lightbox)
 			{
 				this.inlineToolbar.hide();
 			}
+
+			this.editor.graph.cellEditor.previewZoom(evt.getProperty('factor'),
+				evt.getProperty('x'), evt.getProperty('y'));
 		}));
 
 		// Zoom Preview Complete
 		this.editor.graph.addListener('zoomPreviewComplete', mxUtils.bind(this, function(sender, evt)
 		{
+			this.editor.graph.cellEditor.previewZoom(null);
+
 			if (this.inlineToolbar != null)
 			{
 				this.inlineToolbar.updateSelection();
@@ -408,53 +420,43 @@ EditorUi = function(editor, container, lightbox)
 			};
 		}
 
-		// Hides inline toolbar when handles are being dragged
-		var vertexHandlerStart = mxVertexHandler.prototype.start;
+		// Hides inline toolbar when handles are being dragged. The handlers
+		// of this graph are changed, as changing the prototypes in each
+		// instance would keep all instances, eg. of presentations.
+		var graphCreateHandler = graph.createHandler;
 
-		mxVertexHandler.prototype.start = function()
+		graph.createHandler = function(state)
 		{
-			if (ui.inlineToolbar != null)
+			var handler = graphCreateHandler.apply(this, arguments);
+
+			if (handler instanceof mxVertexHandler || handler instanceof mxEdgeHandler)
 			{
-				ui.inlineToolbar.hide();
+				var handlerStart = handler.start;
+
+				handler.start = function()
+				{
+					if (ui.inlineToolbar != null)
+					{
+						ui.inlineToolbar.hide();
+					}
+
+					handlerStart.apply(this, arguments);
+				};
+
+				var handlerMouseUp = handler.mouseUp;
+
+				handler.mouseUp = function()
+				{
+					handlerMouseUp.apply(this, arguments);
+
+					if (ui.inlineToolbar != null)
+					{
+						ui.inlineToolbar.updateSelection();
+					}
+				};
 			}
 
-			vertexHandlerStart.apply(this, arguments);
-		};
-
-		var vertexHandlerMouseUp2 = mxVertexHandler.prototype.mouseUp;
-
-		mxVertexHandler.prototype.mouseUp = function()
-		{
-			vertexHandlerMouseUp2.apply(this, arguments);
-
-			if (ui.inlineToolbar != null)
-			{
-				ui.inlineToolbar.updateSelection();
-			}
-		};
-
-		var edgeHandlerStart = mxEdgeHandler.prototype.start;
-
-		mxEdgeHandler.prototype.start = function()
-		{
-			if (ui.inlineToolbar != null)
-			{
-				ui.inlineToolbar.hide();
-			}
-
-			edgeHandlerStart.apply(this, arguments);
-		};
-
-		var edgeHandlerMouseUp2 = mxEdgeHandler.prototype.mouseUp;
-
-		mxEdgeHandler.prototype.mouseUp = function()
-		{
-			edgeHandlerMouseUp2.apply(this, arguments);
-
-			if (ui.inlineToolbar != null)
-			{
-				ui.inlineToolbar.updateSelection();
-			}
+			return handler;
 		};
 
 		// Adds tooltip when mouse is over scrollbars to show space-drag panning option
@@ -505,8 +507,12 @@ EditorUi = function(editor, container, lightbox)
 			{
 				var source = mxEvent.getSource(evt);
 
+				// Space pans the diagram, but controls outside of it, eg. buttons,
+				// keep Space for clicking them
 				if (source.nodeName != 'INPUT' && source.nodeName != 'TEXTAREA' &&
-					source.nodeName != 'SELECT' && !source.isContentEditable)
+					source.nodeName != 'SELECT' && !source.isContentEditable &&
+					(source == document.body || source == document.documentElement ||
+					mxUtils.isAncestorNode(graph.container, source)))
 				{
 					this.spaceDown = true;
 					this.hoverIcons.reset();
@@ -530,15 +536,96 @@ EditorUi = function(editor, container, lightbox)
 					this.sidebar.hideTooltip();
 					mxEvent.consume(evt);
 				}
-				else
+				else if (this.dialog != null)
 				{
 					this.hideDialog(null, true);
 				}
+				// Returns the focus to the diagram from other parts of the user
+				// interface, eg. after Escape closed a menu (see mxPopupMenu.keyDown),
+				// and closes the window with the focus, eg. Layers, except from text
+				// areas, eg. a comment that is being written
+				else if (graph.container != null && graph.container.style.visibility != 'hidden' &&
+					!mxUtils.isAncestorNode(graph.container, document.activeElement))
+				{
+					var wnd = this.getToolWindow(document.activeElement);
+
+					if (wnd != null && wnd.window.isClosable() &&
+						document.activeElement.nodeName != 'TEXTAREA' &&
+						!document.activeElement.isContentEditable)
+					{
+						wnd.window.close(evt);
+					}
+
+					graph.container.focus();
+				}
+			}
+			// Tab and Shift+Tab follow the reading order of the user interface,
+			// not the order of the DOM (see getTabStops, onKeyDown for the diagram)
+			else if (!mxEvent.isConsumed(evt) && evt.keyCode == 9 /* Tab */ && this.dialog == null &&
+				!mxEvent.isControlDown(evt) && !mxEvent.isMetaDown(evt) && !mxEvent.isAltDown(evt) &&
+				this.moveTabFocus(mxEvent.isShiftDown(evt), mxUtils.bind(this, function()
+				{
+					var start = this.getTabStart();
+
+					// Leaves Tab to the browser at the ends of the order in a frame
+					if (this.isTabOrderEnd(start, mxEvent.isShiftDown(evt)))
+					{
+						this.focusFrameExit(mxEvent.isShiftDown(evt));
+
+						return false;
+					}
+
+					return this.focusAdjacentTabStop(start, mxEvent.isShiftDown(evt));
+				})))
+			{
+				mxEvent.consume(evt);
+			}
+			// Shift+arrow keys move the focus between the controls outside of the
+			// diagram, where they move and select cells (see focusTabStopInDirection,
+			// isArrowKeyEvent), also on from the focus that a closed menu restored
+			// (see getKeySource), and arrow keys without Shift outside of areas that
+			// scroll, where they are left to the browser (see isInScrollArea)
+			else if (!mxEvent.isConsumed(evt) && evt.keyCode >= 37 && evt.keyCode <= 40 &&
+				!mxEvent.isControlDown(evt) && !mxEvent.isMetaDown(evt) &&
+				!mxEvent.isAltDown(evt) && !this.isArrowKeyEvent(this.getKeySource(evt), evt) &&
+				!mxUtils.isAncestorNode(graph.container, this.getKeySource(evt)) &&
+				(mxEvent.isShiftDown(evt) || !this.isInScrollArea(this.getKeySource(evt))) &&
+				this.focusTabStopInDirection(this.getKeySource(evt), evt.keyCode))
+			{
+				mxEvent.consume(evt);
 			}
 		});
-	   	
+
 		mxEvent.addListener(document, 'keydown', this.keydownHandler);
-		
+
+		// Tab continues from the last click, also if it did not move the focus,
+		// eg. on a toolbar button, until another key is pressed (see getTabStart)
+		this.tabStartHandler = mxUtils.bind(this, function(evt)
+		{
+			if (evt.type == 'keydown')
+			{
+				if (mxUtils.indexOf(['Tab', 'Shift', 'Control', 'Alt', 'Meta'], evt.key) < 0)
+				{
+					this.tabStart = null;
+					this.tabHistory = null;
+					this.tabEndOfDiagram = false;
+				}
+			}
+			else
+			{
+				this.tabStart = mxEvent.getSource(evt);
+				this.tabHistory = null;
+				this.tabEndOfDiagram = false;
+			}
+		});
+
+		this.tabStartEvents = [(window.PointerEvent != null) ? 'pointerdown' : 'mousedown', 'keydown'];
+
+		for (var i = 0; i < this.tabStartEvents.length; i++)
+		{
+			document.addEventListener(this.tabStartEvents[i], this.tabStartHandler, true);
+		}
+
 		this.keyupHandler = mxUtils.bind(this, function(evt)
 		{
 			if (graph.container != null)
@@ -551,6 +638,21 @@ EditorUi = function(editor, container, lightbox)
 		});
 	
 		mxEvent.addListener(document, 'keyup', this.keyupHandler);
+
+		// Blocks pinch gestures outside of the diagram which show
+		// the tab overview in Safari on macOS (pinch gestures in
+		// the diagram are handled in mxEvent.addMouseWheelListener)
+		// if the UI owns the page (eg. not for viewer lightboxes)
+		if (mxClient.IS_SF && !mxClient.IS_TOUCH && container == null)
+		{
+			this.pinchGestureHandler = function(evt)
+			{
+				evt.preventDefault();
+			};
+
+			mxEvent.addListener(document, 'gesturestart', this.pinchGestureHandler);
+			mxEvent.addListener(document, 'gesturechange', this.pinchGestureHandler);
+		}
 	    
 	    // Forces panning for middle and right mouse buttons
 		var panningHandlerIsForcePanningEvent = graph.panningHandler.isForcePanningEvent;
@@ -678,6 +780,11 @@ EditorUi = function(editor, container, lightbox)
 		this.addListener('currentThemeChanged', hideToolbarElements);
 		mxEvent.addListener(window, 'resize', hideToolbarElements);
 		hideToolbarElements();
+
+		this.destroyFunctions.push(function()
+		{
+			mxEvent.removeListener(window, 'resize', hideToolbarElements);
+		});
 
 		// Blocks popup menu on touch devices when dialogs are showing
 		graph.isTouchPopupMenuEnabled = function()
@@ -808,10 +915,17 @@ EditorUi = function(editor, container, lightbox)
 		}
 		
 		// Hides context menu
-		mxEvent.addGestureListeners(document, mxUtils.bind(this, function(evt)
+		var hideMenuHandler = function(evt)
 		{
 			graph.popupMenuHandler.hideMenu();
-		}));
+		};
+
+		mxEvent.addGestureListeners(document, hideMenuHandler);
+
+		this.destroyFunctions.push(function()
+		{
+			mxEvent.removeGestureListeners(document, hideMenuHandler);
+		});
 	
 	    // Create handler for key events
 		this.keyHandler = this.createKeyHandler(editor);
@@ -842,7 +956,9 @@ EditorUi = function(editor, container, lightbox)
 			graph.pasteCellStyles(cells);
 		});
 
-		// Shows current edge style and shape in toolbar
+		// Shows current edge style and shape in toolbar. The images are computed
+		// lazily as the first update may come before the first styleChanged event
+		// and Format.js is not available in the viewer (lightbox without toolbar)
 		var edgeStyleImage = null;
 		var edgeShapeImage = null;
 
@@ -876,12 +992,22 @@ EditorUi = function(editor, container, lightbox)
 				{
 					if (this.toolbar.edgeStyleMenu != null)
 					{
+						if (edgeStyleImage == null)
+						{
+							edgeStyleImage = this.getImageForEdgeStyle(graph.currentEdgeStyle);
+						}
+
 						this.toolbar.edgeStyleMenu.style.backgroundImage =
 							'url(' + edgeStyleImage + ')';
 					}
 
 					if (this.toolbar.edgeShapeMenu != null)
 					{
+						if (edgeShapeImage == null)
+						{
+							edgeShapeImage = this.getImageForEdgeShape(graph.currentEdgeStyle);
+						}
+
 						this.toolbar.edgeShapeMenu.style.backgroundImage ='url(' + edgeShapeImage + ')';
 					}
 				}
@@ -1156,7 +1282,7 @@ EditorUi = function(editor, container, lightbox)
 			 }
 		 }
 		 
-		 value = fread(f,n);
+		 var value = fread(f,n);
 		 fread(f,4);
 		 
 		 if (type == 'IEND')
@@ -1245,6 +1371,8 @@ EditorUi.prototype.init = function()
 		{
 			this.installShapePicker();
 		}
+
+		this.installLineMarkerMenu();
 		
 		// Hides tooltips and connection points when scrolling
 		var pageBreaksUpdate = null;
@@ -1296,10 +1424,39 @@ EditorUi.prototype.init = function()
 			this.onKeyPress(evt);
 		}));
 
+		// Shows a focus ring if the diagram gets the focus from another control
+		// with the keyboard (eg. Tab) until the next click or until a selected
+		// cell takes the focus (the typing shim shows the cell handles instead)
+		mxEvent.addListener(graph.container, 'focus', function(evt)
+		{
+			try
+			{
+				if (document.activeElement == graph.container && evt.relatedTarget != null &&
+					!mxUtils.isAncestorNode(graph.container, evt.relatedTarget) &&
+					graph.container.matches(':focus-visible'))
+				{
+					graph.container.classList.add('geFocusVisible');
+				}
+			}
+			catch (e)
+			{
+				// ignores unsupported :focus-visible
+			}
+		});
+
+		var removeFocusRing = function()
+		{
+			graph.container.classList.remove('geFocusVisible');
+		};
+
+		mxEvent.addListener(graph.container, 'blur', removeFocusRing);
+		mxEvent.addGestureListeners(graph.container, removeFocusRing);
+
 		// Hidden textarea that captures keyboard input (including IME) when a
 		// cell is selected but not being edited. This ensures the OS engages
 		// IME from the very first keystroke on CJK and other input methods.
 		this.installTypingShim();
+		this.installScreenReaderSupport();
 
 		// Updates action states
 		this.addUndoListener();
@@ -1364,7 +1521,8 @@ EditorUi.prototype.getSelectionState = function()
 {
 	if (this.selectionState == null)
 	{
-		this.selectionState = this.createSelectionState();
+		this.selectionState = this.editor.graph.cacheLockedStates(
+			mxUtils.bind(this, this.createSelectionState));
 	}
 	
 	return this.selectionState;
@@ -1472,7 +1630,9 @@ EditorUi.prototype.findCommonProperties = function(cell, properties, addAll, sst
 		if (!state.shape.commonCustomPropAdded)
 		{
 			state.shape.commonCustomPropAdded = true;
-			state.shape.customProperties = state.shape.customProperties || [];
+
+			// Copies the array of the shape prototype which is shared by all instances
+			state.shape.customProperties = (state.shape.customProperties || []).slice();
 			
 			// Adds custom colors from stencils
 			if (state.shape != null && state.shape.stencil != null &&
@@ -1859,7 +2019,7 @@ EditorUi.prototype.updateSelectionStateForCell = function(result, cell, cells, i
 	
 	if (graph.getModel().isVertex(cell))
 	{
-		result.connections = graph.model.getEdgeCount(cell) > 0;
+		result.connections = result.connections || graph.model.getEdgeCount(cell) > 0;
 		result.unlocked = result.unlocked && !graph.isCellLocked(cell);
 		result.resizable = result.resizable && graph.isCellResizable(cell);
 		result.rotatable = result.rotatable && graph.isCellRotatable(cell);
@@ -2070,8 +2230,23 @@ EditorUi.prototype.installShapePicker = function()
 
 	if (this.hoverIcons != null)
 	{
+		// Shows the shape picker after hovering an arrow
+		var thread = null;
+
+		var cancelHoverPicker = function()
+		{
+			if (thread != null)
+			{
+				window.clearTimeout(thread);
+				thread = null;
+			}
+		};
+
 		this.hoverIcons.addListener('reset', mxUtils.bind(this, function()
 		{
+			// Removed arrows fire no mouseleave
+			cancelHoverPicker();
+
 			if (this.hoverIcons.shapePickerHoverDiv != null)
 			{
 				this.hoverIcons.shapePickerHoverDiv = null;
@@ -2082,6 +2257,9 @@ EditorUi.prototype.installShapePicker = function()
 		
 		this.hoverIcons.drag = function()
 		{
+			// Not all browsers fire mouseleave for the arrow that is hidden
+			// on mouse down, and the picker would replace the one of the click
+			cancelHoverPicker();
 			ui.hideShapePicker();
 			hoverIconsDrag.apply(this, arguments);
 		};
@@ -2102,7 +2280,7 @@ EditorUi.prototype.installShapePicker = function()
 					
 					while (temp != null && graph.model.isVertex(temp) && geo != null && geo.relative)
 					{
-						cell = temp;
+						var cell = temp;
 						temp = graph.model.getParent(cell)
 						geo = graph.getCellGeometry(temp);
 					}
@@ -2132,20 +2310,23 @@ EditorUi.prototype.installShapePicker = function()
 			}
 		};
 
-		var thread = null;
-
 		this.hoverIcons.addListener('focus', mxUtils.bind(this, function(sender, evt)
 		{
-			if (thread != null)
-			{
-				window.clearTimeout(thread);
-			}
+			cancelHoverPicker();
 
 			thread = window.setTimeout(mxUtils.bind(this, function()
 			{
+				thread = null;
 				var arrow = evt.getProperty('arrow');
 				var dir = evt.getProperty('direction');
 				var mouseEvent = evt.getProperty('event');
+
+				// Hidden or removed arrows have no position for the picker
+				if (arrow.parentNode == null || arrow.style.display == 'none' ||
+					this.hoverIcons.currentState == null)
+				{
+					return;
+				}
 
 				var rect = arrow.getBoundingClientRect();
 				var offset = mxUtils.getOffset(graph.container);
@@ -2190,13 +2371,7 @@ EditorUi.prototype.installShapePicker = function()
 			}), Editor.shapePickerHoverDelay);
 		}));
 
-		this.hoverIcons.addListener('blur', mxUtils.bind(this, function(sender, evt)
-		{
-			if (thread != null)
-			{
-				window.clearTimeout(thread);
-			}
-		}));
+		this.hoverIcons.addListener('blur', cancelHoverPicker);
 	}
 
 	// Shows shape picker when connect handle is clicked (not dragged)
@@ -2449,6 +2624,13 @@ EditorUi.prototype.showShapePicker = function(x, y, source, callback, direction,
 			
 			this.shapePickerCallback = callback;
 			this.shapePicker = div;
+
+			// Hides the inline toolbar while a shape picker that was opened
+			// with a click is shown, eg. after a click on a hover icon
+			if (!hovering && this.inlineToolbar != null)
+			{
+				this.inlineToolbar.setSuspended(true);
+			}
 		}
 	}
 
@@ -2526,7 +2708,9 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 			div.appendChild(node);
 
 			var fixed = cell.shapePickerKeepStyle;
+			var styleOnly = cell.shapePickerStyleOnly;
 			delete cell.shapePickerKeepStyle;
+			delete cell.shapePickerStyleOnly;
 
 			if (!fixed)
 			{
@@ -2559,12 +2743,17 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 				{
 					if (!mxEvent.isAltDown(evt) || graph.getSelectionCount() != 1)
 					{
+						this.sidebar.addRecentShapes([cell]);
+
 						if (mxEvent.isShiftDown(evt) && (source != null ||
 							!graph.isSelectionEmpty()))
 						{
 							var temp = graph.getEditableCells((source != null) ?
 								[source] : graph.getSelectionCells());
-							graph.updateShapes(cell, temp);
+							// Shapes that replace only the style keep the children
+							// and the size of the shapes (see Graph.updateShapes)
+							graph.updateShapes((styleOnly) ? graph.model.cloneCell(cell, false) : cell,
+								temp, false, (styleOnly) ? Graph.cellStyles : null);
 						}
 						else
 						{
@@ -2627,6 +2816,20 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 						mxEvent.consume(evt);
 					}
 				}), 25, 25, null, null, source, connectEdge);
+
+				// Name for screen readers, eg. Ellipse, or the text of the label, eg. Text
+				var label = graph.getIndexableText([cell]);
+
+				if (label.length == 0)
+				{
+					var shape = mxUtils.getValue(graph.getCellStyle(cell),
+						mxConstants.STYLE_SHAPE, mxConstants.SHAPE_RECTANGLE);
+					shape = (graph.model.isEdge(cell)) ? 'connection' :
+						((shape == mxConstants.SHAPE_LABEL) ? mxConstants.SHAPE_RECTANGLE : shape);
+					label = mxResources.get(shape, null, Editor.getLabelForStylename(shape));
+				}
+
+				temp.setAttribute('aria-label', label);
 				temp.style.display = 'flex';
 				temp.style.alignItems = 'center';
 				temp.style.justifyContent = 'center';
@@ -2638,6 +2841,31 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 		{
 			addCell(cells[i]);
 		}
+
+		// Tab and Shift+Tab move between the shapes and Escape closes the picker
+		// (see Sidebar.addClickHandler for the arrow keys, Enter and Space)
+		mxEvent.addListener(div, 'keydown', mxUtils.bind(this, function(evt)
+		{
+			if (evt.keyCode == 9 /* Tab */ && !mxEvent.isAltDown(evt) &&
+				!mxEvent.isControlDown(evt) && !mxEvent.isMetaDown(evt))
+			{
+				var items = this.sidebar.getKeyboardItems(div);
+				var index = mxUtils.indexOf(items, document.activeElement);
+
+				if (items.length > 0)
+				{
+					items[mxUtils.mod(index + ((mxEvent.isShiftDown(evt)) ?
+						-1 : 1), items.length)].focus();
+				}
+
+				mxEvent.consume(evt);
+			}
+			else if (evt.keyCode == 27 /* Escape */)
+			{
+				this.hideShapePicker();
+				mxEvent.consume(evt);
+			}
+		}));
 		
 		var b = graph.container.scrollTop + graph.container.offsetHeight;
 		var dy = div.offsetTop + div.clientHeight - b;
@@ -2781,13 +3009,16 @@ EditorUi.prototype.getCellsForShapePicker = function(cell, hovering, showEdges)
 		return cells;
 	}
 
+	// Shapes of the palette of the given shape or basic shapes
+	var shapes = (cell != null) ? this.getPaletteCellsForShapePicker(cell) : null;
+
 	if (cell == null)
 	{
 		cell = createVertex(graph.appendFontSize(Editor.defaultTextStyle,
 			graph.vertexFontSize), 60, 30, 'Text');
 	}
 
-	var cells = [cell, createVertex('whiteSpace=wrap;html=1;'),
+	var cells = (shapes != null) ? [cell].concat(shapes) : [cell, createVertex('whiteSpace=wrap;html=1;'),
 		createVertex('ellipse;whiteSpace=wrap;html=1;shapeInside=1;', 80, 80),
 		createVertex('rhombus;whiteSpace=wrap;html=1;shapeInside=1;', 80, 80),
 		createVertex('rounded=1;whiteSpace=wrap;html=1;'),
@@ -2799,7 +3030,7 @@ EditorUi.prototype.getCellsForShapePicker = function(cell, hovering, showEdges)
 		createVertex('triangle;whiteSpace=wrap;html=1;shapeInside=1;', 60, 80),
 		createVertex('shape=document;whiteSpace=wrap;html=1;boundedLbl=1;', 120, 80),
 		createVertex('shape=tape;whiteSpace=wrap;html=1;', 120, 100),
-		createVertex('ellipse;shape=cloud;whiteSpace=wrap;html=1;', 120, 80),
+		createVertex('ellipse;shape=cloud;whiteSpace=wrap;html=1;perimeter=cloudPerimeter;', 120, 80),
 		createVertex('shape=singleArrow;whiteSpace=wrap;html=1;arrowWidth=0.4;arrowSize=0.4;', 80, 60),
 		createVertex('shape=waypoint;sketch=0;size=6;pointerEvents=1;points=[];fillColor=none;resizable=0;' +
 			'rotatable=0;perimeter=centerPerimeter;snapToPoint=1;', 20, 20)];
@@ -2819,6 +3050,362 @@ EditorUi.prototype.getCellsForShapePicker = function(cell, hovering, showEdges)
 };
 
 /**
+ * Maximum number of shapes of a palette after the given shape in the shape
+ * picker (see getPaletteCellsForShapePicker). Default is 15, which fills four
+ * rows of four shapes with the given shape.
+ */
+EditorUi.prototype.maxShapePickerPaletteCells = 15;
+
+/**
+ * Returns the cells for the shape picker after the given shape if it is a
+ * shape of a palette of the sidebar other than the basic shapes (see
+ * getShapePickerMatch and Sidebar.isBasicLibrary), else null: the shapes of
+ * the library of the shape on the current page, the most used first (see
+ * getUsedShapeStyles), the recent shapes of the library (see
+ * Sidebar.getRecentShapes) and the shapes of the library for the shape
+ * picker (see Sidebar.getPickerShapes), without the given shape. The cells
+ * have the size and style of their palette with the formatting of the given
+ * shape (see getPaletteStyle), which the shape picker keeps and sets as it is
+ * on the shapes that the cells replace, which keep their children and size,
+ * eg. the attributes of classes (see Graph.updateShapes).
+ */
+EditorUi.prototype.getPaletteCellsForShapePicker = function(cell)
+{
+	var graph = this.editor.graph;
+	var sidebar = this.sidebar;
+	var style = graph.model.getStyle(cell);
+	var matches = (sidebar != null && graph.model.isVertex(cell)) ?
+		sidebar.getShapeMatches(style) : null;
+	var result = [];
+
+	// Shapes that are only in the basic library have the basic shapes
+	if (matches != null && matches.some(function(match) { return !sidebar.isBasicLibrary(match.lib.id); }))
+	{
+		var used = this.getUsedShapeStyles();
+		var match = this.getShapePickerMatch(matches, used);
+		var lib = match.lib;
+
+		if (!sidebar.isBasicLibrary(lib.id))
+		{
+			var previous = sidebar.getPaletteShape(style, function(temp)
+			{
+				return temp === lib;
+			});
+
+			// Shapes of the library on the page by the number of shapes
+			var counts = new mxDictionary();
+			var usedShapes = [];
+
+			for (var i = 0; i < used.styles.length; i++)
+			{
+				var entry = sidebar.getPaletteShape(used.styles[i], function(temp)
+				{
+					return temp.id == lib.id;
+				});
+
+				if (entry != null)
+				{
+					if (counts.get(entry) == null)
+					{
+						usedShapes.push(entry);
+					}
+
+					counts.put(entry, (counts.get(entry) || 0) + used.counts[used.styles[i]]);
+				}
+			}
+
+			usedShapes.sort(function(a, b)
+			{
+				return mxUtils.compareNumbers(counts.get(b), counts.get(a));
+			});
+
+			var entries = [];
+
+			var addEntries = mxUtils.bind(this, function(list)
+			{
+				for (var i = 0; i < list.length && entries.length <
+					this.maxShapePickerPaletteCells; i++)
+				{
+					if ((list[i].name != match.name || list[i].key != match.key) &&
+						mxUtils.indexOf(entries, list[i]) < 0)
+					{
+						entries.push(list[i]);
+					}
+				}
+			});
+
+			addEntries(usedShapes);
+			addEntries(sidebar.getRecentShapes(lib.id));
+			addEntries(sidebar.getPickerShapes(lib, previous));
+
+			for (var i = 0; i < entries.length; i++)
+			{
+				var clone = graph.cloneCell(entries[i].cell);
+				clone.style = this.getPaletteStyle(cell, entries[i], previous);
+				clone.shapePickerKeepStyle = true;
+				clone.shapePickerStyleOnly = true;
+				result.push(clone);
+			}
+		}
+	}
+
+	return (result.length > 0) ? result : null;
+};
+
+/**
+ * Returns the match of a shape (see Sidebar.getShapeMatches) whose library
+ * has the most shapes on the current page, where each shape counts for the
+ * libraries of all its matches (see getUsedShapeStyles), or the first match.
+ * Shapes may be in several libraries, eg. the classes of UML are lists of the
+ * General palette and of ER.
+ */
+EditorUi.prototype.getShapePickerMatch = function(matches, used)
+{
+	var counts = Object.create(null);
+
+	for (var i = 0; i < used.styles.length; i++)
+	{
+		var temp = this.sidebar.getShapeMatches(used.styles[i]);
+		var seen = Object.create(null);
+
+		for (var j = 0; temp != null && j < temp.length; j++)
+		{
+			var id = temp[j].lib.id;
+
+			if (seen[id] == null)
+			{
+				seen[id] = true;
+				counts[id] = (counts[id] || 0) + used.counts[used.styles[i]];
+			}
+		}
+	}
+
+	var result = matches[0];
+
+	for (var i = 1; i < matches.length; i++)
+	{
+		if ((counts[matches[i].lib.id] || 0) > (counts[result.lib.id] || 0))
+		{
+			result = matches[i];
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Maximum number of styles of the shapes on the current page for the shape
+ * picker (see getUsedShapeStyles). Default is 1000.
+ */
+EditorUi.prototype.maxShapePickerStyles = 1000;
+
+/**
+ * Returns the styles of the shapes on the current page, the most used first
+ * and at most maxShapePickerStyles, and the number of shapes for each style
+ * as an object with styles and counts. Edges and their labels, rows and
+ * cells of tables, children of stack layouts, eg. the attributes of classes,
+ * and other parts of shapes are not counted.
+ */
+EditorUi.prototype.getUsedShapeStyles = function()
+{
+	var graph = this.editor.graph;
+	var model = graph.model;
+	var counts = Object.create(null);
+	var styles = [];
+	var queue = [model.getRoot()];
+
+	for (var i = 0; i < queue.length; i++)
+	{
+		var parent = queue[i];
+		var childCount = model.getChildCount(parent);
+		var parts = childCount > 0 && model.isVertex(parent) && (graph.isStack(parent) ||
+			graph.isTable(parent) || graph.isTableRow(parent));
+
+		for (var j = 0; j < childCount; j++)
+		{
+			var child = model.getChildAt(parent, j);
+
+			if (!model.isEdge(child))
+			{
+				var style = model.getStyle(child);
+
+				if (model.isVertex(child) && !parts && typeof style === 'string' &&
+					mxUtils.getValue(graph.getCurrentCellStyle(child), 'part', '0') != '1')
+				{
+					if (counts[style] == null)
+					{
+						counts[style] = 0;
+						styles.push(style);
+					}
+
+					counts[style]++;
+				}
+
+				queue.push(child);
+			}
+		}
+	}
+
+	styles.sort(function(a, b)
+	{
+		return mxUtils.compareNumbers(counts[b], counts[a]);
+	});
+
+	if (styles.length > this.maxShapePickerStyles)
+	{
+		styles.length = this.maxShapePickerStyles;
+	}
+
+	return {styles: styles, counts: counts};
+};
+
+/**
+ * Returns the style of the given entry of a palette (see
+ * Sidebar.getPaletteShapes) for the given shape: the style of the entry with
+ * its label perimeter (see Graph.addLabelPerimeters), the HTML labels of the
+ * shape, and the values of Graph.cellStyles, word wrap, perimeter, eg. the
+ * outline perimeter of an image, and label position that the shape changed
+ * from its previous entry, or all of these values that the shape sets if
+ * there is no previous entry. Values are compared with the values of named
+ * styles and the default style. Values of a group in
+ * Graph.cellStyleGroups are kept together. A changed label position is kept
+ * with the alignment and the label perimeter, which the Format panel sets
+ * together, while a changed alignment alone keeps the label position of the
+ * entry and is kept only where the label of the entry is centered or placed as
+ * in the shape. The colors of a palette, such as the colors of the AWS
+ * categories, are not kept, and the values of the palette are ignored when
+ * shapes are found in palettes (see Sidebar.getKeyStyle).
+ */
+EditorUi.prototype.getPaletteStyle = function(cell, entry, previous)
+{
+	var graph = this.editor.graph;
+
+	// Returns the style of the entry as inserted from the sidebar
+	var getEntryStyle = function(entry, values)
+	{
+		var clone = graph.model.cloneCell(entry.cell);
+
+		for (var key in values)
+		{
+			clone.style = mxUtils.setStyle(clone.style, key, values[key]);
+		}
+
+		graph.addLabelPerimeters([clone]);
+
+		return clone.style;
+	};
+
+	var parse = function(style)
+	{
+		var result = {};
+		var tokens = (typeof style === 'string') ? style.split(';') : [];
+
+		for (var i = 0; i < tokens.length; i++)
+		{
+			var index = tokens[i].indexOf('=');
+
+			if (index > 0)
+			{
+				result[tokens[i].substring(0, index)] = tokens[i].substring(index + 1);
+			}
+		}
+
+		return result;
+	};
+
+	// Effective styles with the values of named styles and the default style,
+	// where label positions and alignments are centered if they are not set
+	var defaultStyle = graph.stylesheet.getDefaultVertexStyle();
+	var position = [mxConstants.STYLE_LABEL_POSITION, mxConstants.STYLE_VERTICAL_LABEL_POSITION];
+	var align = [mxConstants.STYLE_ALIGN, mxConstants.STYLE_VERTICAL_ALIGN];
+	var centered = [mxConstants.ALIGN_CENTER, mxConstants.ALIGN_MIDDLE];
+
+	var resolve = function(style)
+	{
+		var result = mxUtils.clone(graph.stylesheet.getCellStyle(style, defaultStyle));
+
+		for (var i = 0; i < position.length; i++)
+		{
+			result[position[i]] = mxUtils.getValue(result, position[i], centered[i]);
+			result[align[i]] = mxUtils.getValue(result, align[i], centered[i]);
+		}
+
+		return result;
+	};
+
+	var style = graph.model.getStyle(cell);
+	var values = parse(style);
+	var current = resolve(style);
+	var before = (previous != null) ? resolve(getEntryStyle(previous, {})) : null;
+	var after = resolve(getEntryStyle(entry, {}));
+
+	// Changed from the previous entry or set if there is no previous entry
+	var changed = function(key)
+	{
+		return (before != null) ? current[key] != before[key] : values[key] != null;
+	};
+
+	var keys = Graph.cellStyles.concat([mxConstants.STYLE_WHITE_SPACE, mxConstants.STYLE_PERIMETER]);
+	var kept = ['html'];
+
+	for (var i = 0; i < keys.length; i++)
+	{
+		if (mxUtils.indexOf(align, keys[i]) < 0 && changed(keys[i]))
+		{
+			kept.push(keys[i]);
+		}
+	}
+
+	for (var i = 0; i < Graph.cellStyleGroups.length; i++)
+	{
+		var group = Graph.cellStyleGroups[i];
+
+		for (var j = 0; j < group.length; j++)
+		{
+			if (mxUtils.indexOf(kept, group[j]) >= 0)
+			{
+				kept = kept.concat(group);
+				break;
+			}
+		}
+	}
+
+	var result = {};
+
+	for (var i = 0; i < kept.length; i++)
+	{
+		result[kept[i]] = values[kept[i]];
+	}
+
+	// A moved label keeps its position, alignment and label perimeter, which
+	// the Format panel sets together. A changed alignment alone is kept on the
+	// axes where the label of the entry is centered or placed as in the shape.
+	if (changed(position[0]) || changed(position[1]))
+	{
+		for (var i = 0; i < position.length; i++)
+		{
+			result[position[i]] = current[position[i]];
+			result[align[i]] = current[align[i]];
+		}
+
+		result[mxConstants.STYLE_LABEL_PERIMETER] = values[mxConstants.STYLE_LABEL_PERIMETER];
+	}
+	else
+	{
+		for (var i = 0; i < align.length; i++)
+		{
+			if (changed(align[i]) && (after[position[i]] == centered[i] ||
+				after[position[i]] == current[position[i]]))
+			{
+				result[align[i]] = current[align[i]];
+			}
+		}
+	}
+
+	return getEntryStyle(entry, result);
+};
+
+/**
  * Creates a temporary graph instance for rendering off-screen content.
  */
 EditorUi.prototype.isShapePickerVisible = function(cancel)
@@ -2833,8 +3420,21 @@ EditorUi.prototype.hideShapePicker = function(cancel)
 {
 	if (this.shapePicker != null)
 	{
-		this.shapePicker.parentNode.removeChild(this.shapePicker);
+		var focused = mxUtils.isAncestorNode(this.shapePicker, document.activeElement);
+
+		// The picker may already have been removed with the contents of its container
+		if (this.shapePicker.parentNode != null)
+		{
+			this.shapePicker.parentNode.removeChild(this.shapePicker);
+		}
+
 		this.shapePicker = null;
+
+		// Returns the focus from the picker to the diagram, eg. after Escape
+		if (focused && document.activeElement == document.body)
+		{
+			this.editor.graph.container.focus();
+		}
 
 		if (this.hoverIcons != null &&
 			this.hoverIcons.shapePickerHoverDiv != null)
@@ -2846,8 +3446,13 @@ EditorUi.prototype.hideShapePicker = function(cancel)
 		{
 			this.shapePickerCallback();
 		}
-		
+
 		this.shapePickerCallback = null;
+
+		if (this.inlineToolbar != null && this.inlineToolbar.suspended)
+		{
+			this.inlineToolbar.setSuspended(false);
+		}
 	}
 };
 
@@ -2926,11 +3531,1111 @@ EditorUi.prototype.onKeyDown = function(evt)
 		}
 		else
 		{
-			graph.selectCell(!mxEvent.isShiftDown(evt));
+			var previous = mxEvent.isShiftDown(evt);
+			var leave = false;
+
+			// Moves the focus from the given element or leaves an editor in a
+			// frame at the ends of the order (see isTabOrderEnd)
+			var moveFrom = mxUtils.bind(this, function(elt)
+			{
+				leave = this.isTabOrderEnd(elt, previous);
+
+				return leave || this.focusAdjacentTabStop(elt, previous);
+			});
+
+			this.moveTabFocus(previous, mxUtils.bind(this, function()
+			{
+				var start = this.getTabStart();
+
+				// Continues from a click outside of the diagram that kept the focus
+				// here, eg. on a toolbar button (see getTabStart), or selects the
+				// next cell, which goes into containers (table, row, cell), or the
+				// container or previous cell, which goes out of them, where the
+				// empty selection comes before the first and after the last cell
+				// (see tabEndOfDiagram), and from the empty selection moves the
+				// focus to the next or previous control
+				if (mxUtils.isAncestorNode(graph.container, start) || !moveFrom(start))
+				{
+					if (graph.isSelectionEmpty() && this.tabEndOfDiagram != previous)
+					{
+						moveFrom(graph.container);
+					}
+					else if ((previous) ? graph.selectParentOrPreviousCell() :
+						graph.selectCell(true, null, null, true))
+					{
+						this.tabEndOfDiagram = false;
+					}
+					else if (graph.isSelectionEmpty())
+					{
+						moveFrom(graph.container);
+					}
+					else
+					{
+						graph.clearSelection();
+						this.tabEndOfDiagram = !previous;
+
+						// Shows the focus ring of the diagram, which got the focus from
+						// the selected cell (see installTypingShim)
+						if (document.activeElement == graph.container)
+						{
+							graph.container.classList.add('geFocusVisible');
+						}
+					}
+				}
+
+				if (leave)
+				{
+					this.focusFrameExit(previous);
+				}
+
+				return !leave;
+			}));
+
+			this.tabStart = null;
+
+			// Leaves Tab to the browser (see focusFrameExit)
+			if (leave)
+			{
+				return;
+			}
 		}
-			
+
 		mxEvent.consume(evt);
 	}
+};
+
+/**
+ * Makes the given element, eg. a toolbar button or the title of a collapsible
+ * section, a button for the keyboard (see Editor.initKeyboardButton) that
+ * moves the focus into a window or dialog that it opens, eg. Layers, or to the
+ * next control if it disables itself.
+ */
+EditorUi.prototype.initKeyboardButton = function(elt)
+{
+	Editor.initKeyboardButton(elt, mxUtils.bind(this, function(evt)
+	{
+		var windows = this.getVisibleWindows();
+		var dialog = this.dialog;
+		Editor.clickWithKeyboard(elt, evt);
+
+		// Moves on if the button disabled itself, eg. Delete for the selection
+		if (!this.focusOpenedWindow(windows) && !this.focusOpenedDialog(dialog) &&
+			document.activeElement == elt &&
+			(elt.hasAttribute('disabled') || elt.classList.contains('mxDisabled')))
+		{
+			this.focusAdjacentTabStop(elt, false);
+		}
+	}));
+};
+
+/**
+ * Moves the focus to the search field if it is visible and returns true if
+ * the focus was moved.
+ */
+EditorUi.prototype.focusOmniSearch = function()
+{
+	var omniSearch = document.getElementById('geOmniSearch');
+	var result = omniSearch != null && omniSearch.clientWidth > 30;
+
+	if (result)
+	{
+		omniSearch.focus();
+	}
+
+	return result;
+};
+
+/**
+ * Returns true if the given element takes text input, eg. a text field, where
+ * keystrokes like Slash are typed.
+ */
+EditorUi.prototype.isTextInputElement = function(elt)
+{
+	return elt.isContentEditable || elt.nodeName == 'TEXTAREA' || (elt.nodeName == 'INPUT' &&
+		!/^(button|checkbox|color|file|image|radio|range|reset|submit)$/.test(elt.type));
+};
+
+/**
+ * Returns the parts of the user interface in the order of Tab, which is the
+ * reading order (see getTabStops). This implementation returns the menubar,
+ * toolbar, shapes, diagram, format panel and page tabs.
+ */
+EditorUi.prototype.getTabRegions = function()
+{
+	return [this.menubarContainer, this.toolbarContainer,
+		(this.sidebar != null) ? this.sidebar.container : null,
+		this.editor.graph.container, this.getFormatRegion(),
+		this.tabContainer];
+};
+
+/**
+ * Returns the part of the user interface that is the format panel (see
+ * getTabRegions, focusFormatPanel).
+ */
+EditorUi.prototype.getFormatRegion = function()
+{
+	return this.formatContainer;
+};
+
+/**
+ * Returns the windows of the user interface, eg. Layers, as objects with a
+ * window property (mxWindow). This implementation returns an empty array.
+ */
+EditorUi.prototype.getWindows = function()
+{
+	return [];
+};
+
+/**
+ * Returns the visible windows (see getWindows).
+ */
+EditorUi.prototype.getVisibleWindows = function()
+{
+	var wnds = this.getWindows();
+	var result = [];
+
+	for (var i = 0; i < wnds.length; i++)
+	{
+		if (wnds[i] != null && wnds[i].window != null && wnds[i].window.isVisible())
+		{
+			result.push(wnds[i]);
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Returns the visible window that contains the given element, eg. Layers, or
+ * null if there is none. Windows that are or contain parts of the user
+ * interface (see getTabRegions), eg. the shapes and format windows of the
+ * minimal and sketch themes, are ignored.
+ */
+EditorUi.prototype.getToolWindow = function(elt)
+{
+	var regions = this.getTabRegions();
+	var wnds = this.getVisibleWindows();
+
+	for (var i = 0; i < wnds.length; i++)
+	{
+		if (mxUtils.isAncestorNode(wnds[i].window.div, elt))
+		{
+			for (var j = 0; j < regions.length; j++)
+			{
+				if (regions[j] != null && mxUtils.isAncestorNode(wnds[i].window.div, regions[j]))
+				{
+					return null;
+				}
+			}
+
+			return wnds[i];
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Moves the focus to the first control of a visible window that is not in the
+ * given windows (see getVisibleWindows), ie. a window that was opened since,
+ * eg. Layers from a menu with the keyboard, unless the focus is already in
+ * it. A window without controls, eg. Outline, takes the focus itself so that
+ * Escape closes it. Returns true if such a window has the focus.
+ */
+EditorUi.prototype.focusOpenedWindow = function(windows)
+{
+	var wnds = this.getVisibleWindows();
+
+	for (var i = 0; i < wnds.length; i++)
+	{
+		if (mxUtils.indexOf(windows, wnds[i]) < 0)
+		{
+			var div = wnds[i].window.div;
+
+			if (!mxUtils.isAncestorNode(div, document.activeElement))
+			{
+				var stops = Dialog.getTabStops(div);
+				var first = null;
+
+				// The buttons of the title bar come after the controls
+				for (var j = 0; j < stops.length && first == null; j++)
+				{
+					if (!mxUtils.isAncestorNode(wnds[i].window.title, stops[j]))
+					{
+						first = stops[j];
+					}
+				}
+
+				this.focusTabStop((first != null) ? first : div);
+			}
+
+			if (mxUtils.isAncestorNode(div, document.activeElement))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+};
+
+/**
+ * Moves the focus to the first control of the current dialog if it was opened
+ * since the given dialog, eg. Print from a menu with the keyboard, and does not
+ * have the focus, ie. if it did not focus one of its fields itself. Returns
+ * true if such a dialog has the focus.
+ */
+EditorUi.prototype.focusOpenedDialog = function(dialog)
+{
+	var dlg = this.dialog;
+
+	if (dlg != null && dlg != dialog && dlg.container != null &&
+		dlg.container.parentNode != null)
+	{
+		if (!mxUtils.isAncestorNode(dlg.container, document.activeElement))
+		{
+			dlg.focusTabStop(dlg.getTabStops(), true);
+		}
+
+		return mxUtils.isAncestorNode(dlg.container, document.activeElement);
+	}
+
+	return false;
+};
+
+/**
+ * Moves the focus to the given control (see getTabGroups). A window without
+ * controls, eg. Outline, is focusable only while it has the focus so that a
+ * click into it keeps the focus where it is, eg. in the diagram.
+ */
+EditorUi.prototype.focusTabStop = function(elt)
+{
+	if (!elt.hasAttribute('tabindex') && elt.getAttribute('role') == 'dialog')
+	{
+		var removeTabIndex = function()
+		{
+			elt.removeEventListener('blur', removeTabIndex);
+			elt.removeAttribute('tabindex');
+		};
+
+		elt.setAttribute('tabindex', '-1');
+		elt.addEventListener('blur', removeTabIndex);
+	}
+
+	elt.focus();
+};
+
+/**
+ * Returns the visible parts of the user interface in the order of Tab (see
+ * getTabRegions), each with its controls. The diagram is one control for its
+ * cells (see onKeyDown) and the windows, eg. Layers, follow the diagram that
+ * they float over.
+ */
+EditorUi.prototype.getTabGroups = function()
+{
+	var graph = this.editor.graph;
+	var regions = this.getTabRegions().slice();
+	var wnds = this.getVisibleWindows();
+	var index = mxUtils.indexOf(regions, graph.container) + 1;
+	var groups = [];
+	var all = [];
+
+	for (var i = 0; i < wnds.length; i++)
+	{
+		if (mxUtils.indexOf(regions, wnds[i].window.div) < 0)
+		{
+			regions.splice(index++, 0, wnds[i].window.div);
+		}
+	}
+
+	for (var i = 0; i < regions.length; i++)
+	{
+		var region = regions[i];
+
+		// Collapsed panels have a width of 0 and a border
+		if (region != null && region.clientWidth > 0 && region.clientHeight > 0 &&
+			mxUtils.getCurrentStyle(region).visibility != 'hidden')
+		{
+			// The diagram is one control for its cells (see onKeyDown), or the links
+			// in its labels follow it if it cannot be edited, eg. in the lightbox
+			var elts = (region != graph.container) ? Dialog.getTabStops(region) :
+				((graph.isEnabled()) ? [region] : [region].concat(Dialog.getTabStops(region)));
+			var stops = [];
+
+			// Windows without controls, eg. Outline, are one control (see focusTabStop)
+			if (elts.length == 0 && region.getAttribute('role') == 'dialog')
+			{
+				elts = [region];
+			}
+
+			// The buttons in the title bar of a window come after its controls
+			for (var j = 0; j < wnds.length; j++)
+			{
+				if (wnds[j].window.div == region)
+				{
+					var controls = [];
+					var buttons = [];
+
+					for (var k = 0; k < elts.length; k++)
+					{
+						if (mxUtils.isAncestorNode(wnds[j].window.title, elts[k]))
+						{
+							buttons.push(elts[k]);
+						}
+						else
+						{
+							controls.push(elts[k]);
+						}
+					}
+
+					elts = controls.concat(buttons);
+				}
+			}
+
+			for (var j = 0; j < elts.length; j++)
+			{
+				if (mxUtils.indexOf(all, elts[j]) < 0)
+				{
+					stops.push(elts[j]);
+					all.push(elts[j]);
+				}
+			}
+
+			groups.push({region: region, stops: stops});
+		}
+	}
+
+	return groups;
+};
+
+/**
+ * Returns the controls of the user interface or of the given groups in the
+ * order of Tab (see getTabGroups).
+ */
+EditorUi.prototype.getTabStops = function(groups)
+{
+	groups = (groups != null) ? groups : this.getTabGroups();
+	var stops = [];
+
+	for (var i = 0; i < groups.length; i++)
+	{
+		stops = stops.concat(groups[i].stops);
+	}
+
+	return stops;
+};
+
+/**
+ * Returns the position of the given element in the order of Tab of the given
+ * groups (see getTabGroups): the index of the innermost control that is or
+ * contains the element or, for another element, eg. a click into the format
+ * panel, the index of the next control minus 0.5. Returns null for elements
+ * outside of the groups.
+ */
+EditorUi.prototype.getTabIndex = function(groups, elt)
+{
+	var count = 0;
+
+	for (var i = 0; i < groups.length; i++)
+	{
+		var stops = groups[i].stops;
+
+		if (mxUtils.isAncestorNode(groups[i].region, elt))
+		{
+			// The controls of a group are not in the order of the document if
+			// a window moves its title bar buttons to the end (see getTabGroups),
+			// and controls may contain controls, eg. the button of a page tab
+			var index = null;
+
+			for (var j = 0; j < stops.length; j++)
+			{
+				if (mxUtils.isAncestorNode(stops[j], elt) && (index == null ||
+					mxUtils.isAncestorNode(stops[index], stops[j])))
+				{
+					index = j;
+				}
+			}
+
+			if (index != null)
+			{
+				return count + index;
+			}
+
+			for (var j = 0; j < stops.length; j++)
+			{
+				if ((elt.compareDocumentPosition(stops[j]) &
+					Node.DOCUMENT_POSITION_FOLLOWING) != 0)
+				{
+					return count + j - 0.5;
+				}
+			}
+
+			return count + stops.length - 0.5;
+		}
+
+		count += stops.length;
+	}
+
+	return null;
+};
+
+/**
+ * Returns the element that Tab and Shift+Tab start from: the last clicked
+ * element if no other key was pressed after the click and no Tab used it,
+ * else the element with the focus.
+ */
+EditorUi.prototype.getTabStart = function()
+{
+	return (this.tabStart != null && document.body.contains(this.tabStart)) ?
+		this.tabStart : document.activeElement;
+};
+
+/**
+ * Specifies if Shift+Cursor selects the nearest shape or connector in that
+ * direction and Alt+Cursor moves the selection by the grid size, instead of
+ * the other way around (see createKeyHandler). Default is false.
+ */
+EditorUi.prototype.shiftArrowSelect = false;
+
+/**
+ * Specifies if the empty selection of the diagram is the stop of Tab after its
+ * last cell, not the stop before its first cell (see onKeyDown). Other keys and
+ * clicks reset this (see tabStartHandler). Default is false.
+ */
+EditorUi.prototype.tabEndOfDiagram = false;
+
+/**
+ * Returns the focus and the selection that Tab and Shift+Tab go back to (see
+ * moveTabFocus). The focus in the diagram is the diagram.
+ */
+EditorUi.prototype.getTabState = function()
+{
+	var graph = this.editor.graph;
+	var focus = document.activeElement;
+
+	return {focus: (mxUtils.isAncestorNode(graph.container, focus)) ? graph.container : focus,
+		cells: graph.getSelectionCells(), end: this.tabEndOfDiagram};
+};
+
+/**
+ * Returns true if the given states (see getTabState) have the same focus and
+ * selection.
+ */
+EditorUi.prototype.isTabState = function(a, b)
+{
+	var result = a.focus == b.focus && a.cells.length == b.cells.length &&
+		a.end == b.end;
+
+	for (var i = 0; i < a.cells.length && result; i++)
+	{
+		result = a.cells[i] == b.cells[i];
+	}
+
+	return result;
+};
+
+/**
+ * Restores the given state (see getTabState) and returns true if its focus is
+ * still visible. The selection is restored before the focus as the typing shim
+ * takes the focus for a new selection (see updateTypingShim).
+ */
+EditorUi.prototype.restoreTabState = function(state)
+{
+	var graph = this.editor.graph;
+	var result = state.focus != null && state.focus != document.body &&
+		document.body.contains(state.focus) && state.focus.getClientRects().length > 0;
+
+	if (result)
+	{
+		var cells = [];
+
+		for (var i = 0; i < state.cells.length; i++)
+		{
+			if (graph.model.contains(state.cells[i]))
+			{
+				cells.push(state.cells[i]);
+			}
+		}
+
+		if (!this.isTabState({focus: null, cells: cells},
+			{focus: null, cells: graph.getSelectionCells()}))
+		{
+			graph.setSelectionCells(cells);
+		}
+
+		this.tabStart = null;
+		this.tabEndOfDiagram = state.end;
+		this.focusTabStop(state.focus);
+	}
+
+	return result;
+};
+
+/**
+ * Moves the focus for Tab or Shift+Tab with the given function, which returns
+ * true if it moved the focus, and returns true if the focus was moved. Shift+Tab
+ * right after Tab and Tab right after Shift+Tab go back to the focus and the
+ * selection before, also for a series of keystrokes, eg. after Tab moved into
+ * the diagram, which keeps its selection. Other keys and clicks clear this
+ * history (see tabStartHandler).
+ */
+EditorUi.prototype.moveTabFocus = function(previous, funct)
+{
+	var history = (this.tabHistory != null) ? this.tabHistory : [];
+	var last = history[history.length - 1];
+	var state = this.getTabState();
+	var result = false;
+
+	if (last != null && !this.isTabState(last.to, state))
+	{
+		history = [];
+		last = null;
+	}
+
+	if (last != null && last.previous != previous && this.restoreTabState(last.from))
+	{
+		history.pop();
+		result = true;
+	}
+	else
+	{
+		result = funct();
+		var to = this.getTabState();
+
+		if (result && !this.isTabState(state, to))
+		{
+			history.push({previous: previous, from: state, to: to});
+		}
+	}
+
+	this.tabHistory = history;
+
+	return result;
+};
+
+/**
+ * Moves the focus from the given element, or from nothing, to the next or
+ * previous control in the order of Tab (see getTabGroups) and returns true if
+ * the focus was moved. The order wraps around, except in a frame, eg. in embed
+ * mode, where Tab and Shift+Tab leave the editor at the ends of the order. Tab
+ * and Shift+Tab into the diagram keep the selection, where the empty selection
+ * comes before the first cell for Tab and after the last cell for Shift+Tab
+ * (see onKeyDown).
+ */
+EditorUi.prototype.focusAdjacentTabStop = function(elt, previous)
+{
+	var graph = this.editor.graph;
+	var groups = this.getTabGroups();
+	var stops = this.getTabStops(groups);
+	var index = this.getAdjacentTabIndex(groups, stops, elt, previous);
+	var next = null;
+
+	if (index != null && (window.self === window.top ||
+		(index >= 0 && index < stops.length)))
+	{
+		next = stops[mxUtils.mod(index, stops.length)];
+	}
+
+	if (next != null)
+	{
+		this.tabStart = null;
+		this.focusTabStop(next);
+
+		if (next == graph.container)
+		{
+			this.tabEndOfDiagram = previous;
+		}
+		// Selects the text like Tab does
+		else if (next.nodeName == 'INPUT')
+		{
+			next.select();
+		}
+	}
+
+	return next != null;
+};
+
+/**
+ * Returns the position in the given controls in the order of Tab (see
+ * getTabGroups) that Tab or Shift+Tab moves to from the given element, or
+ * from nothing, which is before the first or after the last control at the
+ * ends of the order, or null if the element is in no part of the order, eg.
+ * in a window that is not one of them (see getWindows).
+ */
+EditorUi.prototype.getAdjacentTabIndex = function(groups, stops, elt, previous)
+{
+	var index = (elt == null || elt == document.body) ? ((previous) ?
+		stops.length - 0.5 : -0.5) : this.getTabIndex(groups, elt);
+
+	return (stops.length > 0 && index != null) ? ((previous) ?
+		Math.ceil(index - 1) : Math.floor(index + 1)) : null;
+};
+
+/**
+ * Returns true if Tab or Shift+Tab from the given element leave the editor,
+ * which is if the editor is in a frame, eg. in embed mode, and the element is
+ * the last or the first control in the order of Tab (see focusFrameExit).
+ */
+EditorUi.prototype.isTabOrderEnd = function(elt, previous)
+{
+	var result = false;
+
+	if (window.self !== window.top)
+	{
+		var groups = this.getTabGroups();
+		var stops = this.getTabStops(groups);
+		var index = this.getAdjacentTabIndex(groups, stops, elt, previous);
+		result = index != null && (index < 0 || index >= stops.length);
+	}
+
+	return result;
+};
+
+/**
+ * Moves the focus to an element at the end of the document, or at its start
+ * if previous is true, if the editor is in a frame, eg. in embed mode, so
+ * that the Tab or Shift+Tab of the browser leaves the frame at the ends of the
+ * order of Tab (see focusAdjacentTabStop), which follows the reading order,
+ * not the order of the document. The element is removed when it loses the
+ * focus.
+ */
+EditorUi.prototype.focusFrameExit = function(previous)
+{
+	if (window.self !== window.top && document.body != null)
+	{
+		// A tab stop as Chrome wraps around in the frame from other elements
+		var elt = document.createElement('div');
+		elt.setAttribute('tabindex', '0');
+		elt.style.position = 'fixed';
+		elt.style.width = '1px';
+		elt.style.height = '1px';
+		elt.style.overflow = 'hidden';
+		elt.style.outline = 'none';
+
+		mxEvent.addListener(elt, 'blur', function()
+		{
+			if (elt.parentNode != null)
+			{
+				elt.parentNode.removeChild(elt);
+			}
+		});
+
+		document.body.insertBefore(elt, (previous) ? document.body.firstChild : null);
+		elt.focus({preventScroll: true});
+	}
+};
+
+/**
+ * Returns true if the given element is in an area that scrolls, eg. the
+ * shapes or the format panel, where the arrow keys without Shift are left to
+ * the browser, which scrolls the area, and only Shift+arrow keys move the
+ * focus (see focusTabStopInDirection). The diagram is no such area, eg. for
+ * the shape picker.
+ */
+EditorUi.prototype.isInScrollArea = function(elt)
+{
+	var graph = this.editor.graph;
+
+	for (var node = elt; node != null && node != document.body && node != graph.container &&
+		node.nodeType == mxConstants.NODETYPE_ELEMENT; node = node.parentNode)
+	{
+		var style = mxUtils.getCurrentStyle(node);
+
+		if (style != null && (/^(auto|scroll|overlay)$/.test(style.overflowY) ||
+			/^(auto|scroll|overlay)$/.test(style.overflowX)))
+		{
+			return true;
+		}
+	}
+
+	return false;
+};
+
+/**
+ * Returns the element of the given keystroke, which is the element with the
+ * focus if the keystroke removed its source, eg. the item of a menu that
+ * Shift+Arrow Left closed (see mxPopupMenu.keyDown).
+ */
+EditorUi.prototype.getKeySource = function(evt)
+{
+	var source = mxEvent.getSource(evt);
+
+	return (source != null && document.body.contains(source)) ?
+		source : document.activeElement;
+};
+
+/**
+ * Returns true if the given element uses the given arrow keystroke itself
+ * instead of moving the focus (see focusTabStopInDirection): multi-line text
+ * uses all arrow keys, selects, sliders, radio buttons, number and date fields
+ * use them without Shift, text fields with suggestions (datalist) use Arrow Up
+ * and Down without Shift, and other text fields use Shift+Arrow Left and Right
+ * to select text, unless they are read-only, and Arrow Left and Right without
+ * Shift except at the start and the end of their text. Shift+arrow keys move
+ * the focus from everywhere else, also from menus (see mxPopupMenu.keyDown).
+ */
+EditorUi.prototype.isArrowKeyEvent = function(elt, evt)
+{
+	var result = elt.isContentEditable || elt.nodeName == 'TEXTAREA';
+
+	if (!result && mxEvent.isShiftDown(evt))
+	{
+		result = (evt.keyCode == 37 || evt.keyCode == 39) &&
+			this.isTextInputElement(elt) && !elt.readOnly;
+	}
+	else if (!result)
+	{
+		if (elt.nodeName == 'SELECT' || (elt.nodeName == 'INPUT' &&
+			(/^(range|radio|number|date|datetime-local|month|time|week)$/.test(elt.type) ||
+			((evt.keyCode == 38 || evt.keyCode == 40) && elt.list != null))))
+		{
+			result = true;
+		}
+		else if (this.isTextInputElement(elt) && (evt.keyCode == 37 || evt.keyCode == 39))
+		{
+			try
+			{
+				result = elt.selectionStart == null || elt.selectionStart != elt.selectionEnd ||
+					((evt.keyCode == 37) ? elt.selectionStart > 0 :
+					elt.selectionEnd < elt.value.length);
+			}
+			catch (e)
+			{
+				result = true;
+			}
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Moves the focus from the given control outside of the diagram to the
+ * nearest control in the direction of the given arrow key (see
+ * getDirectionalDistance), in the same part of the user interface if region
+ * is true, in a window or in the dialog that is showing, and returns true if
+ * the focus was moved. The diagram, where the arrow keys move and select
+ * cells, is left with Shift+Cursor without a selection (see createKeyHandler),
+ * Tab and Escape, and keeps its selection when the focus moves into it.
+ * Controls that float over the diagram, eg. the toolbars of the sketch theme,
+ * move into it after the last control of their part in the direction.
+ */
+EditorUi.prototype.focusTabStopInDirection = function(elt, keyCode, region)
+{
+	var graph = this.editor.graph;
+	var next = null;
+
+	if (elt != null && elt != document.body && (elt == graph.container ||
+		!mxUtils.isAncestorNode(graph.container, elt)))
+	{
+		// A dialog that is showing is the only part of the user interface
+		var groups = (this.dialog != null) ? [{region: this.dialog.container,
+			stops: Dialog.getTabStops(this.dialog.container)}] : this.getTabGroups();
+		var group = null;
+
+		for (var i = 0; i < groups.length && group == null; i++)
+		{
+			if (mxUtils.isAncestorNode(groups[i].region, elt))
+			{
+				group = groups[i];
+			}
+		}
+
+		if (group != null)
+		{
+			// Windows, eg. Layers, keep the focus as they float over the other parts,
+			// and in windows and dialogs Arrow Left and Right stay in the row
+			var inner = this.dialog != null || this.getToolWindow(elt) != null;
+			var bounds = elt.getBoundingClientRect();
+			var dx = (keyCode == 37) ? -1 : ((keyCode == 39) ? 1 : 0);
+			var dy = (keyCode == 38) ? -1 : ((keyCode == 40) ? 1 : 0);
+
+			// Controls whose center is over the diagram float over it
+			var diagram = graph.container.getBoundingClientRect();
+			var cx = (bounds.left + bounds.right) / 2;
+			var cy = (bounds.top + bounds.bottom) / 2;
+			var floating = !region && !inner && elt != graph.container &&
+				cx > diagram.left && cx < diagram.right &&
+				cy > diagram.top && cy < diagram.bottom;
+			var stops = (region || inner || floating) ? group.stops : this.getTabStops(groups);
+
+			// Includes the controls of grids that are not tab stops, eg. the colors
+			var targets = stops.concat(this.getDirectionalStops((region || inner || floating) ?
+				group.region : document.body));
+
+			var findNext = mxUtils.bind(this, function()
+			{
+				var result = null;
+				var min = null;
+
+				for (var i = 0; i < targets.length; i++)
+				{
+					if (!mxUtils.isAncestorNode(targets[i], elt) &&
+						!mxUtils.isAncestorNode(elt, targets[i]))
+					{
+						var dist = this.getDirectionalDistance(bounds,
+							targets[i].getBoundingClientRect(), dx, dy, inner);
+
+						if (dist != null && (min == null || dist < min))
+						{
+							result = targets[i];
+							min = dist;
+						}
+					}
+				}
+
+				return result;
+			});
+
+			// Arrow Left and Right move along the controls inside of a control
+			// first, eg. the buttons in the title of a library
+			next = (dx != 0) ? this.getInnerTabStop(stops, elt, dx) : null;
+
+			if (next == null)
+			{
+				next = findNext();
+			}
+
+			// In windows and dialogs, Arrow Left and Right continue with the previous or
+			// next control in the order of Tab at the ends of a row, eg. from the preview
+			// of the More Shapes dialog to its buttons
+			if (next == null && inner && dx != 0)
+			{
+				var index = this.getTabIndex([group], elt);
+
+				if (index != null)
+				{
+					next = group.stops[(dx > 0) ? Math.floor(index) + 1 : Math.ceil(index) - 1] || null;
+				}
+			}
+
+			if (next == null)
+			{
+				// The diagram is beyond the last control of a part that floats over it
+				if (floating)
+				{
+					next = graph.container;
+				}
+				// The diagram continues from its center if no control is beyond its
+				// edge, eg. if the toolbars float over it in the sketch theme
+				else if (elt == graph.container)
+				{
+					cx = bounds.left + elt.clientWidth / 2;
+					cy = bounds.top + elt.clientHeight / 2;
+					bounds = {left: cx, right: cx, top: cy, bottom: cy};
+					next = findNext();
+				}
+			}
+
+			if (next != null)
+			{
+				this.tabStart = null;
+
+				// Moves only the focus, eg. without the menu that the search shows
+				// when it gets the focus (see addMenuHandler)
+				try
+				{
+					this.arrowFocus = true;
+					this.focusTabStop(next);
+				}
+				finally
+				{
+					this.arrowFocus = false;
+				}
+
+				// Puts the caret at the end of the text in the direction of the
+				// arrow key, so that the next arrow key in this direction moves on
+				if (next.nodeName == 'INPUT' && this.isTextInputElement(next))
+				{
+					try
+					{
+						var pos = (keyCode == 37) ? 0 : next.value.length;
+						next.setSelectionRange(pos, pos);
+					}
+					catch (e)
+					{
+						// ignores fields without a caret, eg. numbers
+					}
+				}
+			}
+		}
+	}
+
+	return next != null;
+};
+
+/**
+ * Returns the control before (dx is -1) or after (dx is 1) the given control
+ * in the row of a control of the given controls and the controls inside of
+ * it, eg. the title of a library and its buttons, or null if there is none
+ * (see focusTabStopInDirection).
+ */
+EditorUi.prototype.getInnerTabStop = function(stops, elt, dx)
+{
+	var row = null;
+
+	for (var i = 0; i < stops.length && row == null; i++)
+	{
+		if (mxUtils.isAncestorNode(stops[i], elt))
+		{
+			var inner = [];
+
+			for (var j = 0; j < stops.length; j++)
+			{
+				if (stops[j] != stops[i] && mxUtils.isAncestorNode(stops[i], stops[j]))
+				{
+					inner.push(stops[j]);
+				}
+			}
+
+			if (inner.length > 0)
+			{
+				row = [stops[i]].concat(inner);
+			}
+		}
+	}
+
+	var index = (row != null) ? mxUtils.indexOf(row, elt) + dx : -1;
+
+	return (index >= 0 && index < row.length) ? row[index] : null;
+};
+
+/**
+ * Selects the shape or connector that is nearest to the selection in the
+ * direction of the given arrow key (see getDirectionalDistance) and returns
+ * true if a cell was selected. A connector counts as the middle of its path,
+ * so that it comes between the shapes that it connects. Cells that contain or
+ * are contained in the selection, labels of connectors and cells whose center
+ * is not beyond the center of the selection are skipped, so that eg. two
+ * connectors on the same path do not select each other. Each level of nesting
+ * between a cell and the selection counts as 1 px, so that eg. the next cell
+ * of a table comes before its row, which has the same edges, and a shape next
+ * to a list before its items (Tab goes into containers, Shift+Tab out).
+ */
+EditorUi.prototype.selectCellInDirection = function(keyCode)
+{
+	var graph = this.editor.graph;
+	var model = graph.model;
+	var cell = graph.getSelectionCell();
+	var next = null;
+
+	var bounds = function(s)
+	{
+		var p = (model.isEdge(s.cell)) ? graph.view.getPoint(s) : null;
+
+		return (p != null) ? {left: p.x, top: p.y, right: p.x, bottom: p.y} :
+			{left: s.x, top: s.y, right: s.x + s.width, bottom: s.y + s.height};
+	};
+
+	var depth = function(c)
+	{
+		var result = 0;
+
+		for (var p = model.getParent(c); p != null; p = model.getParent(p))
+		{
+			result++;
+		}
+
+		return result;
+	};
+
+	var state = graph.view.getState(cell);
+
+	if (state != null)
+	{
+		var level = depth(cell);
+		var a = bounds(state);
+		var dx = (keyCode == 37) ? -1 : ((keyCode == 39) ? 1 : 0);
+		var dy = (keyCode == 38) ? -1 : ((keyCode == 40) ? 1 : 0);
+		var min = null;
+
+		graph.view.states.visit(mxUtils.bind(this, function(key, s)
+		{
+			if (s.cell != cell && (model.isEdge(s.cell) || (model.isVertex(s.cell) &&
+				!model.isEdge(model.getParent(s.cell)))) &&
+				graph.isCellSelectable(s.cell) &&
+				!model.isAncestor(s.cell, cell) &&
+				!model.isAncestor(cell, s.cell))
+			{
+				var b = bounds(s);
+				var dist = (dx * (b.left + b.right - a.left - a.right) +
+					dy * (b.top + b.bottom - a.top - a.bottom) > 0) ?
+					this.getDirectionalDistance(a, b, dx, dy) : null;
+
+				if (dist != null)
+				{
+					dist += Math.abs(depth(s.cell) - level);
+				}
+
+				if (dist != null && (min == null || dist < min))
+				{
+					next = s.cell;
+					min = dist;
+				}
+			}
+		}));
+
+		if (next != null)
+		{
+			graph.setSelectionCell(next);
+			graph.scrollCellToVisible(next);
+		}
+	}
+
+	return next != null;
+};
+
+/**
+ * Returns the visible controls in the given element that Shift+arrow keys move
+ * to although they are not tab stops, eg. the colors of the color dialog (see
+ * Editor.createKeyboardGrid).
+ */
+EditorUi.prototype.getDirectionalStops = function(container)
+{
+	var elts = container.getElementsByClassName('geDirectionalStop');
+	var result = [];
+
+	for (var i = 0; i < elts.length; i++)
+	{
+		if (elts[i].getClientRects().length > 0)
+		{
+			result.push(elts[i]);
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Returns the distance from the bounds a to the bounds b in the direction
+ * dx, dy or null if b is not in that direction, or for left and right not in
+ * the same row if row is true. The gap across the direction counts 30 times
+ * for left and right and twice for up and down, so that the controls in the
+ * same row or column come first, and the offset of the centers decides
+ * between controls at the same distance.
+ */
+EditorUi.prototype.getDirectionalDistance = function(a, b, dx, dy, row)
+{
+	var tol = 2;
+	var along = (dx > 0) ? b.left - a.right : ((dx < 0) ? a.left - b.right :
+		((dy > 0) ? b.top - a.bottom : a.top - b.bottom));
+	var result = null;
+
+	if (along >= -tol)
+	{
+		var across = (dx != 0) ? Math.max(0, Math.max(a.top, b.top) -
+			Math.min(a.bottom, b.bottom)) : Math.max(0, Math.max(a.left, b.left) -
+			Math.min(a.right, b.right));
+		var offset = (dx != 0) ? Math.abs((a.top + a.bottom) - (b.top + b.bottom)) / 2 :
+			Math.abs((a.left + a.right) - (b.left + b.right)) / 2;
+
+		if (!row || dx == 0 || across == 0)
+		{
+			result = Math.max(0, along) + ((dx != 0) ? 30 : 2) * across + offset / 100;
+		}
+	}
+
+	return result;
 };
 
 /**
@@ -2959,7 +4664,7 @@ EditorUi.prototype.onKeyPress = function(evt)
 		{
 			// Defers to mxKeyHandler if it has a binding for this key
 			// (e.g. "/" for omni search) to avoid intercepting shortcuts
-			if (this.keyHandler != null && this.keyHandler.getFunction(evt) != null)
+			if (this.keyHandler != null && this.keyHandler.resolveFunction(evt) != null)
 			{
 				return;
 			}
@@ -3002,6 +4707,9 @@ EditorUi.prototype.installTypingShim = function()
 	shim.setAttribute('autocorrect', 'off');
 	shim.setAttribute('autocapitalize', 'off');
 	shim.setAttribute('spellcheck', 'false');
+
+	// Names the field that has the focus while a cell is selected (typing edits its label)
+	shim.setAttribute('aria-label', mxResources.get('editText'));
 
 	// Suppress virtual keyboard on touch devices (Android/iOS tablets).
 	// The shim is for capturing keystrokes from physical keyboards and IME;
@@ -3076,11 +4784,18 @@ EditorUi.prototype.installTypingShim = function()
 			return;
 		}
 
+		// Shift+Insert: let through for native paste via the same
+		// clipboard element (shown on the Insert keydown there)
+		if (evt.keyCode == 45 && mxEvent.isShiftDown(evt) && !mxEvent.isAltDown(evt))
+		{
+			return;
+		}
+
 		// Printable character without modifier: let it type into the shim
 		if (evt.key != null && evt.key.length === 1 && !mxEvent.isAltDown(evt))
 		{
 			// But check for keyboard shortcuts bound to this key
-			if (this.keyHandler != null && this.keyHandler.getFunction(evt) != null)
+			if (this.keyHandler != null && this.keyHandler.resolveFunction(evt) != null)
 			{
 				evt.preventDefault();
 			}
@@ -3153,10 +4868,31 @@ EditorUi.prototype.installTypingShim = function()
 };
 
 /**
+ * Keystrokes in the typing shim are for the diagram, not for a text field, so
+ * a menu that is showing handles them (see mxPopupMenu.documentKeyDown).
+ */
+(function()
+{
+	var mxPopupMenuIsTextInputEvent = mxPopupMenu.prototype.isTextInputEvent;
+
+	mxPopupMenu.prototype.isTextInputEvent = function(evt)
+	{
+		return mxPopupMenuIsTextInputEvent.apply(this, arguments) &&
+			mxEvent.getSource(evt).className != 'mxTypingShim';
+	};
+})();
+
+/**
  * Shows or hides the typing shim based on the current state.
  */
 EditorUi.prototype.updateTypingShim = function()
 {
+	// Deferred updates can run after the UI was destroyed
+	if (this.editor == null)
+	{
+		return;
+	}
+
 	var graph = this.editor.graph;
 
 	if (!graph.isEditing() && !graph.isSelectionEmpty() &&
@@ -3202,9 +4938,15 @@ EditorUi.prototype.showTypingShim = function()
 			return;
 		}
 
-		// Position near the cell so IME candidate window appears at the right location
-		shim.style.left = Math.round(state.x) + 'px';
-		shim.style.top = Math.round(state.y) + 'px';
+		// Position near the cell so IME candidate window appears at the right
+		// location, inside the visible area of the container, as Safari scrolls
+		// the container to the focused shim despite preventScroll (eg. to the
+		// top left corner of a large cell or the source of an edge)
+		var c = graph.container;
+		shim.style.left = Math.round(Math.max(c.scrollLeft, Math.min(state.x,
+			c.scrollLeft + c.clientWidth - 8))) + 'px';
+		shim.style.top = Math.round(Math.max(c.scrollTop, Math.min(state.y,
+			c.scrollTop + c.clientHeight - 24))) + 'px';
 
 		if (shim.parentNode !== graph.container)
 		{
@@ -3262,7 +5004,17 @@ EditorUi.prototype.showTypingShim = function()
 		// contentEditable inside the container (e.g. the clipboard element).
 		if (ae == null || ae.contentEditable !== 'true')
 		{
+			var sx = graph.container.scrollLeft;
+			var sy = graph.container.scrollTop;
+
 			shim.focus({preventScroll: true});
+
+			// Restores the scroll position if the browser ignored preventScroll
+			if (graph.container.scrollLeft != sx || graph.container.scrollTop != sy)
+			{
+				graph.container.scrollLeft = sx;
+				graph.container.scrollTop = sy;
+			}
 		}
 	}
 };
@@ -3276,7 +5028,14 @@ EditorUi.prototype.hideTypingShim = function()
 
 	if (shim != null && shim.parentNode != null)
 	{
+		var focused = document.activeElement == shim;
 		shim.parentNode.removeChild(shim);
+
+		// Keeps the focus in the diagram, eg. after deleting the selected cell
+		if (focused)
+		{
+			this.editor.graph.container.focus({preventScroll: true});
+		}
 	}
 };
 
@@ -3289,16 +5048,23 @@ EditorUi.prototype.isImmediateEditingEvent = function(evt)
 };
 
 /**
- * Updates the CSS for the given element to match the selection.
+ * Updates the CSS for the given element to match the selection. The optional
+ * label is the element for the text of no marker, which is otherwise written
+ * to the marker element.
  */
-EditorUi.prototype.updateCssForMarker = function(markerDiv, prefix, shape, marker, fill)
+EditorUi.prototype.updateCssForMarker = function(markerDiv, prefix, shape, marker, fill, label)
 {
 	var src = this.getImageForMarker(marker, fill, shape);
 	markerDiv.innerHTML = '';
 
+	if (label != null)
+	{
+		label.innerHTML = '';
+	}
+
 	if (src == null)
 	{
-		markerDiv.innerHTML = mxUtils.htmlEntities(mxResources.get('none'));
+		mxUtils.write((label != null) ? label : markerDiv, mxResources.get('none'));
 	}
 	else
 	{
@@ -3468,6 +5234,10 @@ EditorUi.prototype.getImageForEdgeShape = function(style)
 	{
 		result = Format.simpleArrowImage.src;
 	}
+	else if (style.shape == 'taperedArrow')
+	{
+		result = Format.taperedArrowImage.src;
+	}
 	else if (style.shape == 'filledEdge')
 	{
 		result = Format.filledEdgeImage.src;
@@ -3566,7 +5336,7 @@ EditorUi.prototype.initClipboard = function()
 	var ui = this;
 
 	var mxClipboardCut = mxClipboard.cut;
-	mxClipboard.cut = function(graph)
+	mxClipboard.cut = function(graph, cells)
 	{
 		if (graph.cellEditor.isContentEditing())
 		{
@@ -3574,13 +5344,14 @@ EditorUi.prototype.initClipboard = function()
 		}
 		else
 		{
-			mxClipboardCut.apply(this, arguments);
+			mxClipboardCut.call(this, graph, graph.getCutCells(
+				(cells != null) ? cells : graph.getSelectionCells()));
 		}
 		
 		ui.updatePasteActionStates();
 	};
 	
-	mxClipboard.copy = function(graph)
+	mxClipboard.copy = function(graph, cells)
 	{
 		var result = null;
 		
@@ -3590,7 +5361,7 @@ EditorUi.prototype.initClipboard = function()
 		}
 		else
 		{
-			result = result || graph.getSelectionCells();
+			result = (cells != null) ? cells : graph.getSelectionCells();
 			result = graph.getExportableCells(graph.model.getTopmostCells(result));
 			
 			var cloneMap = new Object();
@@ -3621,6 +5392,9 @@ EditorUi.prototype.initClipboard = function()
 						geo.relative = false;
 						geo.x = state.x / state.view.scale - state.view.translate.x;
 						geo.y = state.y / state.view.scale - state.view.translate.y;
+
+						// Stores the text styles that the label inherits from the edge
+						clones[i].setStyle(graph.updateInheritedLabelValues(result[i], clones[i].getStyle()));
 					}
 				}
 			}
@@ -3681,6 +5455,13 @@ EditorUi.prototype.initClipboard = function()
 EditorUi.prototype.lazyZoomDelay = 20;
 
 /**
+ * Specifies if the diagram or the pages are fitted to the window again if
+ * the size of the container changes (see <setFitWindowEnabled>). Default is
+ * false.
+ */
+EditorUi.prototype.fitWindowEnabled = false;
+
+/**
  * Delay before update of DOM when using preview.
  */
 EditorUi.prototype.wheelZoomDelay = 500;
@@ -3699,13 +5480,54 @@ EditorUi.prototype.initCanvas = function()
 	var graph = this.editor.graph;
 	graph.timerAutoScroll = true;
 
-	/**
-	 * Returns the padding for pages in page view with scrollbars.
-	 */
-	graph.getPagePadding = function()
+	// Marks chromeless views for the fit, viewbox and scroll paths. The
+	// minimal theme creates a chromeless editor that is no chromeless view.
+	graph.chromeless = this.editor.isChromelessView();
+
+	// Paints the cells in model units so that zoom and pan do not repaint
+	graph.view.modelCoordinates = Editor.fastRendering ||
+		this.editor.isChromelessView();
+
+	// Replaces the zoom preview sooner as zooming does not repaint, and
+	// zooms chromeless views without a preview
+	if (graph.view.modelCoordinates)
 	{
-		return new mxPoint(Math.max(0, Math.round((graph.container.offsetWidth - 34) / graph.view.scale)),
-				Math.max(0, Math.round((graph.container.offsetHeight - 34) / graph.view.scale)));
+		this.wheelZoomDelay = 150;
+
+		if (this.editor.isChromelessView())
+		{
+			this.lazyZoomDelay = 0;
+		}
+	}
+
+	if (this.isFitWindowSupported())
+	{
+		this.installFitWindowHandler();
+	}
+
+	// Enables autoscroll near container edges that touch the window
+	// edge, eg. if the side panels are hidden
+	var graphCreatePanningManager = graph.createPanningManager;
+
+	graph.createPanningManager = function()
+	{
+		var pm = graphCreatePanningManager.apply(this, arguments);
+		pm.windowBorder = 20;
+
+		return pm;
+	};
+
+	/**
+	 * Returns the padding for pages in page view with scrollbars for the
+	 * given scale or the scale of the view.
+	 */
+	graph.getPagePadding = function(scale)
+	{
+		var metrics = graph.getContainerMetrics();
+		scale = (scale != null) ? scale : graph.view.scale;
+
+		return new mxPoint(Math.max(0, Math.round((metrics.offsetWidth - 34) / scale)),
+				Math.max(0, Math.round((metrics.offsetHeight - 34) / scale)));
 	};
 
 	// Fits the number of background pages to the graph
@@ -3734,6 +5556,154 @@ EditorUi.prototype.initCanvas = function()
 	
 	if (this.editor.isChromelessView())
 	{
+		// Returns true if the diagram is padded (see isChromelessDiagramPadded)
+		var isPadded = function()
+		{
+			return ui.isChromelessDiagramPadded();
+		};
+
+		// Returns the bounds of the diagram or the pages in model units. The
+		// bounds of the last validation are also valid before the validation
+		// of a new scale or translate (see view.validate below).
+		var getDiagramBounds = function()
+		{
+			if (!graph.pageVisible && graph.view.modelGraphBounds != null)
+			{
+				return graph.view.modelGraphBounds;
+			}
+			else
+			{
+				var bds = (graph.pageVisible) ? graph.view.getBackgroundPageBounds() :
+					graph.getGraphBounds();
+				var s = graph.view.scale;
+				var tr = graph.view.translate;
+
+				return new mxRectangle(bds.x / s - tr.x, bds.y / s - tr.y,
+					bds.width / s, bds.height / s);
+			}
+		};
+
+		// Returns the page padding of the editor for the given scale, which is
+		// limited to the minimum zoom of 1% so that the tiny fit scale of a far
+		// away cell does not move the diagram to coordinates where it loses its
+		// precision (eg. no free boxes for automatic labels)
+		var getPadding = function(scale)
+		{
+			return graph.getPagePadding(Math.max(0.01, scale));
+		};
+
+		// Adds the page padding of the editor around the diagram so that it can
+		// be moved almost out of the view at any scale [jgraph/drawio#5811]
+		var graphGetChromelessTranslate = graph.getChromelessTranslate;
+
+		graph.getChromelessTranslate = function(scale)
+		{
+			if (isPadded())
+			{
+				var b = getDiagramBounds();
+				var pad = getPadding(scale);
+				var t = this.view.translate;
+				var tx = pad.x - b.x;
+				var ty = pad.y - b.y;
+
+				// Ignores differences of less than one unit, which may be
+				// rounding errors of the bounds, to keep the translate stable
+				return new mxPoint((Math.abs(t.x - tx) < 1) ? t.x : Math.floor(tx),
+					(Math.abs(t.y - ty) < 1) ? t.y : Math.floor(ty));
+			}
+			else
+			{
+				return graphGetChromelessTranslate.apply(this, arguments);
+			}
+		};
+
+		// Updates the padding for the scale, the size of the container and the
+		// diagram and keeps the view (see the sizeDidChange of the editor below)
+		var graphSizeDidChange = graph.sizeDidChange;
+		var lastPage = null;
+
+		graph.sizeDidChange = function()
+		{
+			if (isPadded())
+			{
+				var b = getDiagramBounds();
+				var pad = getPadding(this.view.scale);
+				var tr = this.getChromelessTranslate(this.view.scale);
+				var t = this.view.translate;
+				var pageChanged = ui.currentPage != lastPage;
+				lastPage = ui.currentPage;
+				this.minimumGraphSize = new mxRectangle(0, 0,
+					b.width + 2 * pad.x, b.height + 2 * pad.y);
+
+				// Ignores translates that are not finite, which would never be
+				// equal to the translate that is set and translate it forever
+				if (isFinite(tr.x) && isFinite(tr.y) && (tr.x != t.x || tr.y != t.y))
+				{
+					var dx = Math.round((tr.x - t.x) * this.view.scale);
+					var dy = Math.round((tr.y - t.y) * this.view.scale);
+					var sl = this.container.scrollLeft;
+					var st = this.container.scrollTop;
+
+					// Calls this function again, which keeps the new translate,
+					// and its listeners, eg. the page selection, which must see
+					// the padding of the scale it sets, so there is no guard
+					this.view.setTranslate(tr.x, tr.y);
+
+					// Keeps the view unless a new page was shown, whose view the
+					// page selection sets. Uses the scroll position before the
+					// translate, as the browser clamps it if the size shrinks.
+					if (!pageChanged)
+					{
+						this.container.scrollLeft = sl + dx;
+						this.container.scrollTop = st + dy;
+					}
+
+					return;
+				}
+			}
+
+			graphSizeDidChange.apply(this, arguments);
+		};
+
+		// Applies the padding for a new scale or size of the container before
+		// the validation, which sizeDidChange would otherwise repeat for the
+		// new translate (see the validate of the editor below). Changes of the
+		// bounds or of the pages are still padded in sizeDidChange.
+		var viewValidate = graph.view.validate;
+
+		graph.view.validate = function(cell)
+		{
+			var scroll = null;
+
+			if (cell == null && this.modelCoordinates && !graph.pageVisible &&
+				this.modelGraphBounds != null && isPadded())
+			{
+				var tr = graph.getChromelessTranslate(this.scale);
+				var t = this.translate;
+
+				if (isFinite(tr.x) && isFinite(tr.y) && (tr.x != t.x || tr.y != t.y))
+				{
+					scroll =(ui.currentPage != lastPage) ? null : new mxPoint(
+						graph.container.scrollLeft + Math.round((tr.x - t.x) * this.scale),
+						graph.container.scrollTop + Math.round((tr.y - t.y) * this.scale));
+					t.x = tr.x;
+					t.y = tr.y;
+				}
+			}
+
+			var result = viewValidate.apply(this, arguments);
+
+			// Keeps the view after the size of the container was updated
+			if (scroll != null)
+			{
+				graph.sizeDidChange();
+				graph.container.scrollLeft = scroll.x;
+				graph.container.scrollTop = scroll.y;
+			}
+
+			return result;
+		};
+
         resize = mxUtils.bind(this, function(autoscale, maxScale, cx, cy)
         {
             if (graph.container != null && !graph.isViewer())
@@ -3741,20 +5711,9 @@ EditorUi.prototype.initCanvas = function()
                 cx = (cx != null) ? cx : 0;
                 cy = (cy != null) ? cy : 0;
                 
-                var bds = (graph.pageVisible) ?
-					graph.view.getBackgroundPageBounds() :
-					graph.getGraphBounds();
+                var b = getDiagramBounds();
                 var scroll = mxUtils.hasScrollbars(graph.container);
-                var tr = graph.view.translate;
                 var s = graph.view.scale;
-                
-                // Normalizes the bounds
-                var b = mxRectangle.fromRectangle(bds);
-                b.x = b.x / s - tr.x;
-                b.y = b.y / s - tr.y;
-                b.width /= s;
-                b.height /= s;
-                
                 var st = graph.container.scrollTop;
                 var sl = graph.container.scrollLeft;
                 var sb = (document.documentMode >= 8) ? 20 : 14;
@@ -3770,15 +5729,34 @@ EditorUi.prototype.initCanvas = function()
                 var ns = (autoscale) ? Math.max(0.3, Math.min(maxScale || 1, cw / b.width)) : s;
                 var dx = ((cw - ns * b.width) / 2) / ns;
                 var dy = (this.lightboxVerticalDivider == 0) ? 0 : ((ch - ns * b.height) / this.lightboxVerticalDivider) / ns;
-                
-                if (scroll)
-                {
-                    dx = Math.max(dx, 0);
-                    dy = Math.max(dy, 0);
-                }
 
-                if (scroll || bds.width < cw || bds.height < ch)
+                if (isPadded())
                 {
+                    // Updates the padding for the size of the view, which keeps
+                    // the view, or places the diagram if the view is reset
+                    if (ns != s)
+                    {
+                        graph.view.setScale(ns);
+                    }
+                    else
+                    {
+                        graph.sizeDidChange();
+                    }
+
+                    if (autoscale)
+                    {
+                        this.centerChromelessDiagram();
+                    }
+                }
+                else if (scroll || b.width * s < cw || b.height * s < ch)
+                {
+                    // Centers the diagram if it fits into the view
+                    if (scroll)
+                    {
+                        dx = Math.max(dx, 0);
+                        dy = Math.max(dy, 0);
+                    }
+
                     graph.view.scaleAndTranslate(ns, Math.floor(dx - b.x), Math.floor(dy - b.y));
                     graph.container.scrollTop = st * ns / s;
                     graph.container.scrollLeft = sl * ns / s;
@@ -3798,6 +5776,7 @@ EditorUi.prototype.initCanvas = function()
 		this.chromelessWindowResize = mxUtils.bind(this, function()
 	   	{
 			this.chromelessResize(false);
+			this.centerChromelessDiagram(true);
 	   	});
 
 		// Removable resize listener
@@ -3838,6 +5817,7 @@ EditorUi.prototype.initCanvas = function()
 					}
 
 					this.chromelessResize();
+					this.centerChromelessDiagram();
 				}
 
 				wasEmpty = empty;
@@ -3915,13 +5895,16 @@ EditorUi.prototype.initCanvas = function()
 				a.style.paddingRight = '8px';
 				a.style.cursor = 'pointer';
 				mxEvent.addListener(a, 'click', fn);
-				
+				Editor.initKeyboardButton(a);
+
 				if (tip != null)
 				{
 					a.setAttribute('title', tip);
 				}
-				
+
+				// The title of the button is its name
 				var img = document.createElement('img');
+				img.setAttribute('alt', '');
 				img.setAttribute('border', '0');
 				img.setAttribute('src', imgSrc);
 				img.style.width = '36px';
@@ -4036,6 +6019,7 @@ EditorUi.prototype.initCanvas = function()
 			
 							var offset = mxUtils.getOffset(pageInfo);
 							menu.popup(offset.x, offset.y + pageInfo.offsetHeight, null, evt);
+							this.setCurrentMenu(menu);
 
 							mxEvent.addListener(menu.div, 'mouseleave', mxUtils.bind(this, function()
 							{
@@ -4053,13 +6037,13 @@ EditorUi.prototype.initCanvas = function()
 			{
 				this.actions.get('zoomOut').funct();
 				mxEvent.consume(evt);
-			}), Editor.zoomOutImage, mxResources.get('zoomOut') + ' (Alt+Mousewheel)');
+			}), Editor.zoomOutImage, mxResources.get('zoomOut') + ' (Ctrl+Mousewheel)');
 			
 			addButton(mxUtils.bind(this, function(evt)
 			{
 				this.actions.get('zoomIn').funct();
 				mxEvent.consume(evt);
-			}), Editor.zoomInImage, mxResources.get('zoomIn') + ' (Alt+Mousewheel)');
+			}), Editor.zoomInImage, mxResources.get('zoomIn') + ' (Ctrl+Mousewheel)');
 			
 			addButton(mxUtils.bind(this, function(evt)
 			{
@@ -4084,7 +6068,13 @@ EditorUi.prototype.initCanvas = function()
 					window.clearTimeout(fadeThread2);
 					fadeThread2 = null;
 				}
-				
+
+				// The toolbar stays while it has the keyboard focus
+				if (mxUtils.isAncestorNode(this.chromelessToolbar, document.activeElement))
+				{
+					return;
+				}
+
 				fadeThread = window.setTimeout(mxUtils.bind(this, function()
 				{
 				 	mxUtils.setOpacity(this.chromelessToolbar, 0);
@@ -4244,9 +6234,36 @@ EditorUi.prototype.initCanvas = function()
 
 			if (toolbarConfig.fullscreenBtn != null && window.self !== window.top)
 			{
-				addButton(mxUtils.bind(this, function(evt)
+				// Uses the Fullscreen API if fullscreen=true is specified and the
+				// iframe allows fullscreen (allowfullscreen or allow="fullscreen")
+				var useFullscreen = toolbarConfig.fullscreenBtn.fullscreen === true &&
+					document.fullscreenEnabled && document.documentElement != null &&
+					typeof document.documentElement.requestFullscreen === 'function';
+
+				var fullscreenBtn = addButton(mxUtils.bind(this, function(evt)
 				{
-					if (toolbarConfig.fullscreenBtn.url)
+					if (useFullscreen)
+					{
+						try
+						{
+							var result = (document.fullscreenElement == null) ?
+								document.documentElement.requestFullscreen() :
+								document.exitFullscreen();
+
+							if (result != null && typeof result.then === 'function')
+							{
+								result['catch'](function()
+								{
+									// ignore
+								});
+							}
+						}
+						catch (e)
+						{
+							// ignore
+						}
+					}
+					else if (toolbarConfig.fullscreenBtn.url)
 					{
 						graph.openLink(toolbarConfig.fullscreenBtn.url);
 					}
@@ -4256,7 +6273,22 @@ EditorUi.prototype.initCanvas = function()
 					}
 					
 					mxEvent.consume(evt);
-				}), Editor.fullscreenImage, mxResources.get('openInNewWindow'));
+				}), Editor.fullscreenImage, mxResources.get((useFullscreen) ?
+					'fullscreen' : 'openInNewWindow'));
+
+				if (useFullscreen)
+				{
+					mxEvent.addListener(document, 'fullscreenchange', function()
+					{
+						var img = fullscreenBtn.getElementsByTagName('img')[0];
+
+						if (img != null)
+						{
+							img.setAttribute('src', (document.fullscreenElement != null) ?
+								Editor.fullscreenExitImage : Editor.fullscreenImage);
+						}
+					});
+				}
 			}
 			
 			if (!toolbarConfig.noCloseBtn && ((toolbarConfig.closeBtn && window.self === window.top) ||
@@ -4341,43 +6373,49 @@ EditorUi.prototype.initCanvas = function()
 				}
 			}));
 
-			// Shows/hides toolbar for touch devices
-			var tol = graph.getTolerance();
+			// Shows the toolbar for Tab in the diagram, which can then move the focus
+			// into it, and keeps it while it has the focus. In the capture phase, as
+			// the text outline button stops the keys (see Graph.addTextOutlineButton)
+			var tabContainer = graph.container;
 
-			graph.addMouseListener(
+			var showToolbarForTab = mxUtils.bind(this, function(evt)
 			{
-			    startX: 0,
-			    startY: 0,
-			    scrollLeft: 0,
-			    scrollTop: 0,
-			    mouseDown: function(sender, me)
-			    {
-			    	this.startX = me.getGraphX();
-			    	this.startY = me.getGraphY();
-				    this.scrollLeft = graph.container.scrollLeft;
-				    this.scrollTop = graph.container.scrollTop;
-			    },
-			    mouseMove: function(sender, me) {},
-			    mouseUp: function(sender, me)
-			    {
-			    	if (mxEvent.isTouchEvent(me.getEvent()))
-			    	{
-				    	if ((Math.abs(this.scrollLeft - graph.container.scrollLeft) < tol &&
-				    		Math.abs(this.scrollTop - graph.container.scrollTop) < tol) &&
-				    		(Math.abs(this.startX - me.getGraphX()) < tol &&
-				    		Math.abs(this.startY - me.getGraphY()) < tol))
-				    	{
-				    		if (parseFloat(ui.chromelessToolbar.style.opacity || 0) > 0)
-				    		{
-				    			fadeOut();
-				    		}
-				    		else
-				    		{
-				    			fadeIn(30);
-				    		}
-						}
-			    	}
-			    }
+				if (evt.keyCode == 9 /* Tab */ && this.chromelessToolbar.style.display == 'none')
+				{
+					fadeIn(30);
+					fadeOut();
+				}
+			});
+
+			tabContainer.addEventListener('keydown', showToolbarForTab, true);
+
+			// Not released with the listeners of mxEvent
+			this.destroyFunctions.push(function()
+			{
+				tabContainer.removeEventListener('keydown', showToolbarForTab, true);
+			});
+
+			mxEvent.addListener(this.chromelessToolbar, 'focusin', function()
+			{
+				fadeIn(100);
+			});
+
+			mxEvent.addListener(this.chromelessToolbar, 'focusout', function()
+			{
+				fadeOut();
+			});
+
+			// Shows/hides toolbar for touch devices
+			graph.addTouchTapListener(function()
+			{
+				if (parseFloat(ui.chromelessToolbar.style.opacity || 0) > 0)
+				{
+					fadeOut();
+				}
+				else
+				{
+					fadeIn(30);
+				}
 			});
 		} // end if toolbar
 
@@ -4433,7 +6471,11 @@ EditorUi.prototype.initCanvas = function()
 					if (tr.x != this.translate.x ||
 						tr.y != this.translate.y)
 					{
-						this.invalidate();
+						if (!this.modelCoordinates)
+						{
+							this.invalidate();
+						}
+
 						this.translate.x = tr.x;
 						this.translate.y = tr.y;
 					}
@@ -4446,7 +6488,11 @@ EditorUi.prototype.initCanvas = function()
 
 				if (this.translate.x != tx || this.translate.y != ty)
 				{
-					this.invalidate();	
+					if (!this.modelCoordinates)
+					{
+						this.invalidate();
+					}
+
 					this.translate.x = tx
 					this.translate.y = ty
 				}
@@ -4465,7 +6511,7 @@ EditorUi.prototype.initCanvas = function()
 				pageChanged = false;
 
 				if (this.container != null &&
-					mxUtils.hasScrollbars(this.container))
+					this.getContainerMetrics().scrollbars)
 				{
 					this.updateMinimumSize();
 
@@ -4506,20 +6552,65 @@ EditorUi.prototype.initCanvas = function()
 						'bounds', this.getGraphBounds()));
 				}
 			};
+
+			// Updates the translate after the container was resized without a
+			// refresh, eg. at the end of an animation of the format panel or
+			// when the footer appears after loading, as the next change of the
+			// model would otherwise apply it without keeping the scroll position
+			// (the translate changes with the page padding, see getPagePadding)
+			if (typeof ResizeObserver !== 'undefined')
+			{
+				var containerWidth = graph.container.offsetWidth;
+				var containerHeight = graph.container.offsetHeight;
+				var resizeThread = null;
+
+				new ResizeObserver(function()
+				{
+					if (graph.container != null && (graph.container.offsetWidth != containerWidth ||
+						graph.container.offsetHeight != containerHeight))
+					{
+						containerWidth = graph.container.offsetWidth;
+						containerHeight = graph.container.offsetHeight;
+						window.clearTimeout(resizeThread);
+
+						resizeThread = window.setTimeout(function()
+						{
+							if (graph.container != null && graph.view.getDrawPane() != null)
+							{
+								graph.sizeDidChange();
+							}
+						}, 100);
+					}
+				}).observe(graph.container, {box: 'border-box'});
+			}
 		}
 	}
 	
 	// Accumulates the zoom factor while the rendering is taking place
-	// so that not the complete sequence of zoom steps must be painted
-	var bgGroup = graph.view.getBackgroundPane();
-	var mainGroup = graph.view.getDrawPane();
+	// so that not the complete sequence of zoom steps must be painted.
+	// In model coordinates the draw pane has the transform of the view,
+	// so the preview is applied to the canvas that contains all panes.
+	var bgGroup = (graph.view.modelCoordinates) ? graph.view.getCanvas() :
+		graph.view.getBackgroundPane();
+	var mainGroup = (graph.view.modelCoordinates) ? graph.view.getCanvas() :
+		graph.view.getDrawPane();
 	graph.cumulativeZoomFactor = 1;
 	var updateZoomTimeout = null;
 	var cursorPosition = null;
 	var scrollPosition = null;
 	var forcedZoom = null;
 	var filter = null;
-	var mult = 20;
+	var smoothZoom = false;
+	var smoothScale = null;
+	var committedScale = null;
+
+	// Returns the multiplier for rounding the zoom: the 5% grid of the zoom
+	// stops, or 1% for continuous (pinch) zooms and if the zoom stops are on
+	// the 1% grid (see Graph.isFineZoom), which includes the 5% grid
+	var getZoomMultiplier = function()
+	{
+		return (smoothZoom || graph.isFineZoom()) ? 100 : 20;
+	};
 	
 	var scheduleZoom = function(delay)
 	{
@@ -4598,7 +6689,7 @@ EditorUi.prototype.initCanvas = function()
 						// The chromeless/no-scrollbar path keeps the legacy behaviour.
 						var exact = resize == null && mxUtils.hasScrollbars(graph.container);
 						graph.zoom(graph.cumulativeZoomFactor, exact ? false : null,
-							graph.isFastZoomEnabled() ? mult : null, exact);
+							graph.isFastZoomEnabled() ? getZoomMultiplier() : null, exact);
 						var s = graph.view.scale;
 
 						if (s != prev)
@@ -4662,6 +6753,12 @@ EditorUi.prototype.initCanvas = function()
 						}
 						
 						graph.fireEvent(new mxEventObject('zoomPreviewComplete'));
+
+						// Keeps the exact scale of a continuous zoom for its next
+						// step so that steps which are committed one by one (eg.
+						// a slow pinch) are not lost in the rounding of the scale
+						smoothScale = (smoothZoom) ? prev * graph.cumulativeZoomFactor : null;
+						committedScale = graph.view.scale;
 						graph.cumulativeZoomFactor = 1;
 						updateZoomTimeout = null;
 						scrollPosition = null;
@@ -4674,8 +6771,9 @@ EditorUi.prototype.initCanvas = function()
 		}
 	};
 	
-	graph.lazyZoom = function(zoomIn, ignoreCursorPosition, delay, factor, smooth)
+	graph.lazyZoom = function(zoomIn, ignoreCursorPosition, delay, factor, smooth, percent)
 	{
+		ui.setFitWindowEnabled(false);
 		factor = (factor != null) ? factor : this.zoomFactor;
 
 		// TODO: Fix ignored cursor position if scrollbars are disabled
@@ -4688,50 +6786,43 @@ EditorUi.prototype.initCanvas = function()
 				graph.container.offsetTop + graph.container.clientHeight / 2);
 		}
 
+		smoothZoom = smooth;
+
 		if (smooth)
 		{
-			// Continuous (pinch) zoom accumulates the exact gesture factor
-			// with 1% rounding. Factor 1 keeps an externally assigned
-			// cumulativeZoomFactor unchanged (iOS gesture scale).
+			// Continuous (pinch) zoom accumulates the exact gesture factor,
+			// which is rounded to 1% for the preview and the zoom, so that
+			// small steps add up at all scales. Factor 1 keeps an externally
+			// assigned cumulativeZoomFactor unchanged (iOS gesture scale).
 			if (factor != 1)
 			{
-				// Switches to 5% zoom steps below 15%
-				if (zoomIn)
+				// Continues from the exact scale of the last committed step
+				// if the scale did not change since
+				if (smoothScale != null && this.cumulativeZoomFactor == 1 &&
+					this.view.scale == committedScale)
 				{
-					if (this.view.scale * this.cumulativeZoomFactor <= 0.15)
-					{
-						this.cumulativeZoomFactor *= (this.view.scale + 0.05) / this.view.scale;
-					}
-					else
-					{
-						this.cumulativeZoomFactor *= factor;
-						this.cumulativeZoomFactor = Math.round(this.view.scale * this.cumulativeZoomFactor * 100) / 100 / this.view.scale;
-					}
+					this.cumulativeZoomFactor = smoothScale / this.view.scale;
 				}
-				else
-				{
-					if (this.view.scale * this.cumulativeZoomFactor <= 0.15)
-					{
-						this.cumulativeZoomFactor *= (this.view.scale - 0.05) / this.view.scale;
-					}
-					else
-					{
-						this.cumulativeZoomFactor /= factor;
-						this.cumulativeZoomFactor = Math.round(this.view.scale * this.cumulativeZoomFactor * 100) / 100 / this.view.scale;
-					}
-				}
+
+				this.cumulativeZoomFactor = (zoomIn) ? this.cumulativeZoomFactor * factor :
+					this.cumulativeZoomFactor / factor;
 			}
+
+			smoothScale = null;
 		}
 		else
 		{
+			smoothScale = null;
+
 			// Discrete zoom steps move to the adjacent stop on the ladder
 			// of getZoomSteps so that repeated steps share the same stops
 			// from any start scale and always land on exactly 100%
 			this.cumulativeZoomFactor = this.getZoomStep(this.view.scale *
-				this.cumulativeZoomFactor, zoomIn) / this.view.scale;
+				this.cumulativeZoomFactor, zoomIn, percent) / this.view.scale;
 		}
 
-		this.cumulativeZoomFactor = Math.max(0.05, Math.min(this.view.scale * this.cumulativeZoomFactor, 160)) / this.view.scale;
+		this.cumulativeZoomFactor = Math.max(this.getZoomSteps(percent)[0], Math.min(this.view.scale *
+			this.cumulativeZoomFactor, 160)) / this.view.scale;
 
 		if (graph.isFastZoomEnabled())
 		{
@@ -4744,6 +6835,7 @@ EditorUi.prototype.initCanvas = function()
 			scrollPosition = new mxPoint(graph.container.scrollLeft, graph.container.scrollTop);
 
 			// Applies final rounding to preview
+			var mult = getZoomMultiplier();
 			var f = Math.round((Math.round(this.view.scale * this.cumulativeZoomFactor *
 				100) / 100) * mult) / (mult * this.view.scale);
 			
@@ -4788,7 +6880,7 @@ EditorUi.prototype.initCanvas = function()
 				hints[i].style.opacity = '0';
 			}
 
-			graph.fireEvent(new mxEventObject('zoomPreview', 'factor', f));
+			graph.fireEvent(new mxEventObject('zoomPreview', 'factor', f, 'x', cx, 'y', cy));
 		}
 		
 		scheduleZoom(graph.isFastZoomEnabled() ? delay : 0);
@@ -4818,7 +6910,7 @@ EditorUi.prototype.initCanvas = function()
 		}
 	});
 	
-	mxEvent.addMouseWheelListener(mxUtils.bind(this, function(evt, up, force, cx, cy)
+	mxEvent.addMouseWheelListener(mxUtils.bind(this, function(evt, up, force, cx, cy, pinch)
 	{
 		graph.fireEvent(new mxEventObject('wheel'));
 
@@ -4837,9 +6929,12 @@ EditorUi.prototype.initCanvas = function()
 		{
 			if (window.parent != null && window.parent != window)
 			{
-				var deltaY = (evt.deltaY != null) ? evt.deltaY :
+				// Line and page modes
+				var f = (evt.deltaMode == 1) ? 16 : ((evt.deltaMode == 2) ?
+					graph.container.clientHeight : 1);
+				var deltaY = (evt.deltaY != null) ? evt.deltaY * f :
 					((up) ? -60 : 60);
-				var deltaX = (evt.deltaX != null) ? evt.deltaX : 0;
+				var deltaX = (evt.deltaX != null) ? evt.deltaX * f : 0;
 
 				window.parent.postMessage(JSON.stringify({
 					event: 'scrollWheel',
@@ -4858,8 +6953,22 @@ EditorUi.prototype.initCanvas = function()
             {
                 var t = graph.view.getTranslate();
                 var step = 40 / graph.view.scale;
-				
-                if (!mxEvent.isShiftDown(evt))
+				var dx = (evt.deltaX != null) ? evt.deltaX : 0;
+				var dy = (evt.deltaY != null) ? evt.deltaY : 0;
+
+				// Uses the deltas of trackpads (horizontal or small pixel deltas)
+				// for diagonal scrolling and fixed steps for mouse wheels
+				if (!mxEvent.isShiftDown(evt) && (dx != 0 || (evt.deltaMode == 0 &&
+					Math.abs(dy) < 50)))
+				{
+					// Line and page modes
+					var f = (evt.deltaMode == 1) ? 16 : ((evt.deltaMode == 2) ?
+						graph.container.clientHeight : 1);
+
+					graph.view.setTranslate(t.x - dx * f / graph.view.scale,
+						t.y - dy * f / graph.view.scale);
+				}
+                else if (!mxEvent.isShiftDown(evt))
                 {
                     graph.view.setTranslate(t.x, t.y + ((up) ? step : -step));
                 }
@@ -4867,7 +6976,31 @@ EditorUi.prototype.initCanvas = function()
                 {
                     graph.view.setTranslate(t.x + ((up) ? -step : step), t.y);
                 }
+
+				// Avoids navigation gestures for horizontal scrolling
+				mxEvent.consume(evt);
             }
+			// Scrolls with Alt+Wheel as the default action of browsers
+			// differs (eg. history navigation in Firefox)
+			else if (!force && mxEvent.isAltDown(evt) && graph.isScrollWheelEvent(evt))
+			{
+				var dx = (evt.deltaX != null) ? evt.deltaX : 0;
+				var dy = (evt.deltaY != null) ? evt.deltaY : 0;
+
+				// Line and page modes
+				var f = (evt.deltaMode == 1) ? 16 : ((evt.deltaMode == 2) ?
+					graph.container.clientHeight : 1);
+
+				if (mxEvent.isShiftDown(evt) && dx == 0)
+				{
+					dx = dy;
+					dy = 0;
+				}
+
+				graph.container.scrollLeft += dx * f;
+				graph.container.scrollTop += dy * f;
+				mxEvent.consume(evt);
+			}
 			else if (force || graph.isZoomWheelEvent(evt))
 			{
 				var source = mxEvent.getSource(evt);
@@ -4896,15 +7029,17 @@ EditorUi.prototype.initCanvas = function()
 							factor = 1 + (Math.abs(evt.deltaY) / 20) * (factor - 1);
 							smooth = true;
 						}
-						// Slower zoom for pinch gesture on touch screens
-						else if (evt.movementY != null && evt.type == 'pointermove')
+						// Pinch gesture on touch screens zooms by the change of the
+						// distance between the fingers
+						else if (pinch != null)
 						{
-							factor = 1 + (Math.max(1, Math.abs(evt.movementY)) / 20) * (factor - 1);
+							factor = (pinch > 1) ? pinch : 1 / pinch;
 							smooth = true;
 							delay = -1;
 						}
 
-						graph.lazyZoom(up, null, delay, factor, smooth);
+						// Steps of the mouse wheel are on the 1% grid in model coordinates
+						graph.lazyZoom(up, null, delay, factor, smooth, true);
 
 						// Computes combined zoom origin when mouse moves during
 						// a zoom sequence to avoid viewport jump at the final DOM
@@ -4948,6 +7083,7 @@ EditorUi.prototype.initCanvas = function()
 								}
 								else
 								{
+									var mult = getZoomMultiplier();
 									var f = Math.round((Math.round(graph.view.scale *
 										newFactor * 100) / 100) * mult) / (mult *
 										graph.view.scale);
@@ -4968,12 +7104,223 @@ EditorUi.prototype.initCanvas = function()
 	}), graph.container);
 	
 	// Uses fast zoom for pinch gestures on iOS where evt.scale is the
-	// absolute gesture scale, so no further factor must be applied
+	// absolute gesture scale relative to the scale at the start of the
+	// gesture, including a pending zoom, as zooms are committed during
+	// the gesture if it pauses (see wheelZoomDelay)
+	var gestureScale = null;
+
+	// Center between the fingers of a pinch in client coordinates from the
+	// touch events that come with the gesture events
+	var pinchCenter = null;
+
+	// Selection before the first finger of a touch sequence and if the
+	// sequence was a pinch, see the gesture listener below
+	var touchSelection = null;
+	var pinched = false;
+
+	var updatePinchCenter = function(evt)
+	{
+		pinchCenter = (evt.touches != null && evt.touches.length > 1) ? new mxPoint(
+			(evt.touches[0].clientX + evt.touches[1].clientX) / 2,
+			(evt.touches[0].clientY + evt.touches[1].clientY) / 2) : null;
+
+		if (evt.type == 'touchstart' && evt.touches != null && evt.touches.length == 1)
+		{
+			touchSelection = graph.getSelectionCells();
+			pinched = false;
+		}
+	};
+
+	if (mxClient.IS_TOUCH)
+	{
+		var touchOptions = {passive: true, capture: true};
+		graph.container.addEventListener('touchstart', updatePinchCenter, touchOptions);
+		graph.container.addEventListener('touchmove', updatePinchCenter, touchOptions);
+		graph.container.addEventListener('touchend', updatePinchCenter, touchOptions);
+		graph.container.addEventListener('touchcancel', updatePinchCenter, touchOptions);
+	}
+
+	// Point in the scrollable area that stays under the center between the
+	// fingers of a pinch while the view is zoomed around it and scrolled with
+	// the fingers, and the scale for which it was found
+	var pinchAnchor = null;
+	var pinchAnchorScale = null;
+	var rebasePanning = false;
+
+	// Point in model units that stays under the center between the fingers
+	// in chromeless views (eg. the lightbox), which are positioned with the
+	// translate of the view instead of the scrollbars
+	var pinchModelAnchor = null;
+
 	graph.panningHandler.zoomGraph = function(evt)
 	{
-		graph.cumulativeZoomFactor = evt.scale;
-		graph.lazyZoom(evt.scale > 1, true, null, 1, true);
+		if (evt.type == 'gesturestart' || gestureScale == null)
+		{
+			gestureScale = graph.view.scale * graph.cumulativeZoomFactor;
+			pinchAnchor = null;
+		}
+
+		graph.cumulativeZoomFactor = gestureScale * evt.scale / graph.view.scale;
+		var c = graph.container;
+
+		if (pinchCenter != null && graph.scrollbars && graph.isFastZoomEnabled() &&
+			mxUtils.hasScrollbars(c))
+		{
+			// Same conversion as the zoom preview in lazyZoom
+			var x = pinchCenter.x - c.offsetLeft;
+			var y = pinchCenter.y - c.offsetTop;
+
+			// Finds the point again after a zoom was committed in the gesture
+			if (pinchAnchor == null || pinchAnchorScale != graph.view.scale)
+			{
+				pinchAnchor = new mxPoint(x + c.scrollLeft, y + c.scrollTop);
+				pinchAnchorScale = graph.view.scale;
+			}
+
+			c.scrollLeft = pinchAnchor.x - x;
+			c.scrollTop = pinchAnchor.y - y;
+			cursorPosition = pinchCenter;
+			graph.lazyZoom(evt.scale > 1, false, null, 1, true);
+		}
+		else if (pinchCenter != null && graph.view.modelCoordinates &&
+			ui.editor.isChromelessView())
+		{
+			// Zooms directly as this does not repaint the cells in model
+			// coordinates, lays out the view as after other zooms and moves
+			// the point under the fingers with the scrollbars if the view
+			// has them (eg. the lightbox) or with the translate otherwise
+			var v = graph.view;
+			var scroll = mxUtils.hasScrollbars(c);
+			var x = pinchCenter.x - c.offsetLeft;
+			var y = pinchCenter.y - c.offsetTop;
+
+			if (pinchModelAnchor == null)
+			{
+				// Applies a pan of the first finger before the gesture
+				var ph = graph.panningHandler;
+
+				if (ph.active && ph.dx != null && ph.dy != null &&
+					(!graph.useScrollbarsForPanning || !scroll))
+				{
+					graph.panGraph(0, 0);
+					v.setTranslate(v.translate.x + ph.dx / v.scale,
+						v.translate.y + ph.dy / v.scale);
+				}
+
+				ph.dx = null;
+				ph.dy = null;
+				pinchModelAnchor = new mxPoint(
+					(x + ((scroll) ? c.scrollLeft : 0)) / v.scale - v.translate.x,
+					(y + ((scroll) ? c.scrollTop : 0)) / v.scale - v.translate.y);
+			}
+
+			var scale = Math.max(graph.getZoomSteps(true)[0], Math.min(160,
+				graph.cumulativeZoomFactor * v.scale));
+			graph.cumulativeZoomFactor = 1;
+
+			if (Math.round(scale * 100) / 100 != v.scale)
+			{
+				graph.zoomTo(scale);
+
+				if (ui.chromelessResize != null)
+				{
+					ui.chromelessResize(false);
+				}
+			}
+
+			if (scroll)
+			{
+				c.scrollLeft = Math.round((pinchModelAnchor.x + v.translate.x) * v.scale - x);
+				c.scrollTop = Math.round((pinchModelAnchor.y + v.translate.y) * v.scale - y);
+			}
+			else
+			{
+				v.setTranslate(x / v.scale - pinchModelAnchor.x,
+					y / v.scale - pinchModelAnchor.y);
+			}
+		}
+		else
+		{
+			graph.lazyZoom(evt.scale > 1, true, null, 1, true);
+		}
+
 		mxEvent.consume(evt);
+	};
+
+	// Pinch gestures scroll with the center between the fingers instead of
+	// the first finger, and panning with the remaining finger after a pinch
+	// starts at the current scroll position
+	graph.addListener(mxEvent.GESTURE, function(sender, eo)
+	{
+		var evt = eo.getProperty('event');
+
+		// Cancels what the first finger started (eg. a selection, a move,
+		// a new connection, a rubberband or a tap and hold)
+		if (evt != null && evt.type == 'gesturestart' && !pinched)
+		{
+			pinched = true;
+			graph.tapAndHoldValid = false;
+			graph.graphHandler.reset();
+			graph.connectionHandler.reset();
+			graph.selectionCellsHandler.reset();
+
+			if (graph.getRubberband != null && graph.getRubberband() != null)
+			{
+				graph.getRubberband().reset();
+			}
+
+			if (touchSelection != null && !mxUtils.equalEntries(touchSelection,
+				graph.getSelectionCells()))
+			{
+				graph.setSelectionCells(touchSelection);
+			}
+		}
+		else if (evt != null && evt.type == 'gestureend' && pinchAnchor != null)
+		{
+			pinchAnchor = null;
+			rebasePanning = true;
+		}
+		else if (evt != null && evt.type == 'gestureend' && pinchModelAnchor != null)
+		{
+			pinchModelAnchor = null;
+			rebasePanning = true;
+		}
+	});
+
+	// Ignores the release of the last finger of a pinch as a click
+	var graphFireMouseEvent = graph.fireMouseEvent;
+
+	graph.fireMouseEvent = function(evtName, me, sender)
+	{
+		if (pinched && evtName == mxEvent.MOUSE_UP)
+		{
+			me.consume();
+		}
+
+		graphFireMouseEvent.apply(this, arguments);
+	};
+
+	var panningHandlerMouseMove = graph.panningHandler.mouseMove;
+
+	graph.panningHandler.mouseMove = function(sender, me)
+	{
+		if (pinchAnchor != null || pinchModelAnchor != null)
+		{
+			me.consume();
+		}
+		else
+		{
+			if (rebasePanning)
+			{
+				rebasePanning = false;
+				this.dx0 = -graph.container.scrollLeft;
+				this.dy0 = -graph.container.scrollTop;
+				this.startX = me.getX();
+				this.startY = me.getY();
+			}
+
+			panningHandlerMouseMove.apply(this, arguments);
+		}
 	};
 };
 
@@ -4998,6 +7345,17 @@ EditorUi.prototype.addChromelessToolbarItems = function(addButton)
 EditorUi.prototype.isPagesEnabled = function()
 {
 	return this.editor.editable || urlParams['hide-pages'] != '1';
+};
+
+/**
+ * Hook for adding the options of the current page to the given parent in
+ * the advanced section of Page Setup. Returns a function that applies the
+ * options or null. The given functions style the labels and the contents
+ * of the rows.
+ */
+EditorUi.prototype.addPageSetupOptions = function(parent, styleLabel, styleContent)
+{
+	return null;
 };
 
 /**
@@ -5062,7 +7420,8 @@ EditorUi.prototype.isFormatPanelVisible = function()
 };
 
 /**
- * Adds support for placeholders in labels.
+ * Fits the diagram into the lightbox with the border from the URL or 60px,
+ * or resets the scale if the diagram is empty, and centers it.
  */
 EditorUi.prototype.lightboxFit = function(maxHeight)
 {
@@ -5074,24 +7433,68 @@ EditorUi.prototype.lightboxFit = function(maxHeight)
 	{
 		var p = urlParams['border'];
 		var border = 60;
-		
+
 		if (p != null)
 		{
 			border = parseInt(p);
 		}
-		
+
 		// LATER: Use initial graph bounds to avoid rounding errors
 		this.editor.graph.maxFitScale = this.lightboxMaxFitScale;
 		this.editor.graph.fit(border, null, null, null, null, null, maxHeight);
 		this.editor.graph.maxFitScale = null;
 	}
+
+	this.centerChromelessDiagram();
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns true if the diagram of a chromeless view with scrollbars is padded
+ * like the pages in the editor, so that it can be moved almost out of view.
+ */
+EditorUi.prototype.isChromelessDiagramPadded = function()
+{
+	var graph = this.editor.graph;
+
+	return graph.container != null && this.editor.isChromelessView() &&
+		!graph.isViewer() && mxUtils.hasScrollbars(graph.container);
+};
+
+/**
+ * Scrolls a chromeless view where the diagram is padded (see
+ * <isChromelessDiagramPadded>) so that the diagram is centered horizontally and
+ * placed at <lightboxVerticalDivider> vertically, or at the top left on axes
+ * where it is larger than the view. If fitting is true then only axes where
+ * the diagram fits into the view are changed.
+ */
+EditorUi.prototype.centerChromelessDiagram = function(fitting)
+{
+	var graph = this.editor.graph;
+	var c = graph.container;
+
+	if (this.isChromelessDiagramPadded())
+	{
+		// Updates the padding for the current view
+		graph.sizeDidChange();
+
+		var b = (graph.pageVisible) ? graph.view.getBackgroundPageBounds() :
+			graph.getGraphBounds();
+
+		if (!fitting || b.width <= c.clientWidth)
+		{
+			c.scrollLeft = Math.round(b.x - Math.max(0, (c.clientWidth - b.width) / 2));
+		}
+
+		if (!fitting || b.height <= c.clientHeight)
+		{
+			c.scrollTop = Math.round(b.y - ((this.lightboxVerticalDivider == 0) ? 0 :
+				Math.max(0, (c.clientHeight - b.height) / this.lightboxVerticalDivider)));
+		}
+	}
+};
+
+/**
+ * Returns true if the diagram has a single layer without cells.
  */
 EditorUi.prototype.isDiagramEmpty = function()
 {
@@ -5099,6 +7502,20 @@ EditorUi.prototype.isDiagramEmpty = function()
 	
 	return model.getChildCount(model.root) == 1 && model.getChildCount(model.getChildAt(model.root, 0)) == 0;
 };
+
+/**
+ * Hook for searching templates. Returns false in the generic editor.
+ */
+EditorUi.prototype.isTemplateSearchSupported = function()
+{
+	return false;
+};
+
+/**
+ * Hook for opening the templates dialog with the given search terms. Does
+ * nothing in the generic editor (see isTemplateSearchSupported).
+ */
+EditorUi.prototype.searchTemplates = function(terms) { };
 
 /**
  * Hook for allowing selection and context menu for certain events.
@@ -5217,6 +7634,106 @@ EditorUi.prototype.showPopupMenu = function(fn, x, y, evt)
 	
 	// Allows hiding by clicking on document
 	this.setCurrentMenu(menu);	
+};
+
+/**
+ * Shows the line start or end menu for a click on the terminal handle of a
+ * single selected edge instead of selecting the terminal (see the core
+ * mxEdgeHandler.mouseUp). The menu is delayed so that the second click of a
+ * double click (see doubleClickEdgeTerminal) or a long press cancel it.
+ */
+EditorUi.prototype.installLineMarkerMenu = function()
+{
+	var graph = this.editor.graph;
+	var terminalClickDelay = 300;
+	var terminalClickThread = null;
+	var terminalClickTime = 0;
+	var terminalDownTime = 0;
+
+	graph.addListener(mxEvent.FIRE_MOUSE_EVENT, mxUtils.bind(this, function(sender, evt)
+	{
+		var name = evt.getProperty('eventName');
+		var me = evt.getProperty('event');
+
+		if (name == mxEvent.MOUSE_DOWN)
+		{
+			window.clearTimeout(terminalClickThread);
+			terminalDownTime = Date.now();
+		}
+		else if (name == mxEvent.MOUSE_UP && graph.isEnabled() &&
+			graph.getSelectionCount() == 1)
+		{
+			var cell = graph.getSelectionCell();
+			var handler = graph.selectionCellsHandler.getHandler(cell);
+			var now = Date.now();
+
+			if (graph.model.isEdge(cell) && handler != null && handler.bends != null &&
+				handler.handle != null && handler.index == null &&
+				(handler.handle == 0 || handler.handle == handler.bends.length - 1) &&
+				handler.mouseDownX != null && handler.mouseDownY != null &&
+				Math.abs(me.getX() - handler.mouseDownX) <= graph.tolerance &&
+				Math.abs(me.getY() - handler.mouseDownY) <= graph.tolerance &&
+				!mxEvent.isAltDown(me.getEvent()) && !mxEvent.isShiftDown(me.getEvent()) &&
+				!mxEvent.isControlDown(me.getEvent()) && !mxEvent.isMetaDown(me.getEvent()) &&
+				graph.isCellEditable(cell) && !graph.isCellLocked(cell) &&
+				(mxEvent.isMouseEvent(me.getEvent()) ||
+				now - terminalDownTime < graph.tapAndHoldDelay))
+			{
+				var source = handler.handle == 0;
+				var bounds = handler.bends[handler.handle].bounds;
+
+				// Disables selecting the terminal in mxEdgeHandler.mouseUp
+				// and the cell under the mouse in mxGraph.click
+				handler.handle = null;
+				me.consume();
+
+				// Ignores the second click of a double click
+				if (now - terminalClickTime > terminalClickDelay)
+				{
+					terminalClickTime = now;
+
+					terminalClickThread = window.setTimeout(mxUtils.bind(this, function()
+					{
+						if (graph.isEnabled() && !graph.isEditing() &&
+							graph.getSelectionCount() == 1 &&
+							graph.getSelectionCell() == cell &&
+							!graph.popupMenuHandler.isMenuShowing() &&
+							bounds != null)
+						{
+							var off = mxUtils.getOffset(graph.container);
+
+							this.showLineMarkerMenu(cell, source,
+								off.x + bounds.x + bounds.width - graph.container.scrollLeft,
+								off.y + bounds.y + bounds.height - graph.container.scrollTop);
+						}
+					}), terminalClickDelay);
+				}
+				else
+				{
+					terminalClickTime = 0;
+				}
+			}
+		}
+	}));
+};
+
+/**
+ * Shows the menu for the line start (start is true) or line end markers of
+ * the given selected edge at the given page coordinates.
+ */
+EditorUi.prototype.showLineMarkerMenu = function(cell, start, x, y)
+{
+	var graph = this.editor.graph;
+	var style = graph.getCurrentCellStyle(cell);
+
+	// Format is not loaded in the viewer
+	if (typeof Format !== 'undefined')
+	{
+		this.showPopupMenu(mxUtils.bind(this, function(menu)
+		{
+			Format.addLineMarkerItems(this, menu, style, start);
+		}), x, y);
+	}
 };
 
 /**
@@ -5403,7 +7920,7 @@ EditorUi.prototype.getDiagramSnapshot = function()
  */
 EditorUi.prototype.updateDiagramData = function(snapshot, node)
 {
-	this.replaceDiagramData(xUtils.getXml(node));
+	this.replaceDiagramData(mxUtils.getXml(node));
 };
 
 /**
@@ -5497,17 +8014,147 @@ EditorUi.prototype.initialFitDiagram = function(maxScale)
  * 
  * Zooms the diagram to fit into the window.
  */
-EditorUi.prototype.fitDiagramOrPages = function(maxScale, borders, ignorePages)
+EditorUi.prototype.fitDiagramOrPages = function(maxScale, borders, ignorePages, ignoreSelection)
 {
 	var graph = this.editor.graph;
 
-	if (graph.pageVisible && graph.isSelectionEmpty() && !ignorePages)
+	if (graph.pageVisible && (ignoreSelection || graph.isSelectionEmpty()) && !ignorePages)
 	{
 		graph.fitPages(maxScale);
 	}
 	else
 	{
-		this.fitDiagramToWindow(maxScale, borders, ignorePages);
+		this.fitDiagramToWindow(maxScale, borders, ignorePages, ignoreSelection);
+	}
+};
+
+/**
+ * Function: setFitWindowEnabled
+ *
+ * Specifies if the diagram or the pages are fitted to the window and fitted
+ * again if the size of the container changes, until the zoom is changed
+ * otherwise. Enabling it fits the diagram or the pages.
+ */
+EditorUi.prototype.setFitWindowEnabled = function(value)
+{
+	value = value && this.isFitWindowSupported();
+
+	if (this.fitWindowEnabled != value)
+	{
+		this.fitWindowEnabled = value;
+		this.fireEvent(new mxEventObject('fitWindowEnabledChanged'));
+	}
+
+	if (value)
+	{
+		this.updateFitWindow();
+	}
+};
+
+/**
+ * Function: isFitWindowSupported
+ * 
+ * Returns true if the diagram can be kept fitted to the window (see
+ * <setFitWindowEnabled>). This requires model coordinates as fitting
+ * again repaints the diagram otherwise, which can block resizing the
+ * window, and is not used in chromeless views.
+ */
+EditorUi.prototype.isFitWindowSupported = function()
+{
+	return this.editor.graph.view.modelCoordinates &&
+		!this.editor.isChromelessView();
+};
+
+/**
+ * Function: updateFitWindow
+ *
+ * Fits the diagram or the pages to the window, ignoring the selection, if
+ * <fitWindowEnabled> is true.
+ */
+EditorUi.prototype.updateFitWindow = function()
+{
+	var graph = this.editor.graph;
+
+	if (this.fitWindowEnabled && graph.container != null)
+	{
+		this.fittingWindow = true;
+
+		try
+		{
+			// Updates the translate for the size of the container, which
+			// is otherwise done after the fit if the window was resized
+			graph.sizeDidChange();
+			this.fitDiagramOrPages(null, null, null, true);
+		}
+		finally
+		{
+			this.fittingWindow = false;
+		}
+
+		this.fitWindowSize = new mxRectangle(0, 0,
+			graph.container.offsetWidth,
+			graph.container.offsetHeight);
+	}
+};
+
+/**
+ * Function: installFitWindowHandler
+ * 
+ * Fits the diagram or the pages to the window again if the size of the
+ * container, the page view, the page format or the page scale changes while
+ * <fitWindowEnabled> is true, and disables it if the zoom is changed
+ * otherwise.
+ */
+EditorUi.prototype.installFitWindowHandler = function()
+{
+	var graph = this.editor.graph;
+
+	var pagesListener = mxUtils.bind(this, function()
+	{
+		this.updateFitWindow();
+	});
+
+	this.addListener('pageViewChanged', pagesListener);
+	this.addListener('pageFormatChanged', pagesListener);
+	this.addListener('pageScaleChanged', pagesListener);
+
+	var scaleListener = mxUtils.bind(this, function(sender, evt)
+	{
+		if (!this.fittingWindow && evt.getProperty('scale') !=
+			evt.getProperty('previousScale'))
+		{
+			this.setFitWindowEnabled(false);
+		}
+	});
+
+	graph.view.addListener(mxEvent.SCALE, scaleListener);
+	graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, scaleListener);
+
+	if (typeof window.ResizeObserver === 'function')
+	{
+		var thread = null;
+
+		// Compares the size of the border box to ignore scrollbars
+		this.fitWindowObserver = new ResizeObserver(mxUtils.bind(this, function()
+		{
+			if (this.fitWindowEnabled && thread == null)
+			{
+				thread = window.requestAnimationFrame(mxUtils.bind(this, function()
+				{
+					var size = this.fitWindowSize;
+					var c = graph.container;
+					thread = null;
+
+					if (c != null && (size == null || size.width != c.offsetWidth ||
+						size.height != c.offsetHeight))
+					{
+						this.updateFitWindow();
+					}
+				}));
+			}
+		}));
+
+		this.fitWindowObserver.observe(graph.container);
 	}
 };
 
@@ -5516,10 +8163,10 @@ EditorUi.prototype.fitDiagramOrPages = function(maxScale, borders, ignorePages)
  * 
  * Zooms the diagram to fit into the window.
  */
-EditorUi.prototype.fitDiagramToWindow = function(maxScale, borders, zoomOutOnly)
+EditorUi.prototype.fitDiagramToWindow = function(maxScale, borders, zoomOutOnly, ignoreSelection)
 {
 	var graph = this.editor.graph;
-	var bounds = (graph.isSelectionEmpty()) ?
+	var bounds = (ignoreSelection || graph.isSelectionEmpty()) ?
 		mxRectangle.fromRectangle(graph.getGraphBounds()) :
 		graph.getBoundingBox(graph.getSelectionCells());
 
@@ -5552,6 +8199,10 @@ EditorUi.prototype.fitDiagramToWindow = function(maxScale, borders, zoomOutOnly)
 	{
 		var b = (borders != null) ? borders :
 			Editor.fitWindowBorders;
+
+		// Leaves room for the icons of the cells that are outside of the
+		// graph bounds, such as link icons, which scales with the zoom
+		bounds.grow(graph.fitPadding);
 		
 		if (b != null)
 		{
@@ -5597,9 +8248,11 @@ EditorUi.prototype.resetScrollbars = function()
 		{
 			if (graph.pageVisible)
 			{
+				// Page padding is in unscaled units
 				var pad = graph.getPagePadding();
-				c.scrollTop = Math.floor(pad.y);
-				c.scrollLeft = Math.floor(Math.min(pad.x,
+				var s = graph.view.scale;
+				c.scrollTop = Math.floor(pad.y * s);
+				c.scrollLeft = Math.floor(Math.min(pad.x * s,
 					(c.scrollWidth - c.clientWidth) / 2));
 
 				// Scrolls graph to visible area
@@ -5896,6 +8549,24 @@ ChangePageSetup.prototype.execute = function()
 	        this.previousPageScale = currentPageScale;
 	    }
     }
+
+	// Optional measure scale (see Graph.measureScale), swapped for undo
+	if (this.measureScale != null && this.measureScale != graph.measureScale)
+	{
+		var tmp = graph.measureScale;
+		this.ui.setMeasureScale(this.measureScale);
+		this.measureScale = tmp;
+	}
+
+	// Optional gradient of the page background as {color, direction}, where
+	// a null color removes the gradient (see Graph.backgroundGradient)
+	if (this.gradient != null)
+	{
+		var tmp = {color: graph.backgroundGradient,
+			direction: graph.backgroundGradientDirection};
+		this.ui.setBackgroundGradient(this.gradient.color, this.gradient.direction);
+		this.gradient = tmp;
+	}
 };
 
 /**
@@ -5962,6 +8633,30 @@ EditorUi.prototype.setPageScale = function(value)
 	}
 
 	this.fireEvent(new mxEventObject('pageScaleChanged'));
+};
+
+/**
+ * Sets the gradient of the page background (see Graph.setBackgroundGradient).
+ */
+EditorUi.prototype.setBackgroundGradient = function(color, direction)
+{
+	this.editor.graph.setBackgroundGradient(color, direction);
+	this.editor.graph.view.validateBackground();
+
+	this.fireEvent(new mxEventObject('backgroundGradientChanged'));
+};
+
+/**
+ * Sets the measure scale of the graph (see Graph.measureScale) and updates
+ * the labels with measure placeholders.
+ */
+EditorUi.prototype.setMeasureScale = function(value)
+{
+	var graph = this.editor.graph;
+	graph.setMeasureScale(value);
+	graph.refresh();
+
+	this.fireEvent(new mxEventObject('measureScaleChanged'));
 };
 
 /**
@@ -6072,6 +8767,23 @@ EditorUi.prototype.updateActionStates = function()
 	this.actions.get('copySize').setEnabled(ss.vertices.length == 1);
 	this.actions.get('clearWaypoints').setEnabled(ss.connections);
 	this.actions.get('clearAnchors').setEnabled(ss.connections);
+	var edgeLabels = ss.connections;
+
+	for (var i = 0; i < ss.vertices.length && !edgeLabels; i++)
+	{
+		edgeLabels = graph.isEdgeLabelCell(ss.vertices[i]);
+	}
+
+	this.actions.get('resetLabelPositions').setEnabled(edgeLabels);
+	var ownLabelStyles = false;
+
+	for (var i = 0; i < ss.vertices.length && !ownLabelStyles; i++)
+	{
+		ownLabelStyles = graph.isEdgeLabelCell(ss.vertices[i]) &&
+			!graph.isLabelStyleInherited(ss.vertices[i]);
+	}
+
+	this.actions.get('matchConnector').setEnabled(graph.isEnabled() && ownLabelStyles);
 	this.actions.get('curved').setEnabled(ss.edges.length > 0);
 	this.actions.get('turn').setEnabled(ss.cells.length > 0);
 	this.actions.get('group').setEnabled((ss.cells.length > 1 ||
@@ -6089,7 +8801,8 @@ EditorUi.prototype.updateActionStates = function()
 	this.actions.get('home').setEnabled(graph.view.currentRoot != null);
 	this.actions.get('enterGroup').setEnabled(ss.cells.length == 1 &&
 		graph.isValidRoot(ss.cells[0]));
-	this.actions.get('copyData').setEnabled(ss.cells.length == 1);
+	// Copies the data of the diagram without a selection
+	this.actions.get('copyData').setEnabled(ss.cells.length == 1 || graph.isSelectionEmpty());
 	this.actions.get('copyAsText').setEnabled(ss.cells.length == 1);
 	// Edit Link writes to every editable cell in the selection, like
 	// Edit Style — same URL or custom action on a group of shapes.
@@ -6208,6 +8921,13 @@ EditorUi.prototype.createUi = function()
 {
 	// Creates menubar
 	this.statusContainer = this.createStatusContainer();
+
+	// Exists before the first announcement so that it is announced (see announce)
+	this.liveRegion = document.createElement('div');
+	this.liveRegion.className = 'geLiveRegion';
+	this.liveRegion.setAttribute('role', 'status');
+	this.container.appendChild(this.liveRegion);
+
 	this.menubar = (this.editor.chromeless) ? null : this.menus.createMenubar(this.createDiv('geMenubar'));
 	
 	if (this.menubar != null)
@@ -6341,6 +9061,24 @@ EditorUi.prototype.createStatusContainer = function()
 		}
 	}));
 
+	// Enter and Space click the messages with an action (see setStatusText)
+	// and a click with the mouse keeps the focus where it is
+	mxEvent.addListener(container, 'keydown', function(evt)
+	{
+		var elt = mxEvent.getSource(evt);
+
+		if (elt.parentNode == container && elt.getAttribute('role') == 'button' &&
+			(evt.keyCode == 13 /* Enter */ || evt.keyCode == 32 /* Space */) &&
+			!mxEvent.isAltDown(evt) && !mxEvent.isControlDown(evt) &&
+			!mxEvent.isMetaDown(evt))
+		{
+			Editor.clickWithKeyboard(elt, evt);
+			mxEvent.consume(evt);
+		}
+	});
+
+	mxEvent.preventDefault(container);
+
 	return container;
 };
 
@@ -6358,6 +9096,23 @@ EditorUi.prototype.setStatusText = function(value)
 		this.statusContainer.innerText = '';
 		var div = this.createStatusDiv(value);
 		this.statusContainer.appendChild(div);
+	}
+
+	this.updateStatusAction();
+	this.announce(this.statusContainer.textContent);
+
+	// Messages with an action, an error or a link are buttons for the keyboard
+	for (var i = 0; i < this.statusContainer.children.length; i++)
+	{
+		var child = this.statusContainer.children[i];
+
+		if (child.nodeName != 'A' && (child.getAttribute('data-action') != null ||
+			child.getAttribute('data-message') != null ||
+			child.getAttribute('data-link') != null))
+		{
+			child.setAttribute('role', 'button');
+			child.setAttribute('tabindex', '0');
+		}
 	}
 
 	// Handles data-effect attribute
@@ -6396,6 +9151,198 @@ EditorUi.prototype.setStatusText = function(value)
 			})(spans[i]);
 		}
 	}		
+};
+
+/**
+ * Adds the geStatusAction class to the status container if it contains an
+ * enabled action, which dims the status while it is pressed. A :has()
+ * selector for this made the browser restyle large parts of the page after
+ * every change of the DOM, eg. for every repaint while moving cells.
+ * Uses chained :not() because a selector list inside :not() throws in
+ * older browsers (Chrome before 88, Safari before 9).
+ */
+EditorUi.prototype.updateStatusAction = function()
+{
+	this.statusContainer.classList.toggle('geStatusAction',
+		this.statusContainer.querySelector('div[data-action]' +
+			':not(.mxDisabled):not([disabled])') != null);
+};
+
+/**
+ * Announces the given text to screen readers, eg. a new status like "All
+ * changes saved", unless it was announced last and repeat is not true. The
+ * text is not shown.
+ */
+EditorUi.prototype.announce = function(text, repeat)
+{
+	text = (text != null) ? mxUtils.trim(text) : '';
+
+	if (this.liveRegion != null && (repeat || text != this.lastAnnouncement))
+	{
+		this.lastAnnouncement = text;
+
+		if (this.liveRegion.textContent == text)
+		{
+			// Live regions only announce changes of their text
+			this.liveRegion.textContent = '';
+
+			window.setTimeout(mxUtils.bind(this, function()
+			{
+				if (this.lastAnnouncement == text)
+				{
+					this.liveRegion.textContent = text;
+				}
+			}), 100);
+		}
+		else
+		{
+			this.liveRegion.textContent = text;
+		}
+	}
+};
+
+/**
+ * Describes the diagram and the selection for screen readers. The diagram
+ * is an application with its own keys, which screen readers pass on, and
+ * is named after the diagram and its number of cells when it gets the focus
+ * (see getDiagramDescription). Changes of the selection are announced (see
+ * Graph.getSelectionDescription) and the handles of the selection, which
+ * are for the mouse, are hidden from screen readers.
+ */
+EditorUi.prototype.installScreenReaderSupport = function()
+{
+	var graph = this.editor.graph;
+	var container = graph.container;
+	var thread = null;
+
+	// Diagrams that are only shown, eg. in the lightbox, are figures that
+	// screen readers read like the page, with a text outline, named after
+	// the text alternative of the author if there is one
+	var figure = this.editor.chromeless && !this.editor.editable;
+
+	var updateName = mxUtils.bind(this, function()
+	{
+		var alt = (figure) ? this.getDiagramAltText() : null;
+		container.setAttribute('aria-roledescription', mxResources.get('diagram'));
+		container.setAttribute('aria-label', (alt != null) ? alt : this.getDiagramDescription());
+	});
+
+	container.setAttribute('role', (figure) ? 'figure' : 'application');
+	graph.view.getOverlayPane().setAttribute('aria-hidden', 'true');
+	graph.view.getDecoratorPane().setAttribute('aria-hidden', 'true');
+
+	// Counts the cells only when the diagram gets the focus after a change,
+	// or after each change of a figure, which has no focus to wait for
+	graph.getModel().addListener(mxEvent.CHANGE, mxUtils.bind(this, function()
+	{
+		this.cellCounts = null;
+
+		if (figure)
+		{
+			updateName();
+		}
+	}));
+
+	mxEvent.addListener(container, 'focus', updateName);
+
+	if (figure)
+	{
+		graph.addTextOutlineButton();
+	}
+
+	graph.getSelectionModel().addListener(mxEvent.CHANGE, mxUtils.bind(this, function()
+	{
+		window.clearTimeout(thread);
+
+		// Announces the selection once after all changes of an event, an
+		// empty selection only in the diagram, eg. not after a page change,
+		// and not in trees, whose items say it, eg. in the text outline
+		thread = window.setTimeout(mxUtils.bind(this, function()
+		{
+			var focused = document.activeElement;
+
+			if ((focused == null || focused.getAttribute == null ||
+				focused.getAttribute('role') != 'treeitem') &&
+				(!graph.isSelectionEmpty() || focused == container ||
+				(this.typingShim != null && focused == this.typingShim)))
+			{
+				// Says the same description again for another selection,
+				// eg. the next rectangle without a label
+				this.announce(graph.getSelectionDescription(), true);
+			}
+		}), 0);
+	}));
+};
+
+/**
+ * Name of the diagram for screen readers instead of the name of its file, eg.
+ * the title of the viewer of a lightbox. Default is null.
+ */
+EditorUi.prototype.diagramName = null;
+
+/**
+ * Returns the name of the diagram for screen readers.
+ */
+EditorUi.prototype.getDiagramName = function()
+{
+	return (this.diagramName != null) ? this.diagramName : this.editor.getOrCreateFilename();
+};
+
+/**
+ * Returns the text alternative that the author gave the diagram, which names
+ * diagrams that are only shown (see installScreenReaderSupport), or null.
+ */
+EditorUi.prototype.getDiagramAltText = function()
+{
+	return null;
+};
+
+/**
+ * Returns the number of shapes and connectors of the diagram as {vertices,
+ * edges}. The numbers are kept until the model changes (see
+ * installScreenReaderSupport).
+ */
+EditorUi.prototype.getCellCounts = function()
+{
+	if (this.cellCounts == null)
+	{
+		this.cellCounts = this.editor.graph.getCellCounts();
+	}
+
+	return this.cellCounts;
+};
+
+/**
+ * Returns the name of the diagram and its number of shapes and connectors
+ * for screen readers.
+ */
+EditorUi.prototype.getDiagramDescription = function()
+{
+	return this.editor.graph.getDiagramDescription(this.getDiagramName(), this.getCellCounts());
+};
+
+/**
+ * Returns the detailed description of the selection for screen readers: all
+ * about a selected cell (see Graph.getCellDescription), the names of the
+ * selected cells, or the diagram if nothing is selected.
+ */
+EditorUi.prototype.getSelectionDetails = function()
+{
+	var graph = this.editor.graph;
+	var cells = graph.getSelectionCells();
+
+	if (cells.length == 0)
+	{
+		return this.getDiagramDescription() + '. ' + mxResources.get('nothingIsSelected');
+	}
+	else if (cells.length == 1)
+	{
+		return graph.getCellDescription(cells[0], true);
+	}
+	else
+	{
+		return graph.getSelectionDescription() + ': ' + graph.joinCellNames(cells, 20);
+	}
 };
 
 /**
@@ -6491,7 +9438,8 @@ EditorUi.prototype.createDiv = function(classname)
 };
 
 /**
- * Updates the states of the given undo/redo items.
+ * Adds a handler for dragging and clicking the given split element. The new
+ * size is passed to onChange.
  */
 EditorUi.prototype.addSplitHandler = function(elt, horizontal, dx, onChange)
 {
@@ -6571,10 +9519,9 @@ EditorUi.prototype.addSplitHandler = function(elt, horizontal, dx, onChange)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Shows a dialog for entering a value with the given title and default
+ * value. The value is passed to fn as text if asText is true, otherwise as a
+ * number.
  */
 EditorUi.prototype.prompt = function(title, defaultValue, fn, asText)
 {
@@ -6589,10 +9536,10 @@ EditorUi.prototype.prompt = function(title, defaultValue, fn, asText)
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Shows the message of the given error or response in an error dialog with
+ * the given title. If there is no error and no title, fn is invoked
+ * directly. If invokeFnOnClose is true, fn is also invoked when the dialog
+ * is closed.
  */
 EditorUi.prototype.handleError = function(resp, title, fn, invokeFnOnClose, notFoundMessage)
 {
@@ -6619,10 +9566,8 @@ EditorUi.prototype.handleError = function(resp, title, fn, invokeFnOnClose, notF
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Shows an error dialog with the given title, message and buttons. The
+ * default width is 340 and the height fits the message unless h is given.
  */
 EditorUi.prototype.showError = function(title, msg, btn, fn, retry, btn2, fn2, btn3, fn3, w, h, hide, onClose)
 {
@@ -6645,7 +9590,8 @@ EditorUi.prototype.showError = function(title, msg, btn, fn, retry, btn2, fn2, b
 };
 
 /**
- * Displays a print dialog.
+ * Shows the given element in a new dialog with the given size. The size of
+ * resizable dialogs is persisted if persistenceKey is given.
  */
 EditorUi.prototype.showDialog = function(elt, w, h, modal, closable, onClose, noScroll, transparent, minSize, ignoreBgClick, persistenceKey)
 {
@@ -6681,7 +9627,9 @@ EditorUi.prototype.showDialog = function(elt, w, h, modal, closable, onClose, no
 };
 
 /**
- * Displays a print dialog.
+ * Closes the topmost dialog that is not already closing and fires a
+ * hideDialog event. If matchContainer is given, the dialog is only closed if
+ * it contains the given element.
  */
 EditorUi.prototype.hideDialog = function(cancel, isEsc, matchContainer)
 {
@@ -6732,22 +9680,36 @@ EditorUi.prototype.hideDialog = function(cancel, isEsc, matchContainer)
 
 		// Restores existing dialogs and adds new dialogs
 		this.editor.fireEvent(new mxEventObject('hideDialog', 'dialog', dlg));
-		
-		if (this.dialog == null && this.editor.graph.container != null &&
-			this.editor.graph.container.style.visibility != 'hidden')
+
+		var focusGraph = this.dialog == null && this.editor.graph.container != null &&
+			this.editor.graph.container.style.visibility != 'hidden';
+
+		if (focusGraph || dlg.returnFocus != null)
 		{
 			window.setTimeout(mxUtils.bind(this, function()
 			{
-				if (this.editor != null && (this.dialogs == null || this.dialogs.length == 0))
+				if (this.editor != null)
 				{
-					if (this.editor.graph.isEditing() && this.editor.graph.cellEditor.textarea != null)
+					var elt = dlg.returnFocus;
+
+					// Returns the focus to the control that opened the dialog with
+					// the keyboard unless it was removed or another dialog was opened
+					if (elt != null && elt.getClientRects().length > 0 && (this.dialog == null ||
+						mxUtils.isAncestorNode(this.dialog.container, elt)))
 					{
-						this.editor.graph.cellEditor.textarea.focus();
+						elt.focus();
 					}
-					else
+					else if (focusGraph && (this.dialogs == null || this.dialogs.length == 0))
 					{
-						mxUtils.clearSelection();
-						this.editor.graph.container.focus();
+						if (this.editor.graph.isEditing() && this.editor.graph.cellEditor.textarea != null)
+						{
+							this.editor.graph.cellEditor.textarea.focus();
+						}
+						else
+						{
+							mxUtils.clearSelection();
+							this.editor.graph.container.focus();
+						}
 					}
 				}
 			}), 0);
@@ -6756,7 +9718,8 @@ EditorUi.prototype.hideDialog = function(cancel, isEsc, matchContainer)
 };
 
 /**
- * Handles ctrl+enter keystroke to clone cells.
+ * Handles ctrl+enter keystroke to clone cells or, without a selection, to
+ * insert a shape with the shape picker in the center of the diagram.
  */
 EditorUi.prototype.ctrlEnter = function()
 {
@@ -6764,35 +9727,156 @@ EditorUi.prototype.ctrlEnter = function()
 
 	if (graph.isEnabled())
 	{
-		try
+		if (graph.isSelectionEmpty())
 		{
-			var cells = graph.getSelectionCells();
-		    var lookup = new mxDictionary();
-		    var newCells = [];
+			if (!graph.isEditing() && !graph.isCellLocked(graph.getDefaultParent()))
+			{
+				var container = graph.container;
+				var picker = this.showShapePicker(container.scrollLeft + container.clientWidth / 2,
+					container.scrollTop + container.clientHeight / 2);
+				var item = (picker != null) ? picker.querySelector('[data-sidebar-item]') : null;
 
-		    for (var i = 0; i < cells.length; i++)
-		    {
-		    	// Clones table rows instead of cells
-		    	var cell = (graph.isTableCell(cells[i])) ? graph.model.getParent(cells[i]) : cells[i];
-		    	
-		    	if (cell != null && !lookup.get(cell))
-		    	{
-		    		lookup.put(cell, true);
-		            newCells.push(cell);
-		        }
-		    }
-		    
-			graph.setSelectionCells(graph.duplicateCells(newCells, false));
+				if (item != null)
+				{
+					item.focus();
+				}
+			}
 		}
-		catch (e)
+		else
 		{
-			this.handleError(e);
+			try
+			{
+				var cells = graph.getSelectionCells();
+			    var lookup = new mxDictionary();
+			    var newCells = [];
+
+			    for (var i = 0; i < cells.length; i++)
+			    {
+			    	// Clones table rows instead of cells
+			    	var cell = (graph.isTableCell(cells[i])) ? graph.model.getParent(cells[i]) : cells[i];
+
+			    	if (cell != null && !lookup.get(cell))
+			    	{
+			    		lookup.put(cell, true);
+			            newCells.push(cell);
+			        }
+			    }
+
+				graph.setSelectionCells(graph.duplicateCells(newCells, false));
+			}
+			catch (e)
+			{
+				this.handleError(e);
+			}
 		}
 	}
 };
 
 /**
- * Display a color dialog.
+ * Shows the context menu of the selection below the selection or the context
+ * menu of the diagram in its center with the focus on the first item, eg. for
+ * Shift+F10 and the Menu key.
+ */
+EditorUi.prototype.showContextMenu = function()
+{
+	var graph = this.editor.graph;
+	var container = graph.container;
+
+	if (graph.isEnabled() && !graph.isEditing())
+	{
+		var x = container.scrollLeft + container.clientWidth / 2;
+		var y = container.scrollTop + container.clientHeight / 2;
+		var bbox = graph.getBoundingBox(graph.getSelectionCells());
+
+		// Below the selection inside of the visible part of the diagram
+		if (bbox != null)
+		{
+			x = Math.max(container.scrollLeft, Math.min(bbox.x,
+				container.scrollLeft + container.clientWidth - 20));
+			y = Math.max(container.scrollTop, Math.min(bbox.y + bbox.height,
+				container.scrollTop + container.clientHeight - 20));
+		}
+
+		x = Math.round(x);
+		y = Math.round(y);
+		var bounds = container.getBoundingClientRect();
+		var clientX = bounds.left + x - container.scrollLeft;
+		var clientY = bounds.top + y - container.scrollTop;
+		var origin = mxUtils.getScrollOrigin();
+		var handler = graph.popupMenuHandler;
+
+		handler.hideMenu();
+		handler.triggerX = x;
+		handler.triggerY = y;
+		handler.popup(clientX + origin.x, clientY + origin.y, graph.getSelectionCell(),
+			new MouseEvent('contextmenu', {clientX: clientX, clientY: clientY}));
+
+		if (handler.isMenuShowing())
+		{
+			handler.returnFocus = container;
+			handler.focusFirstItem();
+		}
+	}
+};
+
+/**
+ * Moves the focus to the first control of the format panel, which shows the
+ * format of the selection or of the diagram, eg. for Shift+Enter, and shows
+ * the panel if it is hidden. Escape moves the focus back to the diagram.
+ */
+EditorUi.prototype.focusFormatPanel = function()
+{
+	var focus = mxUtils.bind(this, function()
+	{
+		// After a pending refresh of the format panel, which may be in a window
+		// that is a part of the user interface of its own (see getTabGroups)
+		window.setTimeout(mxUtils.bind(this, function()
+		{
+			var region = this.getFormatRegion();
+			var groups = this.getTabGroups();
+
+			for (var i = 0; i < groups.length && region != null; i++)
+			{
+				if (groups[i].stops.length > 0 && mxUtils.isAncestorNode(groups[i].region, region))
+				{
+					this.focusTabStop(groups[i].stops[0]);
+					break;
+				}
+			}
+		}), 0);
+	});
+
+	if (this.isFormatPanelVisible())
+	{
+		focus();
+	}
+	// Showing the panel may create it, eg. the format window of the minimal theme
+	else if (this.formatEnabled)
+	{
+		this.toggleFormatPanel(true);
+
+		// Windows show at once, eg. in the minimal theme
+		if (this.isFormatPanelVisible())
+		{
+			focus();
+		}
+		// Waits for the transition of the panel (see toggleFormatPanel)
+		else if (this.format != null)
+		{
+			var listener = mxUtils.bind(this, function()
+			{
+				this.removeListener(listener);
+				focus();
+			});
+
+			this.addListener('formatWidthChanged', listener);
+		}
+	}
+};
+
+/**
+ * Display a color dialog. The defaultColorValue may be a function that
+ * returns it if it depends on the text selection (see ColorWindow.update).
  */
 EditorUi.prototype.pickColor = function(color, apply, defaultColor, defaultColorValue, singleColorMode, title, getColorFn, allowInherit)
 {
@@ -6816,18 +9900,17 @@ EditorUi.prototype.pickColor = function(color, apply, defaultColor, defaultColor
 
 	var wrappedApply = function(color)
 	{
-		graph.cellEditor.restoreSelection(selState);
-
-		if (self.colorWindow != null)
-		{
-			self.colorWindow.applying = true;
-		}
-
+		var cw = self.colorWindow;
+		graph.cellEditor.restoreSelection(cw.selState);
+		cw.applying = true;
 		apply(color);
+		cw.applying = false;
 
-		if (self.colorWindow != null)
+		// Saves the resulting selection for the next color, as changing
+		// the text color changes the DOM, which moves the saved ranges
+		if (graph.cellEditor.isContentEditing())
 		{
-			self.colorWindow.applying = false;
+			cw.selState = graph.cellEditor.saveSelection();
 		}
 	};
 
@@ -6853,6 +9936,7 @@ EditorUi.prototype.pickColor = function(color, apply, defaultColor, defaultColor
 		}
 	}
 
+	this.colorWindow.selState = selState;
 	this.colorWindow.update(color, wrappedApply,
 		title || mxResources.get('fillColor'),
 		defaultColor, defaultColorValue, singleColorMode,
@@ -6871,6 +9955,12 @@ EditorUi.prototype.pickColorModal = function(color, apply, defaultColor, default
 {
 	var graph = this.editor.graph;
 	var selState = graph.cellEditor.saveSelection();
+
+	// The selection cannot change while the modal dialog is open
+	if (typeof defaultColorValue === 'function')
+	{
+		defaultColorValue = defaultColorValue();
+	}
 
 	var dlg = new ColorDialog(this, color, function(color)
 	{
@@ -6922,7 +10012,7 @@ EditorUi.prototype.pickColorModal = function(color, apply, defaultColor, default
 };
 
 /**
- * Adds the label menu items to the given menu and parent.
+ * Shows the dialog for opening a file.
  */
 EditorUi.prototype.openFile = function()
 {
@@ -6941,10 +10031,7 @@ EditorUi.prototype.openFile = function()
 };
 
 /**
- * Translates this point by the given vector.
- * 
- * @param {number} dx X-coordinate of the translation.
- * @param {number} dy Y-coordinate of the translation.
+ * Returns a Blob with the given content type for the given base64 data.
  */
 EditorUi.prototype.base64ToBlob = function(base64Data, contentType)
 {
@@ -7236,7 +10323,7 @@ EditorUi.prototype.executeLayouts = function(layouts, post)
 EditorUi.prototype.executeLayout = function(exec, animate, post)
 {
 	var graph = this.editor.graph;
-	graph.getModel().beginUpdate();
+	var arrange = graph.beginArrange();
 	try
 	{
 		exec();
@@ -7254,19 +10341,19 @@ EditorUi.prototype.executeLayout = function(exec, animate, post)
 			var morph = new mxMorphing(graph);
 			morph.addListener(mxEvent.DONE, mxUtils.bind(this, function()
 			{
-				graph.getModel().endUpdate();
-				
+				graph.endArrange(arrange);
+
 				if (post != null)
 				{
 					post();
 				}
 			}));
-			
+
 			morph.startAnimation();
 		}
 		else
 		{
-			graph.getModel().endUpdate();
+			graph.endArrange(arrange);
 			
 			if (post != null)
 			{
@@ -7309,12 +10396,30 @@ EditorUi.prototype.showImageDialog = function(title, value, fn, ignoreExisting)
 };
 
 /**
- * Hides the current menu.
+ * Shows the link dialog. showNewWindowOption and linkTarget are only used
+ * in subclasses. mixed is an optional object whose link and linkTarget
+ * flags mark values that differ between the cells being edited, which fn
+ * then reports in its fourth argument if the user left them unchanged.
  */
-EditorUi.prototype.showLinkDialog = function(value, btnLabel, fn)
+EditorUi.prototype.showLinkDialog = function(value, btnLabel, fn,
+	showNewWindowOption, linkTarget, mixed)
 {
-	var dlg = new LinkDialog(this, value, btnLabel, fn);
+	var dlg = new LinkDialog(this, value, btnLabel, fn, mixed);
 	this.showDialog(dlg.container, 420, null, true, true);
+	dlg.init();
+};
+
+/**
+ * Shows the given exported data with the given filename, eg. the JSON of the
+ * Export button in the Edit Data dialog. This implementation shows the data in
+ * a read-only text dialog.
+ */
+EditorUi.prototype.showDataExport = function(data, filename)
+{
+	var dlg = new TextareaDialog(this, mxResources.get('export') + ':', data,
+		null, null, mxResources.get('close'));
+	dlg.textarea.setAttribute('readonly', 'readonly');
+	this.showDialog(dlg.container, 450, 300, true, true);
 	dlg.init();
 };
 
@@ -7419,13 +10524,18 @@ EditorUi.prototype.createOutline = function(wnd)
 	return outline;
 };
 
+// The following mappings are bound in createKeyHandler, use
+// keyHandler.bindAction to add or replace bindings later.
+
 // Alt+Shift+Keycode mapping to action
 EditorUi.prototype.altShiftActions = {
   65: 'connectionArrows', // Alt+Shift+A
+  68: 'describeSelection', // Alt+Shift+D
+  85: 'textOutline', // Alt+Shift+U
   82: 'clearWaypoints', // Alt+Shift+R
   76: 'editLink', // Alt+Shift+L
   79: 'connectionPoints', // Alt+Shift+O
-  81: 'editConnectionPoints', // Alt+Shift+Q
+  75: 'editConnectionPoints', // Alt+Shift+K
   84: 'editTooltip', // Alt+Shift+T
   78: 'editNote', // Alt+Shift+N
   86: 'pasteSize', // Alt+Shift+V
@@ -7448,6 +10558,111 @@ EditorUi.prototype.ctrlAltActions = {
 
 // Alt+Keycode mapping to action, empty by default
 EditorUi.prototype.altActions = {};
+
+/**
+ * Key codes of the US layout for the physical keys (KeyboardEvent.code) of
+ * letters, digits, punctuation and the numeric keypad (see
+ * EditorUi.createUsKeyEvent).
+ */
+EditorUi.usKeyCodes = (function()
+{
+	var codes = {Minus: 189, Equal: 187, BracketLeft: 219, BracketRight: 221,
+		Backslash: 220, Semicolon: 186, Quote: 222, Comma: 188, Period: 190,
+		Slash: 191, Backquote: 192, NumpadMultiply: 106, NumpadAdd: 107,
+		NumpadSubtract: 109, NumpadDecimal: 110, NumpadDivide: 111};
+
+	for (var i = 0; i < 26; i++)
+	{
+		codes['Key' + String.fromCharCode(65 + i)] = 65 + i;
+	}
+
+	for (var i = 0; i < 10; i++)
+	{
+		codes['Digit' + i] = 48 + i;
+		codes['Numpad' + i] = 96 + i;
+	}
+
+	return codes;
+})();
+
+/**
+ * Returns true if the given key event is part of an IME composition, where
+ * keystrokes must not run shortcuts.
+ */
+EditorUi.isComposingKeyEvent = function(evt)
+{
+	return evt != null && (evt.isComposing || evt.keyCode == 229);
+};
+
+/**
+ * Returns true if the given key event types a character with AltGr on a
+ * letter key (eg. AltGr+V for @ on Hungarian layouts, which Windows reports
+ * with Ctrl and Alt pressed), where keystrokes must not run shortcuts. AltGr
+ * on a letter without a character on the layout reports the letter and runs
+ * the shortcut. Option on macOS is not checked as it is used for shortcuts.
+ */
+EditorUi.isAltGraphKeyEvent = function(evt)
+{
+	return !mxClient.IS_MAC && evt != null && evt.keyCode >= 65 && evt.keyCode <= 90 &&
+		typeof evt.getModifierState === 'function' && evt.getModifierState('AltGraph') &&
+		evt.key != null && evt.key.length == 1 &&
+		evt.key.toUpperCase() != String.fromCharCode(evt.keyCode);
+};
+
+/**
+ * Returns an object with the properties of the given key event that the key
+ * handler reads, but the key code of the key at the same position on the US
+ * layout (see EditorUi.usKeyCodes), or null if the physical key is not known
+ * or has the same key code. This allows shortcuts to be resolved for key
+ * codes that other layouts do not bind (eg. the punctuation and digits of
+ * other layouts or key codes of 0). Keys with the key code of a letter are
+ * ignored as their letter was already looked up (eg. Ctrl+Q on AZERTY must
+ * not run Ctrl+A).
+ */
+EditorUi.createUsKeyEvent = function(evt)
+{
+	var keyCode = (evt != null && typeof evt.code === 'string' &&
+		!(evt.keyCode >= 65 && evt.keyCode <= 90) &&
+		Object.prototype.hasOwnProperty.call(EditorUi.usKeyCodes, evt.code)) ?
+		EditorUi.usKeyCodes[evt.code] : null;
+
+	if (keyCode != null && keyCode != evt.keyCode)
+	{
+		return {type: evt.type, keyCode: keyCode, which: keyCode, key: evt.key,
+			code: evt.code, shiftKey: evt.shiftKey, ctrlKey: evt.ctrlKey,
+			altKey: evt.altKey, metaKey: evt.metaKey, target: evt.target,
+			srcElement: evt.srcElement, isComposing: false,
+			preventDefault: function()
+			{
+				evt.preventDefault();
+			},
+			stopPropagation: function()
+			{
+				evt.stopPropagation();
+			}};
+	}
+
+	return null;
+};
+
+/**
+ * Returns true if Escape in the diagram has an effect other than clearing the
+ * selection, eg. it cancels a gesture, closes a menu, a popover of the inline
+ * toolbar, a note or a tooltip or stops the freehand tool (see keyHandler.escape
+ * in createKeyHandler).
+ */
+EditorUi.prototype.isEscapeHandled = function(evt)
+{
+	var graph = this.editor.graph;
+	var tooltip = (graph.tooltipHandler != null) ? graph.tooltipHandler.div : null;
+
+	return graph.isEditing() || graph.isMouseDown || graph.popupMenuHandler.isMenuShowing() ||
+		(this.inlineToolbar != null && this.inlineToolbar.currentPopover != null) ||
+		graph.noteBox != null || (tooltip != null && tooltip.style.visibility != 'hidden') ||
+		(graph.freehand != null && graph.freehand.isDrawing()) ||
+		(this.sidebar != null && this.sidebar.activeDragSource != null &&
+		this.sidebar.activeDragSource.isActive());
+};
 
 /**
  * Creates the keyboard event handler for the current graph and history.
@@ -7500,26 +10715,83 @@ EditorUi.prototype.createKeyHandler = function(editor)
 		return mxEvent.isControlDown(evt) || (mxClient.IS_MAC && evt.metaKey);
 	};
 
-	var thread = null;
+	// Returns the function for the given keystroke: the binding of its key
+	// code (getFunction, unchanged), so that layouts such as AZERTY or Dvorak
+	// keep the shortcuts on the printed characters, or if nothing is bound
+	// for the key code, the binding of the key at the same position on the
+	// US layout (KeyboardEvent.code, see EditorUi.createUsKeyEvent), eg. for
+	// the punctuation of other layouts. Never resolves a shortcut during an
+	// IME composition or for a character typed with AltGr. The resolved
+	// function is called with the given event.
+	keyHandler.resolveFunction = function(evt)
+	{
+		var result = null;
 
-	// Helper function to commit a pending cursor-key move
+		if (!EditorUi.isComposingKeyEvent(evt) && !EditorUi.isAltGraphKeyEvent(evt))
+		{
+			result = this.getFunction(evt);
+
+			if (result == null)
+			{
+				var usEvt = EditorUi.createUsKeyEvent(evt);
+
+				if (usEvt != null && !this.isEventIgnored(usEvt))
+				{
+					result = this.getFunction(usEvt);
+				}
+			}
+		}
+
+		return result;
+	};
+
+	// Same as mxKeyHandler.keyDown with resolveFunction and no shortcuts
+	// (incl. escape) during an IME composition
+	keyHandler.keyDown = function(evt)
+	{
+		if (this.isEnabledForEvent(evt) && !EditorUi.isComposingKeyEvent(evt))
+		{
+			// Cancels the editing if escape is pressed
+			if (evt.keyCode == 27 /* Escape */)
+			{
+				this.escape(evt);
+			}
+			// Invokes the function for the keystroke
+			else if (!this.isEventIgnored(evt))
+			{
+				var boundFunction = this.resolveFunction(evt);
+
+				if (boundFunction != null)
+				{
+					boundFunction(evt);
+					mxEvent.consume(evt);
+				}
+			}
+		}
+	};
+
+	var thread = null;
+	var sizeGuidesThread = null;
+
+	// Helper function to commit a pending cursor-key move, but not a move
+	// with the mouse or a finger (eg. if another finger starts a pinch)
 	function commitNudge()
 	{
 		if (thread != null)
 		{
 			window.clearTimeout(thread);
 			thread = null;
-		}
 
-		var handler = graph.graphHandler;
+			var handler = graph.graphHandler;
 
-		if (handler != null && handler.first != null)
-		{
-			var scale = graph.getView().scale;
-			var dx = handler.roundLength(handler.currentDx / scale);
-			var dy = handler.roundLength(handler.currentDy / scale);
-			handler.moveCells(handler.cells, dx, dy);
-			handler.reset();
+			if (handler != null && handler.first != null)
+			{
+				var scale = graph.getView().scale;
+				var dx = handler.roundLength(handler.currentDx / scale);
+				var dy = handler.roundLength(handler.currentDy / scale);
+				handler.moveCells(handler.cells, dx, dy);
+				handler.reset();
+			}
 		}
 	};
 
@@ -7553,8 +10825,9 @@ EditorUi.prototype.createKeyHandler = function(editor)
 			{
 				if (resize)
 				{
-					// Resizes all selected vertices
-					graph.getModel().beginUpdate();
+					// Resizes all selected vertices and fires cellsArranged
+					// (see Graph.beginArrange)
+					var arrange = graph.beginArrange();
 					try
 					{
 						for (var i = 0; i < cells.length; i++)
@@ -7584,6 +10857,7 @@ EditorUi.prototype.createKeyHandler = function(editor)
 										geo.height += stepSize;
 									}
 									
+									graph.keepResizeCenter(cells[i], geo);
 									graph.getModel().setGeometry(cells[i], geo);
 								}
 							}
@@ -7591,7 +10865,28 @@ EditorUi.prototype.createKeyHandler = function(editor)
 					}
 					finally
 					{
-						graph.getModel().endUpdate();
+						graph.endArrange(arrange);
+					}
+
+					// Shows the guides for the size and the moved edge of a single shape
+					// until the keys pause, like a move (see commitNudge)
+					var vertexHandler = (cells.length == 1) ?
+						graph.selectionCellsHandler.getHandler(cell) : null;
+
+					if (vertexHandler != null && vertexHandler.showSizeGuides != null)
+					{
+						vertexHandler.showSizeGuides((keyCode == 37 || keyCode == 39) ? 4 : 6);
+
+						if (sizeGuidesThread != null)
+						{
+							window.clearTimeout(sizeGuidesThread);
+						}
+
+						sizeGuidesThread = window.setTimeout(function()
+						{
+							sizeGuidesThread = null;
+							vertexHandler.destroySizeGuides();
+						}, 400);
 					}
 				}
 				else
@@ -7657,6 +10952,13 @@ EditorUi.prototype.createKeyHandler = function(editor)
 								handler.currentDy += dy * scale;
 								handler.checkPreview();
 								handler.updatePreview();
+
+								// Shows the guides where the cells are aligned
+								if (handler.guide != null && handler.bounds != null)
+								{
+									handler.guide.moveExact(handler.bounds,
+										new mxPoint(handler.currentDx, handler.currentDy));
+								}
 							}
 
 							// Groups move steps in undoable change
@@ -7678,46 +10980,43 @@ EditorUi.prototype.createKeyHandler = function(editor)
 		39: mxConstants.DIRECTION_EAST, 40: mxConstants.DIRECTION_SOUTH};
 	var keyHandlerGetFunction = keyHandler.getFunction;
 
-	mxKeyHandler.prototype.getFunction = function(evt)
+	keyHandler.getFunction = function(evt)
 	{
+		var alt = mxEvent.isAltDown(evt);
+
 		if (graph.isEnabled())
 		{
-			var action = null;
+			// Keystrokes bound with Alt take precedence over the cursor keys
+			var result = (alt) ? keyHandlerGetFunction.apply(this, arguments) : null;
 
-			// TODO: Add alt modifier state in core API, here are some specific cases
-			if (mxEvent.isShiftDown(evt) && this.isControlDown(evt) && mxEvent.isAltDown(evt))
+			if (result != null)
 			{
-				action = editorUi.actions.get(editorUi.ctrlAltShiftActions[evt.keyCode]);
-
+				return result;
 			}
-			else if (mxEvent.isShiftDown(evt) && mxEvent.isAltDown(evt))
-			{
-				action = editorUi.actions.get(editorUi.altShiftActions[evt.keyCode]);
-
-			}
-			else if (this.isControlDown(evt) && mxEvent.isAltDown(evt))
-			{
-				action = editorUi.actions.get(editorUi.ctrlAltActions[evt.keyCode]);
-			}
-			else if (mxEvent.isAltDown(evt))
-			{
-				action = editorUi.actions.get(editorUi.altActions[evt.keyCode]);
-			}
-
-			if (action != null)
-			{
-				return action.funct;
-			}
-			else if (evt.key == '/' && !this.isControlDown(evt) && !mxEvent.isAltDown(evt))
+			else if (evt.key == '/' && !this.isControlDown(evt) && !alt)
 			{
 				return function()
 				{
-					var omniSearch = document.getElementById('geOmniSearch');
-					
-					if (omniSearch != null && omniSearch.clientWidth > 30)
-					{
-						omniSearch.focus();
-					}
+					editorUi.focusOmniSearch();
+				};
+			}
+			// Shift+F10 and the Menu key show the context menu
+			else if ((evt.keyCode == 121 /* F10 */ && mxEvent.isShiftDown(evt) &&
+				!this.isControlDown(evt) && !alt) || evt.key == 'ContextMenu')
+			{
+				return function()
+				{
+					editorUi.showContextMenu();
+				};
+			}
+			// Shift+Cursor moves the focus out of the diagram without a selection
+			// like outside of the diagram (see focusTabStopInDirection)
+			else if (directions[evt.keyCode] != null && graph.isSelectionEmpty() &&
+				mxEvent.isShiftDown(evt) && !this.isControlDown(evt) && !alt)
+			{
+				return function()
+				{
+					editorUi.focusTabStopInDirection(graph.container, evt.keyCode);
 				};
 			}
 			else if (directions[evt.keyCode] != null && !graph.isSelectionEmpty())
@@ -7764,65 +11063,98 @@ EditorUi.prototype.createKeyHandler = function(editor)
 							nudge(evt.keyCode, (mxEvent.isShiftDown(evt)) ? graph.gridSize : null, true);
 						};
 					}
+					// Alt+Cursor selects the nearest cell in that direction and Shift+Cursor
+					// moves by the grid size, or the other way around with shiftArrowSelect,
+					// where Shift+Cursor moves the focus out of the diagram if there is no
+					// cell in that direction
+					else if (alt || mxEvent.isShiftDown(evt))
+					{
+						return function()
+						{
+							if (alt == editorUi.shiftArrowSelect)
+							{
+								nudge(evt.keyCode, graph.gridSize);
+							}
+							else
+							{
+								// Ends a pending move of the selection before it changes
+								commitNudge();
+
+								if (!editorUi.selectCellInDirection(evt.keyCode) && !alt)
+								{
+									editorUi.focusTabStopInDirection(graph.container, evt.keyCode);
+								}
+							}
+						};
+					}
 					else
 					{
 						return function()
 						{
-							nudge(evt.keyCode, (mxEvent.isShiftDown(evt)) ? graph.gridSize : null);
+							nudge(evt.keyCode);
 						};
 					}
 				}
 			}
 		}
 
-		return keyHandlerGetFunction.apply(this, arguments);
+		// Keystrokes with Alt are only handled if the graph is enabled
+		return (alt) ? null : keyHandlerGetFunction.apply(this, arguments);
 	};
 
-	// Binds keystrokes to actions
-	keyHandler.bindAction = mxUtils.bind(this, function(code, control, key, shift)
+	// Binds keystrokes to actions. The binding checks the enabled state of
+	// the action but consumes the event if the action is disabled.
+	keyHandler.bindAction = mxUtils.bind(this, function(code, control, key, shift, alt)
 	{
 		var action = this.actions.get(key);
 		
 		if (action != null)
 		{
-			var f = function()
+			keyHandler.bindKey(code, function()
 			{
 				if (action.isEnabled())
 				{
+					var dialog = editorUi.dialog;
 					action.funct.apply(this, arguments);
+
+					// Moves the focus into a dialog that the action opened, eg. Print
+					editorUi.focusOpenedDialog(dialog);
 				}
-			};
-    		
-			if (control)
-			{
-				if (shift)
-				{
-					keyHandler.bindControlShiftKey(code, f);
-				}
-				else
-				{
-					keyHandler.bindControlKey(code, f);
-				}
-			}
-			else
-			{
-				if (shift)
-				{
-					keyHandler.bindShiftKey(code, f);
-				}
-				else
-				{
-					keyHandler.bindKey(code, f);
-				}
-			}
+			}, ((control) ? mxKeyHandler.CONTROL : 0) |
+				((shift) ? mxKeyHandler.SHIFT : 0) |
+				((alt) ? mxKeyHandler.ALT : 0));
 		}
 	});
+
+	// Binds the keystrokes of the given Alt mapping to actions
+	var bindAltActions = function(actions, control, shift)
+	{
+		for (var code in actions)
+		{
+			keyHandler.bindAction(code, control, actions[code], shift, true);
+		}
+	};
 
 	var ui = this;
 	var keyHandlerEscape = keyHandler.escape;
 	keyHandler.escape = function(evt)
 	{
+		// Escape in the diagram clears the selection if it has no other effect
+		var clear = mxUtils.isAncestorNode(graph.container, mxEvent.getSource(evt)) &&
+			!graph.isSelectionEmpty() && !ui.isEscapeHandled(evt);
 		keyHandlerEscape.apply(this, arguments);
+
+		if (clear)
+		{
+			graph.clearSelection();
+
+			// Shows the focus ring of the diagram, which got the focus from the
+			// selected cell (see installTypingShim)
+			if (document.activeElement == graph.container)
+			{
+				graph.container.classList.add('geFocusVisible');
+			}
+		}
 	};
 
 	// Ignores enter keystroke. Remove this line if you want the
@@ -7844,6 +11176,10 @@ EditorUi.prototype.createKeyHandler = function(editor)
 	keyHandler.bindAction(222, true, 'zoomIn'); // Ctrl Minus (CH: '/?)  tested by GA, CH keyboard
 	keyHandler.bindAction(173, true, 'zoomOut'); // Ctrl - (US)   tested by DB, firefox only.
 	keyHandler.bindAction(189, true, 'zoomOut'); // Ctrl Slash (CH: -/_)   tested by DB, chrome and desktop
+	bindAltActions(this.altActions, false, false);
+	bindAltActions(this.altShiftActions, false, true);
+	bindAltActions(this.ctrlAltActions, true, false);
+	bindAltActions(this.ctrlAltShiftActions, true, true);
 	
 	if (!this.editor.chromeless || this.editor.editable)
 	{
@@ -7851,6 +11187,7 @@ EditorUi.prototype.createKeyHandler = function(editor)
 		keyHandler.bindControlKey(36, function() { if (graph.isEnabled()) { graph.foldCells(true); }}); // Ctrl+Home
 		keyHandler.bindControlKey(35, function() { if (graph.isEnabled()) { graph.foldCells(false); }}); // Ctrl+End
 		keyHandler.bindControlKey(13, function() { ui.ctrlEnter(); }); // Ctrl+Enter
+		keyHandler.bindShiftKey(13, function() { ui.focusFormatPanel(); }); // Shift+Enter
 		keyHandler.bindAction(8, false, 'delete'); // Backspace
 		keyHandler.bindAction(8, true, 'deleteAll'); // Ctrl+Backspace
 		keyHandler.bindAction(8, false, 'deleteLabels', true); // Shift+Backspace
@@ -7928,9 +11265,10 @@ EditorUi.prototype.addMenuHandler = function(elt, funct, clickFn, handleKeyUp)
 {
 	if (funct != null)
 	{
+		var button = elt.nodeName != 'INPUT';
 		var showingMenu = null;
 		var show = true;
-		
+
 		var clickHandler = mxUtils.bind(this, function(evt)
 		{
 			if (clickFn != null)
@@ -7954,6 +11292,11 @@ EditorUi.prototype.addMenuHandler = function(elt, funct, clickFn, handleKeyUp)
 					this.resetCurrentMenu();
 					showingMenu = null;
 					menu.destroy();
+
+					if (button)
+					{
+						elt.setAttribute('aria-expanded', 'false');
+					}
 				});
 
 				if (!this.menus.autoPopup &&
@@ -7966,6 +11309,39 @@ EditorUi.prototype.addMenuHandler = function(elt, funct, clickFn, handleKeyUp)
 				menu.popup(offset.x, offset.y + elt.offsetHeight, null, evt);
 				this.setCurrentMenu(menu, elt);
 				showingMenu = menu
+
+				// Keystrokes in the menu move to the previous and next menu and
+				// focus the diagram after an action (see mxPopupMenu.keyDown) or
+				// the window or dialog that the action opened, eg. Layers or Print
+				if (button && menu.isMenuShowing())
+				{
+					var windows = this.getVisibleWindows();
+					var dialog = this.dialog;
+					var menuRestoreFocus = menu.restoreFocus;
+
+					elt.setAttribute('aria-expanded', 'true');
+					menu.actionFocus = this.editor.graph.container;
+					menu.restoreFocus = mxUtils.bind(this, function()
+					{
+						if (!this.focusOpenedWindow(windows) &&
+							!this.focusOpenedDialog(dialog))
+						{
+							menuRestoreFocus.apply(menu, arguments);
+						}
+					});
+
+					menu.moveToSiblingMenu = mxUtils.bind(this, function(previous, keyEvent)
+					{
+						var next = this.focusSiblingMenu(elt, previous);
+
+						if (next != null)
+						{
+							next.showMenuWithKeyboard(keyEvent);
+						}
+
+						return next != null;
+					});
+				}
 			}
 			
 			if (!handleKeyUp)
@@ -8018,12 +11394,81 @@ EditorUi.prototype.addMenuHandler = function(elt, funct, clickFn, handleKeyUp)
 			show = true;
 		}));
 
+		// Opens the menu with Enter, Space, Arrow Down or Arrow Up (last item)
+		// and moves the focus into it, Arrow Left and Right move the focus to
+		// the previous and next menu, eg. in the menubar (see mxPopupMenu.keyDown)
+		if (button)
+		{
+			elt.setAttribute('role', 'button');
+			elt.setAttribute('aria-haspopup', 'menu');
+			elt.setAttribute('aria-expanded', 'false');
+
+			if (!elt.hasAttribute('tabindex'))
+			{
+				elt.setAttribute('tabindex', '0');
+			}
+
+			elt.showMenuWithKeyboard = mxUtils.bind(this, function(evt, last)
+			{
+				this.hideCurrentMenu();
+				show = true;
+				clickHandler(evt);
+
+				if (showingMenu != null)
+				{
+					showingMenu.returnFocus = elt;
+					showingMenu.focusFirstItem(last);
+				}
+			});
+
+			mxEvent.addListener(elt, 'keydown', mxUtils.bind(this, function(evt)
+			{
+				if (!mxEvent.isAltDown(evt) && !mxEvent.isControlDown(evt) &&
+					!mxEvent.isMetaDown(evt))
+				{
+					if (evt.keyCode == 13 /* Enter */ || evt.keyCode == 32 /* Space */)
+					{
+						elt.showMenuWithKeyboard(evt);
+						mxEvent.consume(evt);
+					}
+					// Moves to the control above or below in the same part of the user
+					// interface, eg. in the format panel, or opens the menu with the focus
+					// on its first or last item, eg. in the menubar. Shift+arrow keys only
+					// move the focus (see isArrowKeyEvent).
+					else if ((evt.keyCode == 38 /* Up */ || evt.keyCode == 40 /* Down */) &&
+						!mxEvent.isShiftDown(evt))
+					{
+						if (this.dialog != null || !this.focusTabStopInDirection(elt, evt.keyCode, true))
+						{
+							elt.showMenuWithKeyboard(evt, evt.keyCode == 38);
+						}
+
+						mxEvent.consume(evt);
+					}
+					// Moves to the control in that direction in the same part of the
+					// user interface, eg. in a toolbar, or wraps around to the first or
+					// last menu, eg. in the menubar
+					else if ((evt.keyCode == 37 /* Left */ || evt.keyCode == 39 /* Right */) &&
+						!mxEvent.isShiftDown(evt) && ((this.dialog == null &&
+						this.focusTabStopInDirection(elt, evt.keyCode, true)) ||
+						this.focusSiblingMenu(elt, evt.keyCode == 37) != null))
+					{
+						mxEvent.consume(evt);
+					}
+				}
+			}));
+		}
+
 		if (handleKeyUp)
 		{
+			// Arrow keys only move the focus (see focusTabStopInDirection)
 			mxEvent.addListener(elt, 'focus', mxUtils.bind(this, function(evt)
 			{
-				clickHandler(evt);
-				show = true;
+				if (!this.arrowFocus)
+				{
+					clickHandler(evt);
+					show = true;
+				}
 			}));
 
 			mxEvent.addListener(elt, 'blur', mxUtils.bind(this, function(evt)
@@ -8034,10 +11479,13 @@ EditorUi.prototype.addMenuHandler = function(elt, funct, clickFn, handleKeyUp)
 				}
 			}));
 
+			// Keys that do not change the text, eg. Shift after Shift+Arrow Down
+			// moved the focus here, keep the menu as it is
 			mxEvent.addListener(elt, 'keyup', mxUtils.bind(this, function(evt)
 			{
-				if (evt.keyCode == 38 /* ArrowUp */ ||
-					evt.keyCode == 40 /* ArrowDown */)
+				if ((evt.keyCode >= 37 /* Left */ && evt.keyCode <= 40 /* Down */) ||
+					(evt.keyCode >= 16 /* Shift */ && evt.keyCode <= 18 /* Alt */) ||
+					evt.keyCode == 91 || evt.keyCode == 93 || evt.keyCode == 224 /* Meta */)
 				{
 					return;
 				}
@@ -8053,6 +11501,38 @@ EditorUi.prototype.addMenuHandler = function(elt, funct, clickFn, handleKeyUp)
 			}));
 		}
 	}
+};
+
+/**
+ * Moves the focus to the previous or next visible element with a menu next
+ * to the given element, eg. in the menubar, and returns it or null if there
+ * is none (see addMenuHandler).
+ */
+EditorUi.prototype.focusSiblingMenu = function(elt, previous)
+{
+	var elts = [];
+
+	if (elt.parentNode != null)
+	{
+		for (var child = elt.parentNode.firstChild; child != null; child = child.nextSibling)
+		{
+			if (child.showMenuWithKeyboard != null && child.getClientRects().length > 0)
+			{
+				elts.push(child);
+			}
+		}
+	}
+
+	var index = mxUtils.indexOf(elts, elt);
+	var next = (index >= 0 && elts.length > 1) ? elts[(index +
+		((previous) ? elts.length - 1 : 1)) % elts.length] : null;
+
+	if (next != null)
+	{
+		next.focus();
+	}
+
+	return next;
 };
 
 /**
@@ -8121,7 +11601,7 @@ EditorUi.prototype.createZoomInput = function(readOnly)
 	{
 		zoomInput.setAttribute('title',
 			mxResources.get('zoom') +
-				' (Alt+Mousewheel)');
+				' (Ctrl+Mousewheel)');
 	}));
 
 	if (readOnly || mxClient.IS_TOUCH)
@@ -8205,17 +11685,41 @@ EditorUi.prototype.createZoomInput = function(readOnly)
 		{
 			if (evt.keyCode == 27 || evt.keyCode == 13 || evt.keyCode == 9)
 			{
-				if (evt.keyCode == 27 || isNaN(parseInt(zoomInput.value)))
+				// The value is read first as the blur resets it (see updateZoom)
+				var value = parseInt(zoomInput.value);
+
+				// Tab moves the focus before the zoom changes, which focuses the
+				// diagram if the zoom input still has the focus (see updateZoom),
+				// or leaves an editor in a frame at the ends of the order
+				var leave = evt.keyCode == 9 && this.isTabOrderEnd(zoomInput, mxEvent.isShiftDown(evt));
+
+				if (leave)
+				{
+					this.focusFrameExit(mxEvent.isShiftDown(evt));
+				}
+				else if (evt.keyCode == 9)
+				{
+					this.moveTabFocus(mxEvent.isShiftDown(evt), mxUtils.bind(this, function()
+					{
+						return this.focusAdjacentTabStop(zoomInput, mxEvent.isShiftDown(evt));
+					}));
+				}
+
+				if (evt.keyCode == 27 || isNaN(value))
 				{
 					updateZoom();
 				}
 				else
 				{
-					this.editor.graph.zoomTo(parseInt(zoomInput.value) / 100);
+					this.editor.graph.zoomTo(value / 100);
 				}
 
 				this.hideCurrentMenu();
-				mxEvent.consume(evt);
+
+				if (!leave)
+				{
+					mxEvent.consume(evt);
+				}
 			}
 		}));
 
@@ -8250,7 +11754,14 @@ EditorUi.prototype.createHelpIcon = function(href, noCssClass)
 		this.openLink(href);
 		mxEvent.consume(evt);
 	}));
-	
+
+	// Opens the link with Enter and Space
+	Editor.initKeyboardButton(link, mxUtils.bind(this, function()
+	{
+		this.hideCurrentMenu();
+		this.openLink(href);
+	}));
+
 	return link;
 };
 
@@ -8260,6 +11771,33 @@ EditorUi.prototype.createHelpIcon = function(href, noCssClass)
 EditorUi.prototype.destroy = function()
 {
 	var graph = this.editor.graph;
+
+	// Closes dialogs and menus outside of the containers, which would call
+	// into the destroyed editor, eg. after Escape closed the lightbox
+	this.hideCurrentMenu();
+
+	if (this.dialogs != null)
+	{
+		var dialogs = this.dialogs;
+		this.dialogs = null;
+		this.dialog = null;
+
+		for (var i = dialogs.length - 1; i >= 0; i--)
+		{
+			// Closes dialogs that refuse to close without their handler
+			if (dialogs[i].close(true) == false)
+			{
+				dialogs[i].onDialogClose = null;
+				dialogs[i].close(true);
+			}
+		}
+	}
+
+	if (this.colorWindow != null)
+	{
+		this.colorWindow.destroy();
+		this.colorWindow = null;
+	}
 
 	if (graph != null && this.selectionStateListener != null)
 	{
@@ -8311,17 +11849,50 @@ EditorUi.prototype.destroy = function()
 		mxEvent.removeListener(document, 'keydown', this.keydownHandler);
 		this.keydownHandler = null;
 	}
-		
+
+	if (this.tabStartHandler != null)
+	{
+		for (var i = 0; i < this.tabStartEvents.length; i++)
+		{
+			document.removeEventListener(this.tabStartEvents[i], this.tabStartHandler, true);
+		}
+
+		this.tabStartHandler = null;
+	}
+
+	if (this.liveRegion != null)
+	{
+		if (this.liveRegion.parentNode != null)
+		{
+			this.liveRegion.parentNode.removeChild(this.liveRegion);
+		}
+
+		this.liveRegion = null;
+	}
+
 	if (this.keyupHandler != null)
 	{
 		mxEvent.removeListener(document, 'keyup', this.keyupHandler);
 		this.keyupHandler = null;
+	}
+
+	if (this.pinchGestureHandler != null)
+	{
+		mxEvent.removeListener(document, 'gesturestart', this.pinchGestureHandler);
+		mxEvent.removeListener(document, 'gesturechange', this.pinchGestureHandler);
+		this.pinchGestureHandler = null;
 	}
 	
 	if (this.resizeHandler != null)
 	{
 		mxEvent.removeListener(window, 'resize', this.resizeHandler);
 		this.resizeHandler = null;
+	}
+
+	if (this.fitWindowObserver != null)
+	{
+		this.fitWindowObserver.disconnect();
+		this.fitWindowObserver = null;
 	}
 	
 	if (this.gestureHandler != null)

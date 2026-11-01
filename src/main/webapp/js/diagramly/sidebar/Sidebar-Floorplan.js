@@ -7,6 +7,7 @@
 	// Adds Floorplan shapes
 	Sidebar.prototype.addFloorplanPalette = function()
 	{
+		var sb = this;
 		var w = 100;
 		var h = 100;
 		var s = mxConstants.STYLE_VERTICAL_LABEL_POSITION + '=bottom;html=1;' + mxConstants.STYLE_VERTICAL_ALIGN + '=top;align=center;shape=mxgraph.floorplan.';
@@ -183,7 +184,7 @@
 			
 			this.addEntry(dt + 'kitchen table round', function()
 			{
-			   	var table = new mxCell('', new mxGeometry(20, 20, 100, 100), 'shape=ellipse;shadow=0;html=1;');
+			   	var table = new mxCell('', new mxGeometry(20, 20, 100, 100), 'shape=ellipse;perimeter=ellipsePerimeter;shadow=0;html=1;');
 			   	table.vertex = true;
 			   	var chair1 = new mxCell('', new mxGeometry(50, 0, 40, 52), s + 'chair;shadow=0;');
 			   	chair1.vertex = true;
@@ -219,7 +220,7 @@
 			
 			this.addEntry(dt + 'kitchen table large oval', function()
 			{
-			   	var table = new mxCell('', new mxGeometry(20, 20, 160, 100), 'shape=ellipse;shadow=0;html=1;');
+			   	var table = new mxCell('', new mxGeometry(20, 20, 160, 100), 'shape=ellipse;perimeter=ellipsePerimeter;shadow=0;html=1;');
 			   	table.vertex = true;
 			   	var chair1 = new mxCell('', new mxGeometry(50, 0, 40, 52), s + 'chair;shadow=0;');
 			   	chair1.vertex = true;
@@ -287,7 +288,7 @@
 					
 			this.addEntry(dt + 'office table large oval', function()
 			{
-			   	var table = new mxCell('', new mxGeometry(20, 20, 160, 100), 'shape=ellipse;shadow=0;html=1;');
+			   	var table = new mxCell('', new mxGeometry(20, 20, 160, 100), 'shape=ellipse;perimeter=ellipsePerimeter;shadow=0;html=1;');
 			   	table.vertex = true;
 			   	var chair1 = new mxCell('', new mxGeometry(50, 0, 40, 43), s + 'office_chair;shadow=0;');
 			   	chair1.vertex = true;
@@ -307,7 +308,7 @@
 
 			this.addEntry(dt + 'office table large oval', function()
 			{
-			   	var table = new mxCell('', new mxGeometry(20, 20, 280, 100), 'shape=ellipse;shadow=0;html=1;');
+			   	var table = new mxCell('', new mxGeometry(20, 20, 280, 100), 'shape=ellipse;perimeter=ellipsePerimeter;shadow=0;html=1;');
 			   	table.vertex = true;
 			   	var chair1 = new mxCell('', new mxGeometry(50, 0, 40, 43), s + 'office_chair;shadow=0;');
 			   	chair1.vertex = true;
@@ -335,7 +336,7 @@
 
 			this.addEntry(dt + 'office table conference large huge', function()
 			{
-			   	var table = new mxCell('', new mxGeometry(20, 20, 520, 100), 'shape=ellipse;shadow=0;html=1;');
+			   	var table = new mxCell('', new mxGeometry(20, 20, 520, 100), 'shape=ellipse;perimeter=ellipsePerimeter;shadow=0;html=1;');
 			   	table.vertex = true;
 			   	var chair1 = new mxCell('', new mxGeometry(50, 0, 40, 43), s + 'office_chair;shadow=0;');
 			   	chair1.vertex = true;

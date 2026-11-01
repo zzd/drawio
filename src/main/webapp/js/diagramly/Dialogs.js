@@ -14,7 +14,7 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 	div.style.paddingBottom = '20px';
 	
 	var buttons = document.createElement('div');
-	buttons.style.border = '1px solid #d3d3d3';
+	buttons.style.borderStyle = 'solid';
 	buttons.style.borderWidth = '1px 0px 1px 0px';
 	buttons.style.padding = '10px 0px 20px 0px';
 	
@@ -24,6 +24,18 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 	buttons.appendChild(container);
 	
 	var p3 = document.createElement('p');
+
+	// Choosing a storage, or deciding later, accepts the Terms of Use where
+	// the notice shows
+	var notice = editorUi.createTermsNotice();
+
+	function accept(mode)
+	{
+		if (notice != null)
+		{
+			editorUi.acceptTerms((mode == App.MODE_GOOGLE) ? editorUi.drive : null);
+		}
+	}
 	
 	function addLogo(img, title, mode, clientName, labels, clientFn)
 	{
@@ -50,7 +62,8 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 		button.style.height = '100px';
 		button.style.whiteSpace = 'nowrap';
 		button.setAttribute('title', title);
-		
+		Editor.initKeyboardButton(button);
+
 		var label = document.createElement('div');
 		label.style.textOverflow = 'ellipsis';
 		label.style.overflow = 'hidden';
@@ -63,8 +76,10 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 		
 		if (img != null)
 		{
+			// The name of the storage is next to the logo
 			var logo = document.createElement('img');
 			logo.setAttribute('src', img);
+			logo.setAttribute('alt', '');
 			logo.setAttribute('border', '0');
 			logo.setAttribute('align', 'absmiddle');
 			logo.style.width = '60px';
@@ -102,6 +117,11 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 		
 		function initButton()
 		{
+			mxEvent.addListener(button, 'click', function()
+			{
+				accept(mode);
+			});
+
 			mxEvent.addListener(button, 'click', (clientFn != null) ? clientFn : function()
 			{
 				if (mode == App.MODE_GOOGLE && editorUi.spinner.spin(document.body, mxResources.get('authorizing')))
@@ -139,8 +159,10 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 		// Supports lazy loading
 		if (clientName != null && editorUi[clientName] == null)
 		{
+			// Disabled for the keyboard and screen readers until it can be used
 			logo.style.visibility = 'hidden';
 			mxUtils.setOpacity(label, 10);
+			button.setAttribute('disabled', 'disabled');
 			var size = 12;
 			
 			var spinner = new Spinner({
@@ -158,6 +180,7 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 				zIndex: 2e9 // The z-index (defaults to 2000000000)
 			});
 			spinner.spin(button);
+			spinner.el.setAttribute('aria-label', mxResources.get('loading'));
 			
 			// Timeout after 30 secs
 			var timeout = window.setTimeout(function()
@@ -176,6 +199,7 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 					window.clearTimeout(timeout);
 					mxUtils.setOpacity(label, 100);
 					logo.style.visibility = '';
+					button.removeAttribute('disabled');
 					spinner.stop();
 					initButton();
 					
@@ -194,8 +218,10 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 		container.appendChild(button);
 	};
 
+	// Long titles wrap (eg. German) instead of overflowing the dialog
 	var hd = document.createElement('p');
-	hd.style.cssText = 'font-size:22px;padding:4px 0 16px 0;margin:0;color:gray;';
+	hd.className = 'geSecondaryText';
+	hd.style.cssText = 'font-size:22px;padding:4px 0 16px 0;margin:0;white-space:normal;';
 	mxUtils.write(hd, mxResources.get('saveDiagramsTo') + ':');
 	div.appendChild(hd);
 	
@@ -237,20 +263,37 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 	div.appendChild(buttons);
 	addButtons();
 
+	if (notice != null)
+	{
+		notice.style.margin = '12px 8px 0 8px';
+		div.appendChild(notice);
+	}
+
 	var later = document.createElement('span');
+	later.className = 'geSecondaryText';
 	later.style.position = 'absolute';
 	later.style.cursor = 'pointer';
 	later.style.bottom = '27px';
-	later.style.color = 'gray';
 	later.style.userSelect = 'none';
 	later.style.textAlign = 'center';
 	later.style.left = '50%';
 	mxUtils.setPrefixedStyle(later.style, 'transform', 'translate(-50%,0)');
 	mxUtils.write(later, mxResources.get('decideLater'));
+	Editor.initKeyboardButton(later);
 	div.appendChild(later);
+
+	// Below the notice, which the dialog's height follows (App.showSplash)
+	if (notice != null)
+	{
+		later.style.position = '';
+		later.style.display = 'inline-block';
+		later.style.marginTop = '14px';
+		mxUtils.setPrefixedStyle(later.style, 'transform', '');
+	}
 
 	mxEvent.addListener(later, 'click', function()
 	{
+		accept(null);
 		editorUi.hideDialog();
 		var prev = Editor.useLocalStorage;
 		editorUi.createFile(editorUi.defaultFilename,
@@ -271,15 +314,25 @@ var StorageDialog = function(editorUi, fn, rowLimit)
 				p3.style.padding = '7px';
 				p3.style.fontSize = '9pt';
 				p3.style.marginTop = '-14px';
-				p3.innerHTML = '<a style="background-color:#dcdcdc;padding:6px;color:black;text-decoration:none;" ' +
+				p3.innerHTML = '<a style="background-color:light-dark(var(--border-color), var(--dark-border-color));' +
+					'padding:6px;color:light-dark(var(--strong-text-color), var(--dark-strong-text-color));' +
+					'text-decoration:none;" ' +
 					'href="https://www.drawio.com/doc/faq/google-drive-connection-problems" target="_blank">' +
 					'<img border="0" src="' + mxGraph.prototype.warningImage.src + '" align="absmiddle" ' +
 					'style="margin-top:-4px"> ' + mxResources.get('googleDriveMissingClickHere') + '</a>';
 				div.appendChild(p3);
+
+				// The dialog's height follows its content with the notice
+				if (notice != null && div.parentNode != null && div.parentNode.className == 'geDialog')
+				{
+					p3.style.marginTop = '14px';
+					div.parentNode.style.height = (div.scrollHeight + 48) + 'px';
+				}
 			}
 		}, 5000);
 	}
 	
+	this.notice = notice;
 	this.container = div;
 };
 
@@ -301,7 +354,9 @@ var SplashDialog = function(editorUi)
 		}
 	}
 	
+	// The name of the storage is next to the logo
 	var logo = document.createElement('img');
+	logo.setAttribute('alt', '');
 	logo.setAttribute('border', '0');
 	logo.setAttribute('align', 'absmiddle');
 	logo.style.width = '32px';
@@ -313,55 +368,17 @@ var SplashDialog = function(editorUi)
 	buttons.style.margin = '8px 0px 0px 0px';
 	buttons.style.padding = '18px 0px 24px 0px';
 	
-	var service = '';
-	
-	if (editorUi.mode == App.MODE_GOOGLE)
+	var storage = (editorUi.mode != null) ? App.storages[editorUi.mode] : null;
+
+	if (storage == null || editorUi.mode == App.MODE_DEVICE)
 	{
-		logo.src = IMAGE_PATH + '/google-drive-logo.svg';
-		service = mxResources.get('googleDrive');
-	}
-	else if (editorUi.mode == App.MODE_DROPBOX)
-	{
-		logo.src = IMAGE_PATH + '/dropbox-logo.svg';
-		service = mxResources.get('dropbox');
-	}
-	else if (editorUi.mode == App.MODE_ONEDRIVE)
-	{
-		logo.src = IMAGE_PATH + '/onedrive-logo.svg';
-		service = mxResources.get('oneDrive');
-	}
-	else if (editorUi.mode == App.MODE_M365)
-	{
-		logo.src = IMAGE_PATH + '/onedrive-logo.svg';
-		service = mxResources.get('m365');
-	}
-	else if (editorUi.mode == App.MODE_GITHUB)
-	{
-		logo.src = IMAGE_PATH + '/github-logo.svg';
-		service = mxResources.get('github');
-	}
-	else if (editorUi.mode == App.MODE_GITLAB)
-	{
-		logo.src = IMAGE_PATH + '/gitlab-logo.svg';
-		service = mxResources.get('gitlab');
-	}
-	else if (editorUi.mode == App.MODE_BROWSER)
-	{
-		logo.src = IMAGE_PATH + '/osa_database.png';
-		service = mxResources.get('browser');
-	}
-	else if (editorUi.mode == App.MODE_TRELLO)
-	{
-		logo.src = IMAGE_PATH + '/trello-logo.svg';
-		service = mxResources.get('trello');
-	}
-	else
-	{
-		logo.src = IMAGE_PATH + '/osa_drive-harddisk.png';
+		storage = App.storages[App.MODE_DEVICE];
 		buttons.style.paddingBottom = '10px';
 		buttons.style.paddingTop = '30px';
-		service = mxResources.get('device');
 	}
+
+	logo.src = IMAGE_PATH + '/' + storage.logo;
+	var service = mxResources.get(storage.title);
 
 	var btn = document.createElement('button');
 	btn.className = 'geBigButton';
@@ -372,7 +389,7 @@ var SplashDialog = function(editorUi)
 	
 	if (!mxClient.IS_CHROMEAPP && !EditorUi.isElectronApp)
 	{
-		buttons.style.border = '1px solid #d3d3d3';
+		buttons.style.borderStyle = 'solid';
 		buttons.style.borderWidth = '1px 0px 1px 0px';
 	
 		var table = document.createElement('table');
@@ -384,9 +401,9 @@ var SplashDialog = function(editorUi)
 		left.appendChild(logo);
 		
 		var title = document.createElement('div');
+		title.className = 'geSecondaryText';
 		title.style.fontSize = '22px';
 		title.style.paddingBottom = '6px';
-		title.style.color = 'gray';
 		mxUtils.write(title, service);
 		
 		right.style.textAlign = 'left';
@@ -399,10 +416,12 @@ var SplashDialog = function(editorUi)
 		div.appendChild(table);
 	
 		var change = document.createElement('span');
-		change.style.cssText = 'position:absolute;cursor:pointer;bottom:27px;color:gray;userSelect:none;text-align:center;left:50%;';
+		change.className = 'geSecondaryText';
+		change.style.cssText = 'position:absolute;cursor:pointer;bottom:27px;userSelect:none;text-align:center;left:50%;';
 		mxUtils.setPrefixedStyle(change.style, 'transform', 'translate(-50%,0)');
 		mxUtils.write(change, mxResources.get('changeStorage'));
-		
+		Editor.initKeyboardButton(change);
+
 		mxEvent.addListener(change, 'click', function()
 		{
 			editorUi.hideDialog(false);
@@ -446,41 +465,6 @@ var SplashDialog = function(editorUi)
 	
 	buttons.appendChild(btn);
 
-	var storage = 'undefined';
-	
-	if (editorUi.mode == App.MODE_GOOGLE)
-	{
-		storage = mxResources.get('googleDrive');
-	}
-	else if (editorUi.mode == App.MODE_DROPBOX)
-	{
-		storage = mxResources.get('dropbox');
-	}
-	else if (editorUi.mode == App.MODE_ONEDRIVE)
-	{
-		storage = mxResources.get('oneDrive');
-	}
-	else if (editorUi.mode == App.MODE_GITHUB)
-	{
-		storage = mxResources.get('github');
-	}
-	else if (editorUi.mode == App.MODE_GITLAB)
-	{
-		storage = mxResources.get('gitlab');
-	}
-	else if (editorUi.mode == App.MODE_TRELLO)
-	{
-		storage = mxResources.get('trello');
-	}
-	else if (editorUi.mode == App.MODE_DEVICE)
-	{
-		storage = mxResources.get('device');
-	}
-	else if (editorUi.mode == App.MODE_BROWSER)
-	{
-		storage = mxResources.get('browser');
-	}
-	
 	if (!mxClient.IS_CHROMEAPP && !EditorUi.isElectronApp)
 	{
 		function addLogout(logout)
@@ -488,11 +472,12 @@ var SplashDialog = function(editorUi)
 			btn.style.marginBottom = '24px';
 			
 			var link = document.createElement('a');
+			link.className = 'geSecondaryText';
 			link.style.display = 'inline-block';
-			link.style.color = 'gray';
 			link.style.cursor = 'pointer';
 			link.style.marginTop = '6px';
 			mxUtils.write(link, mxResources.get('signOut'));
+			Editor.initKeyboardButton(link);
 
 			// Makes room after last big buttons
 			btn.style.marginBottom = '16px';
@@ -525,6 +510,7 @@ var SplashDialog = function(editorUi)
 				buttons.appendChild(title);
 				
 				var usersSelect = document.createElement('select');
+				usersSelect.setAttribute('aria-label', mxResources.get('changeUser'));
 				usersSelect.style.marginLeft = '4px';
 				usersSelect.style.width = '140px';
 				
@@ -626,15 +612,6 @@ var SplashDialog = function(editorUi)
 				});
 			}
 		}
-		else if (editorUi.mode == App.MODE_DROPBOX && editorUi.dropbox != null)
-		{
-			// NOTE: Dropbox has a logout option in the picker
-			addLogout(function()
-			{
-				editorUi.dropbox.logout();
-				editorUi.openLink('https://www.dropbox.com/logout');
-			});
-		}
 	}
 
 	div.appendChild(buttons);
@@ -671,8 +648,8 @@ var EmbedDialog = function(editorUi, result, timeout, ignoreSize, previewFn, tit
 	}
 
 	var size = document.createElement('span');
+	size.className = 'geDialogHint';
 	size.style.cssFloat = 'right';
-	size.style.color = 'gray';
 	mxUtils.write(size, editorUi.formatFileSize(result.length));
 	header.appendChild(size);
 
@@ -839,6 +816,7 @@ var EmbedDialog = function(editorUi, result, timeout, ignoreSize, previewFn, tit
 		img.style.marginBottom = '5px'
 
 		emailBtn.appendChild(img);
+		emailBtn.setAttribute('title', mxResources.get('email', null, 'Email'));
 		emailBtn.style.verticalAlign = 'bottom';
 		emailBtn.style.paddingTop = '4px';
 		emailBtn.style.minWidth = '46px'
@@ -852,7 +830,11 @@ var EmbedDialog = function(editorUi, result, timeout, ignoreSize, previewFn, tit
 	});
 
 	closeBtn.className = 'geBtn';
-	buttons.appendChild(closeBtn);
+
+	if (editorUi.editor.cancelFirst)
+	{
+		buttons.appendChild(closeBtn);
+	}
 
 	var copyBtn = mxUtils.button(mxResources.get('copy'), function()
 	{
@@ -889,6 +871,11 @@ var EmbedDialog = function(editorUi, result, timeout, ignoreSize, previewFn, tit
 		buttons.appendChild(previewBtn);
 		previewBtn.className = 'geBtn gePrimaryBtn';
 	}
+
+	if (!editorUi.editor.cancelFirst)
+	{
+		buttons.appendChild(closeBtn);
+	}
 	
 	div.appendChild(buttons);
 	this.container = div;
@@ -905,9 +892,11 @@ EmbedDialog.showPreviewOption = true;
 EmbedDialog.maxSize = 500000;
 
 /**
- * Constructs a new parse dialog.
+ * Constructs a new background dialog. The optional gradient of the fill color
+ * is given as {color, direction} (see Graph.backgroundGradient) and passed to
+ * applyFn after the color, with a null color if there is no gradient.
  */
-var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
+var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor, gradient)
 {
 	var div = document.createElement('div');
 
@@ -938,6 +927,9 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 	pageSelect.style.flex = '1';
 	pageSelect.style.minWidth = '0';
 	pageSelect.style.marginLeft = '0';
+
+	var checkUrl = Dialog.checkRadioOnInput(urlInput, urlRadio, pageRadio);
+	Dialog.checkRadioOnInput(pageSelect, pageRadio, urlRadio);
 
 	if (editorUi.pages != null)
 	{
@@ -1031,6 +1023,7 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 		{
 			urlInput.value = data;
 			urlChanged();
+			checkUrl();
 			urlInput.focus();
 		}, function()
 		{
@@ -1060,60 +1053,13 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 			urlInput.focus();
 		}
 
-		mxEvent.addListener(pageSelect, 'focus', function()
-		{
-			urlRadio.removeAttribute('checked');
-			pageRadio.setAttribute('checked', 'checked');
-			pageRadio.checked = true;
-		});
-
-		mxEvent.addListener(urlInput, 'focus', function()
-		{
-			pageRadio.removeAttribute('checked');
-			urlRadio.setAttribute('checked', 'checked');
-			urlRadio.checked = true;
-		});
-
 		// Installs drag and drop handler for local images and links
 		if (Graph.fileSupport)
 		{
 			urlInput.setAttribute('placeholder', mxResources.get('dragImagesHere'));
 
-			// Setup the dnd listeners
-			var dlg = div.parentNode;
-			var dropElt = null;
-
-			mxEvent.addListener(dlg, 'dragleave', function(evt)
+			editorUi.addDropHandler(div.parentNode, function(evt)
 			{
-				if (dropElt != null)
-				{
-					dropElt.parentNode.removeChild(dropElt);
-					dropElt = null;
-				}
-
-				evt.stopPropagation();
-				evt.preventDefault();
-			});
-
-			mxEvent.addListener(dlg, 'dragover', mxUtils.bind(this, function(evt)
-			{
-				if (dropElt == null)
-				{
-					dropElt = editorUi.highlightElement(dlg);
-				}
-
-				evt.stopPropagation();
-				evt.preventDefault();
-			}));
-
-			mxEvent.addListener(dlg, 'drop', mxUtils.bind(this, function(evt)
-			{
-				if (dropElt != null)
-				{
-					dropElt.parentNode.removeChild(dropElt);
-					dropElt = null;
-				}
-
 				if (evt.dataTransfer.files.length > 0)
 				{
 					openFiles(evt.dataTransfer.files);
@@ -1128,10 +1074,7 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 						urlChanged();
 					}
 				}
-
-				evt.stopPropagation();
-				evt.preventDefault();
-			}), false);
+			});
 		}
 	};
 
@@ -1269,6 +1212,23 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 
 	var newBackgroundColor = color;
 
+	function updateColorButton(button, value)
+	{
+		var cssColor = mxUtils.getLightDarkColor(value);
+
+		if (mxUtils.isLightDarkColor(value) && cssColor.light != cssColor.dark)
+		{
+			button.style.background = 'linear-gradient(to right bottom, ' +
+				cssColor.cssText + ' 50%, ' + mxUtils.invertLightDarkColor(cssColor).
+				cssText + ' 50.3%)';
+		}
+		else
+		{
+			button.style.background = '';
+			button.style.backgroundColor = cssColor.cssText;
+		}
+	};
+
 	function updateBackgroundColor()
 	{
 		if (newBackgroundColor == null || newBackgroundColor == mxConstants.NONE)
@@ -1278,27 +1238,13 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 		}
 		else
 		{
-			var cssColor = mxUtils.getLightDarkColor(newBackgroundColor);
-
-			if (mxUtils.isLightDarkColor(newBackgroundColor) &&
-				cssColor.light != cssColor.dark)
-			{
-				backgroundButton.style.background = 'linear-gradient(to right bottom, ' +
-					cssColor.cssText + ' 50%, ' + mxUtils.invertLightDarkColor(cssColor).
-					cssText + ' 50.3%)';
-			}
-			else
-			{
-				backgroundButton.style.background = '';
-				backgroundButton.style.backgroundColor = cssColor.cssText;
-			}
-
+			updateColorButton(backgroundButton, newBackgroundColor);
 			backgroundButton.style.display = '';
 			cb.checked = true;
 		}
-	};
 
-	updateBackgroundColor();
+		updateGradient();
+	};
 
 	mxEvent.addListener(bgRow, 'click', function(evt)
 	{
@@ -1332,7 +1278,101 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 
 	bgRow.appendChild(backgroundButton);
 	optSection.appendChild(bgRow);
+
+	// Gradient of the fill color, which is disabled and removed without a fill
+	// color (see Graph.backgroundGradient)
+	var newGradientColor = (gradient != null) ? gradient.color : null;
+	var gradientRow = document.createElement('div');
+	gradientRow.className = 'geDialogCheckRow';
+	gradientRow.style.cursor = 'default';
+
+	var gradientCb = document.createElement('input');
+	gradientCb.setAttribute('type', 'checkbox');
+	gradientRow.appendChild(gradientCb);
+
+	var gradientLabel = document.createElement('label');
+	mxUtils.write(gradientLabel, mxResources.get('gradient'));
+	gradientRow.appendChild(gradientLabel);
+
+	// Same look as the button of the fill color
+	var gradientButton = backgroundButton.cloneNode(false);
+	gradientButton.setAttribute('title', mxResources.get('gradientColor'));
+	gradientRow.appendChild(gradientButton);
+
+	var gradientSelect = document.createElement('select');
+	gradientSelect.setAttribute('title', mxResources.get('direction'));
+	gradientSelect.style.flex = '0 1 auto';
+
+	for (var i = 0; i < Graph.backgroundGradientDirections.length; i++)
+	{
+		var option = document.createElement('option');
+		option.setAttribute('value', Graph.backgroundGradientDirections[i]);
+		mxUtils.write(option, mxResources.get(Graph.backgroundGradientDirections[i]));
+		gradientSelect.appendChild(option);
+	}
+
+	gradientSelect.value = (gradient != null && gradient.direction != null) ?
+		gradient.direction : mxConstants.DIRECTION_SOUTH;
+	gradientRow.appendChild(gradientSelect);
+
+	function updateGradient()
+	{
+		if (!cb.checked)
+		{
+			newGradientColor = null;
+		}
+
+		gradientCb.disabled = !cb.checked;
+		gradientRow.style.opacity = (cb.checked) ? '' : '0.5';
+
+		if (newGradientColor == null)
+		{
+			gradientButton.style.display = 'none';
+			gradientSelect.style.display = 'none';
+			gradientCb.checked = false;
+		}
+		else
+		{
+			updateColorButton(gradientButton, newGradientColor);
+			gradientButton.style.display = '';
+			gradientSelect.style.display = '';
+			gradientCb.checked = true;
+		}
+	};
+
+	// Listens to the checkbox and label only so that the select and the
+	// color button do not toggle the gradient
+	function gradientToggled()
+	{
+		newGradientColor = (gradientCb.checked) ? '#ffffff' : null;
+		updateGradient();
+	};
+
+	mxEvent.addListener(gradientCb, 'change', gradientToggled);
+
+	mxEvent.addListener(gradientLabel, 'click', function()
+	{
+		if (!gradientCb.disabled)
+		{
+			gradientCb.checked = !gradientCb.checked;
+			gradientToggled();
+		}
+	});
+
+	mxEvent.addListener(gradientButton, 'click', function(evt)
+	{
+		editorUi.pickColor(newGradientColor || 'none', function(color)
+		{
+			newGradientColor = (color != mxConstants.NONE) ? color : null;
+			updateGradient();
+		});
+
+		mxEvent.consume(evt);
+	});
+
+	optSection.appendChild(gradientRow);
 	div.appendChild(optSection);
+	updateBackgroundColor();
 
 	// Buttons
 	var btns = document.createElement('div');
@@ -1401,14 +1441,16 @@ var BackgroundImageDialog = function(editorUi, applyFn, img, color, showColor)
 		btns.appendChild(btn);
 	}
 
-	applyBtn = mxUtils.button(mxResources.get('apply'), function()
+	var applyBtn = mxUtils.button(mxResources.get('apply'), function()
 	{
 		editorUi.hideDialog();
 
 		urlChanged(null, function(url)
 		{
 			applyFn((url != '' && url != null) ? new mxImage(url, widthInput.value,
-				heightInput.value) : null, url == null, newBackgroundColor);
+				heightInput.value) : null, url == null, newBackgroundColor,
+				{color: newGradientColor, direction: (newGradientColor != null) ?
+					gradientSelect.value : null});
 		});
 	});
 
@@ -1460,7 +1502,7 @@ var ParseDialog = function(editorUi, title, defaultType)
 						var inserted = editorUi.importXml(insertXml,
 							Math.max(insertPoint.x, 20),
 							Math.max(insertPoint.y, 20),
-							true, null, null, true);
+							true, null, null, editorUi.getConvertedDiagramStyles());
 						graph.setSelectionCells(inserted);
 					}
 					finally
@@ -1513,10 +1555,11 @@ var ParseDialog = function(editorUi, title, defaultType)
 					graph.getModel().beginUpdate();
 					try
 					{
-						var inserted = editorUi.importXml(insertXml,
+						// The text alternative of the diagram becomes the tooltip
+						var inserted = editorUi.importXml(editorUi.addMermaidTooltip(insertXml),
 							Math.max(insertPoint.x, 20),
 							Math.max(insertPoint.y, 20),
-							true, null, null, true);
+							true, null, null, editorUi.getConvertedDiagramStyles());
 						graph.setSelectionCells(inserted);
 					}
 					finally
@@ -1543,11 +1586,15 @@ var ParseDialog = function(editorUi, title, defaultType)
 				}
 				else
 				{
+					// New diagrams use (and store) the current defaults version
+					var version = EditorUi.getInsertMermaidVersion();
+
 					editorUi.parseMermaidDiagram(text, null, mxUtils.bind(this, function(xml)
 					{
 						insertMermaid(mxMermaidToDrawio.wrapGroup(xml, text,
-							EditorUi.getInsertMermaidConfig()));
-					}), onMermaidError);
+							EditorUi.getInsertMermaidConfig(),
+							(version != null) ? {version: version} : null));
+					}), onMermaidError, null, version);
 				}
 			}
 		}
@@ -1813,31 +1860,34 @@ var ParseDialog = function(editorUi, title, defaultType)
 						}
 					}
 
-					var runEdgeLayout = true;
-
-					if (type == 'horizontalFlow' || type == 'verticalFlow')
-					{
-						var flowLayout = new mxHierarchicalLayout(graph,
-							(type == 'horizontalFlow') ?
-							mxConstants.DIRECTION_WEST :
-							mxConstants.DIRECTION_NORTH);
-						flowLayout.execute(graph.getDefaultParent(), cells);
-						runEdgeLayout = false;
-					}
-					else if (type == 'circle')
+					if (type == 'circle')
 					{
 						var circleLayout = new mxCircleLayout(graph);
 						circleLayout.execute(graph.getDefaultParent());
 					}
 					else
 					{
-						var layout = new mxFastOrganicLayout(graph);
-						layout.disableEdgeStyle = false;
-						layout.forceConstant = 180;
-						layout.execute(graph.getDefaultParent());
+						// Same ELK layouts as Arrange > Layout: organic for
+						// the diagram, layered for the flows
+						var list = editorUi.resolveLayoutList(
+							(type == 'diagram') ? 'organic' : type);
+
+						if (list == null)
+						{
+							throw new Error(mxResources.get(
+								'invalidCallFnNotFound', [type]));
+						}
+
+						var layouts = graph.createLayouts(list);
+
+						for (var i = 0; i < layouts.length; i++)
+						{
+							layouts[i].executeSync(graph.getDefaultParent());
+						}
 					}
-					
-					if (runEdgeLayout)
+
+					// The flows route parallel edges themselves
+					if (type == 'diagram' || type == 'circle')
 					{
 						var edgeLayout = new mxParallelEdgeLayout(graph);
 						edgeLayout.spacing = 30;
@@ -2051,7 +2101,8 @@ var ParseDialog = function(editorUi, title, defaultType)
 		    evt.stopPropagation();
 		    evt.preventDefault();
 		    
-		    if (evt.dataTransfer.files.length > 0)
+		    // Drop events created by scripts may have no dataTransfer and no data
+		    if (evt.dataTransfer != null && evt.dataTransfer.files.length > 0)
 		    {
 		    	var file = evt.dataTransfer.files[0];
     			
@@ -2078,13 +2129,18 @@ var ParseDialog = function(editorUi, title, defaultType)
 	{
 		let warning = document.createElement('div');
 		warning.style.display = 'inline-block';
-		warning.style.color = '#c00';
 		warning.style.fontSize = '12px';
 		warning.style.marginRight = '10px';
 		warning.style.display = 'flex';
 		warning.style.alignItems = 'center';
-		warning.innerHTML = '<a href="https://github.com/jgraph/drawio/issues" target="_blank" ' +
-			'rel="noopener noreferrer">Report any PlantUML issues</a>';
+
+		var link = document.createElement('a');
+		link.setAttribute('href', 'https://github.com/jgraph/drawio/issues');
+		link.setAttribute('target', '_blank');
+		link.setAttribute('rel', 'noopener noreferrer');
+		mxUtils.write(link, mxResources.get('plantUmlReportIssues',
+			null, 'Report any PlantUML issues'));
+		warning.appendChild(link);
 		buttons.appendChild(warning);
 	}
 
@@ -2140,7 +2196,7 @@ var ParseDialog = function(editorUi, title, defaultType)
 					editorUi.parseMermaidDiagram(textarea.value,
 						(typeSelect.value == 'mermaidImage' && !EditorUi.isMermaidConfigured()) ?
 							mxUtils.clone(EditorUi.legacyMermaidConfig) : null,
-						showPreview, onError);
+						showPreview, onError, null, EditorUi.getInsertMermaidVersion());
 				}
 				else
 				{
@@ -2176,6 +2232,7 @@ var ParseDialog = function(editorUi, title, defaultType)
 		}
 	});
 	
+	cancelBtn.setAttribute('title', 'Escape');
 	cancelBtn.className = 'geBtn';
 	
 	if (editorUi.editor.cancelFirst)
@@ -2204,8 +2261,17 @@ var ParseDialog = function(editorUi, title, defaultType)
 		}
 	});
 	
+	okBtn.setAttribute('title', 'Ctrl+Enter');
 	okBtn.className = 'geBtn gePrimaryBtn';
 	buttons.appendChild(okBtn);
+
+	mxEvent.addListener(textarea, 'keydown', function(e)
+	{
+		if (e.keyCode == 13 && mxEvent.isControlDown(e))
+		{
+			okBtn.click();
+		}
+	});
 	
 	if (!editorUi.editor.cancelFirst)
 	{
@@ -2222,7 +2288,7 @@ var ParseDialog = function(editorUi, title, defaultType)
 var NewDialog = function(editorUi, compact, showName, callback, createOnly, cancelCallback,
 		leftHighlight, rightHighlight, rightHighlightBorder, itemPadding, templateFile,
 		recentDocsCallback, searchDocsCallback, openExtDocCallback, showImport, createButtonLabel,
-		customTempCallback, withoutType, generatePrompt, noBlank)
+		customTempCallback, withoutType, generatePrompt, noBlank, showFromText)
 {
 	var ww = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
 	var smallScreen = ww < 500;
@@ -2258,82 +2324,31 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 	logo.style.marginRight = '10px';
 	logo.style.paddingBottom = '4px';
 	
-	if (editorUi.mode == App.MODE_GOOGLE)
-	{
-		logo.src = IMAGE_PATH + '/google-drive-logo.svg';
-	}
-	else if (editorUi.mode == App.MODE_DROPBOX)
-	{
-		logo.src = IMAGE_PATH + '/dropbox-logo.svg';
-	}
-	else if (editorUi.mode == App.MODE_ONEDRIVE)
-	{
-		logo.src = IMAGE_PATH + '/onedrive-logo.svg';
-	}
-	else if (editorUi.mode == App.MODE_M365)
-	{
-		logo.src = IMAGE_PATH + '/onedrive-logo.svg';
-	}
-	else if (editorUi.mode == App.MODE_GITHUB)
-	{
-		logo.src = IMAGE_PATH + '/github-logo.svg';
-	}
-	else if (editorUi.mode == App.MODE_GITLAB)
-	{
-		logo.src = IMAGE_PATH + '/gitlab-logo.svg';
-	}
-	else if (editorUi.mode == App.MODE_TRELLO)
-	{
-		logo.src = IMAGE_PATH + '/trello-logo.svg';
-	}
-	else if (editorUi.mode == App.MODE_BROWSER)
-	{
-		logo.src = IMAGE_PATH + '/osa_database.png';
-	}
-	else
-	{
-		logo.src = IMAGE_PATH + '/osa_drive-harddisk.png';
-	}
+	// The logo is the only name of the storage in the dialog
+	var storage = (editorUi.mode != null) ? App.storages[editorUi.mode] : null;
+	storage = (storage != null) ? storage : App.storages[App.MODE_DEVICE];
+	logo.src = IMAGE_PATH + '/' + storage.logo;
+	logo.setAttribute('alt', mxResources.get(storage.title));
 
 	if (!compact && !smallScreen && showName)
 	{
 		header.appendChild(logo);
 	}
-	
+
+	var nameLabel = (smallScreen) ? mxResources.get('name') : ((editorUi.mode == null ||
+		editorUi.mode == App.MODE_GOOGLE || editorUi.mode == App.MODE_BROWSER) ?
+		mxResources.get('diagramName') : mxResources.get('filename'));
+
 	if (showName)
 	{
-		mxUtils.write(header, (smallScreen? mxResources.get('name') : ((editorUi.mode == null || editorUi.mode == App.MODE_GOOGLE ||
-				editorUi.mode == App.MODE_BROWSER) ? mxResources.get('diagramName') : mxResources.get('filename'))) + ':');
+		mxUtils.write(header, nameLabel + ':');
 	}
-	
-	var ext = '.drawio';
-	
-	if (editorUi.mode == App.MODE_GOOGLE && editorUi.drive != null)
-	{
-		ext = editorUi.drive.extension;
-	}
-	else if (editorUi.mode == App.MODE_DROPBOX && editorUi.dropbox != null)
-	{
-		ext = editorUi.dropbox.extension;
-	}
-	else if (editorUi.mode == App.MODE_ONEDRIVE && editorUi.oneDrive != null)
-	{
-		ext = editorUi.oneDrive.extension;
-	}
-	else if (editorUi.mode == App.MODE_GITHUB && editorUi.gitHub != null)
-	{
-		ext = editorUi.gitHub.extension;
-	}
-	else if (editorUi.mode == App.MODE_GITLAB && editorUi.gitLab != null)
-	{
-		ext = editorUi.gitLab.extension;
-	}
-	else if (editorUi.mode == App.MODE_TRELLO && editorUi.trello != null)
-	{
-		ext = editorUi.trello.extension;
-	}
-	
+
+	var peer = editorUi.getServiceForName(editorUi.mode);
+	var ext = (peer != null) ? peer.extension : '.drawio';
+
 	var nameInput = document.createElement('input');
+	nameInput.setAttribute('aria-label', nameLabel);
 	nameInput.setAttribute('value', editorUi.defaultFilename + ext);
 	nameInput.style.marginLeft = '10px';
 	nameInput.style.width = (compact || smallScreen) ? '144px' : '244px';
@@ -2400,7 +2415,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 				var tmp = templates[i0++];
 				var btn = addButton(tmp.url, tmp.libs, tmp.title, tmp.tooltip? tmp.tooltip : tmp.title,
 					tmp.select, tmp.imgUrl, tmp.info, tmp.onClick, tmp.preview, tmp.noImg, tmp.clibs,
-					tmp.type);
+					tmp.type, tmp.action);
 				
 				if (first)
 				{
@@ -2443,10 +2458,9 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 		
 	// Shows a tooltip with the rendered template
 	var loading = false;
-	var extImg = null;
 	var wasVisible = false;
 	
-	function showTooltip(xml, x, y, elt, title, url)
+	function showTooltip(xml, x, y, elt, title, url, infoObj, clibs)
 	{
 		// Checks if dialog still visible
 		if (xml != null && mxUtils.isAncestorNode(document.body, elt))
@@ -2657,8 +2671,21 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 	var lastAiXml = editorUi.lastGenerateXml;
 	var lastAiTitle = editorUi.lastGenerateTitle;
 
+	// Runs the action of a From Text entry for the new or current diagram
+	function runFromTextAction(name)
+	{
+		var action = (name != null) ? editorUi.actions.get(name) : null;
+
+		if (action != null && action.isEnabled())
+		{
+			action.funct();
+		}
+	};
+
 	function create()
 	{
+		var fromTextAction = (selectedElt != null) ? selectedElt.fromTextAction : null;
+
 		if (selectedElt == generateElt && templateXml == null &&
 			generateButton != null && generateInput != null &&
 			mxUtils.trim(generateInput.value) != '')
@@ -2697,6 +2724,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 				}
 
 				callback(templateXml, nameInput.value, templateRealUrl, templateLibs);
+				runFromTextAction(fromTextAction);
 			}
 			else
 			{
@@ -2713,6 +2741,9 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 							{
 								editorUi.hideDialog();
 							}
+
+							// Opens the dialog of a From Text entry for the new file
+							runFromTextAction(fromTextAction);
 						}, null, folderId, null, (templateClibs != null &&
 							templateClibs.length > 0) ? templateClibs : null);
 					};
@@ -2742,7 +2773,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 	};
 	
 	var div = document.createElement('div');
-	div.style.border = '1px solid #d3d3d3';
+	div.style.border = '1px solid light-dark(var(--border-color), var(--dark-border-color))';
 	div.style.position = 'absolute';
 	div.style.left = '160px';
 	div.style.right = '34px';
@@ -2758,7 +2789,8 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 	searchBox.style.cssText = 'position:absolute;left:30px;width:128px;top:' + divTop +
 		'px;height:22px;margin-top: 6px;white-space: nowrap;';
 	var tmplSearchInput = document.createElement('input');
-	tmplSearchInput.style.cssText = 'width:105px;height:16px;border:1px solid #d3d3d3;' +
+	tmplSearchInput.style.cssText = 'width:105px;height:16px;' +
+		'border:1px solid light-dark(var(--border-color), var(--dark-border-color));' +
 		'padding: 3px 20px 3px 3px;font-size: 12px;border-radius:0px;';
 	tmplSearchInput.setAttribute('placeholder', mxResources.get('search'));
 	tmplSearchInput.setAttribute('type', 'text');
@@ -2770,7 +2802,6 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 	cross.className = 'geAdaptiveAsset';
 	cross.style.position = 'relative';
 	cross.style.cursor = 'pointer';
-	cross.style.outline = 'none';
 	cross.style.opacity = '0.5';
 	cross.style.height = '16px';
 	cross.style.left = '-20px';
@@ -2783,12 +2814,17 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 		{
 			cross.setAttribute('src', Editor.magnifyImage);
 			cross.setAttribute('title', mxResources.get('search'));
+			cross.setAttribute('tabindex', '-1');
 			tmplSearchInput.value = '';
 			resetTemplates();
 		}
 
 		tmplSearchInput.focus();
 	});
+
+	// A control for the keyboard only while it resets the search
+	Editor.initKeyboardButton(cross);
+	cross.setAttribute('tabindex', '-1');
 	
 	mxEvent.addListener(tmplSearchInput, 'keydown', mxUtils.bind(this, function(evt)
 	{
@@ -2799,25 +2835,56 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 		}
 	}));
 	
-	mxEvent.addListener(tmplSearchInput, 'keyup', mxUtils.bind(this, function(evt)
+	function updateSearchIcon()
 	{
 		if (tmplSearchInput.value == '')
 		{
 			cross.setAttribute('src', Editor.magnifyImage);
 			cross.setAttribute('title', mxResources.get('search'));
+			cross.setAttribute('tabindex', '-1');
 		}
 		else
 		{
 			cross.setAttribute('src', Editor.crossImage);
 			cross.setAttribute('title', mxResources.get('reset'));
+			cross.setAttribute('tabindex', '0');
 		}
-	}));
+	};
+
+	mxEvent.addListener(tmplSearchInput, 'keyup', updateSearchIcon);
+
+	// Search terms to be applied after the template index was loaded
+	var pendingSearch = null;
+	var templatesReady = false;
+
+	/**
+	 * Shows the templates that match the given search terms. The search
+	 * is applied after the template index was loaded.
+	 */
+	this.searchTemplates = function(terms)
+	{
+		if (!compact)
+		{
+			tmplSearchInput.value = terms;
+			updateSearchIcon();
+
+			if (templatesReady)
+			{
+				filterTemplates();
+			}
+			else
+			{
+				pendingSearch = terms;
+			}
+		}
+	};
 
 	divTop += 23;
 
 	var list = document.createElement('div');
 	list.style.cssText = 'position:absolute;left:30px;width:128px;top:' + divTop +
-		'px;bottom:68px;margin-top:6px;overflow:auto;border:1px solid #d3d3d3;';
+		'px;bottom:68px;margin-top:6px;overflow:auto;' +
+		'border:1px solid light-dark(var(--border-color), var(--dark-border-color));';
 	
 	mxEvent.addListener(div, 'scroll', function()
 	{
@@ -2850,7 +2917,13 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 			if (selectedElt != null)
 			{
 				selectedElt.classList.remove('geTemplateSelected');
-				
+				selectedElt.classList.remove('geTemplateHasPreview');
+
+				if (selectedElt.templateControl != null)
+				{
+					selectedElt.templateControl.setAttribute('aria-pressed', 'false');
+				}
+
 				if (selectedElt == generateElt)
 				{
 					generateForm.style.display = 'none';
@@ -2888,6 +2961,18 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 			templateInfoObj = infoObj;
 
 			selectedElt.classList.add('geTemplateSelected');
+
+			if (selectedElt.templateControl != null)
+			{
+				selectedElt.templateControl.setAttribute('aria-pressed', 'true');
+			}
+
+			// Class replaces :has(div) in the CSS, which restyled the
+			// page after every change of the DOM
+			if (selectedElt.getElementsByTagName('div').length > 0)
+			{
+				selectedElt.classList.add('geTemplateHasPreview');
+			}
 			
 			return true;
 		}
@@ -3001,6 +3086,29 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 	};
 
 	var generatingDiagram = false;
+	var generateRequest = null;
+
+	// Cancels the pending request when the dialog is closed unless the
+	// dialog was hidden to insert the result after it was generated
+	var hideDialogListener = function(sender, evt)
+	{
+		var dlg = evt.getProperty('dialog');
+
+		if (dlg != null && dlg.container != null &&
+			mxUtils.isAncestorNode(dlg.container, outer))
+		{
+			editorUi.editor.removeListener(hideDialogListener);
+
+			if (generateRequest != null && !insertWasPressed)
+			{
+				generateRequest.abort();
+				generateRequest = null;
+				generatingDiagram = false;
+			}
+		}
+	};
+
+	editorUi.editor.addListener('hideDialog', hideDialogListener);
 
 	function startGenerating()
 	{
@@ -3024,9 +3132,10 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 		{
 			startGenerating();
 
-			editorUi.generateOpenAiMermaidDiagram(desc, function(xml)
+			var request = editorUi.generateOpenAiMermaidDiagram(desc, function(xml)
 			{
 				generatingDiagram = false;
+				generateRequest = null;
 
 				if (selectedElt == generateElt && generateForm.style.display == 'none')
 				{
@@ -3055,6 +3164,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 			}, mxUtils.bind(this, function(e)
 			{
 				generatingDiagram = false;
+				generateRequest = null;
 				resetPreview();
 
 				if (selectedElt == generateElt)
@@ -3073,6 +3183,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 						e.retry = function()
 						{
 							startGenerating();
+							generateRequest = request;
 							retry();
 						};
 					}
@@ -3080,6 +3191,12 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 					editorUi.handleError(e);
 				}
 			}));
+
+			// Keeps the request if the callbacks were invoked synchronously
+			if (generatingDiagram)
+			{
+				generateRequest = request;
+			}
 		}
 		else if (lastAiTitle != null)
 		{
@@ -3107,14 +3224,24 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 		}
 	});
 
-	function addButton(url, libs, title, tooltip, select, imgUrl, infoObj, onClick, preview, noImg, clibs, templateType)
+	function addButton(url, libs, title, tooltip, select, imgUrl, infoObj, onClick, preview, noImg, clibs, templateType, action)
 	{
 		var elt = null;
+
+		// Image of this template, previews of other templates must not use it
+		var extImg = null;
+
+		// Selects the template for the keyboard, and creates the diagram if the
+		// argument is true
+		var keyFn = null;
 
 		if (templateType != 'generative' || generateElt == null)
 		{
 			elt = document.createElement('div');
 			elt.className = 'geTemplate';
+
+			// Action to run after creating a blank diagram (see create)
+			elt.fromTextAction = action;
 			var xmlData = null, realUrl = url;
 			
 			if (title != null)
@@ -3177,10 +3304,12 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 					// Create a diagram with the image to use the same code
 					// Note: Without compression it doesn't work for some reason. Find out why later
 					var xml = '<mxfile><diagram>' + Graph.compress('<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
-						'<mxCell id="2" value="" style="shape=image;image=' + extImg.src + ';imageAspect=1;" parent="1" vertex="1">' +
+						'<mxCell id="2" value="" style="shape=image;image=' + mxUtils.htmlEntities(extImg.src) +
+						';imageAspect=1;" parent="1" vertex="1">' +
 						'<mxGeometry width="' + extImg.naturalWidth + '" height="' + extImg.naturalHeight + '" as="geometry" />' +
 						'</mxCell></root></mxGraphModel>') + '</diagram></mxfile>';
-					showTooltip(xml, mxEvent.getClientX(evt), mxEvent.getClientY(evt), title, url);
+					showTooltip(xml, mxEvent.getClientX(evt), mxEvent.getClientY(evt),
+						elt, title, url, infoObj, clibs);
 					return;
 				}
 				
@@ -3255,6 +3384,16 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 				create();
 				mxEvent.consume(evt);
 			});
+
+			keyFn = function(doCreate)
+			{
+				selectElement(elt, null, null, url, infoObj, clibs);
+
+				if (doCreate)
+				{
+					create();
+				}
+			};
 		}
 		else if (!noImg && url != null && url.length > 0)
 		{
@@ -3300,6 +3439,8 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 				activate(true);
 				mxEvent.consume(evt);
 			});
+
+			keyFn = activate;
 		}
 		else
 		{
@@ -3360,12 +3501,47 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 					{
 						createGenerate();
 					}
-					
+
 					mxEvent.consume(evt);
 				});
 			}
+
+			// Like a click and a double click with the mouse
+			keyFn = function(doCreate)
+			{
+				if (onClick != null)
+				{
+					selectElement(elt, null, null, url, infoObj);
+				}
+
+				Editor.clickWithKeyboard(elt);
+
+				if (doCreate)
+				{
+					elt.dispatchEvent(new MouseEvent('dblclick',
+						{bubbles: true, cancelable: true}));
+				}
+			};
 		}
-		
+
+		// Templates are buttons for the keyboard: Space selects them like a click
+		// and Enter creates the diagram like a double click, also after a click.
+		// The name of the generative template is the control, as its form has
+		// other controls.
+		var control = (templateType == 'generative') ? span : elt;
+		elt.templateControl = control;
+		control.setAttribute('aria-pressed', (selectedElt == elt) ? 'true' : 'false');
+
+		Editor.initKeyboardButton(control, function(evt)
+		{
+			keyFn(evt.keyCode == 13 /* Enter */);
+		}, true);
+
+		if (control != elt)
+		{
+			Editor.addFocusRing(control, elt);
+		}
+
 		// Adds preview button
 		if (url != null)
 		{
@@ -3406,6 +3582,34 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 		EditorUi.isMermaidSupported())
 	{
 		categories['basic'].push({title: 'generate', type: 'generative'});
+	}
+
+	// Blank diagrams that open the dialog for creating a diagram from text
+	if (showFromText && !compact)
+	{
+		var fromText = [];
+		var addFromText = function(title, action)
+		{
+			if (editorUi.actions.get(action) != null)
+			{
+				fromText.push({title: title, action: action});
+			}
+		};
+
+		if (EditorUi.isMermaidSupported())
+		{
+			addFromText('mermaid', 'mermaid');
+		}
+
+		addFromText('formatSql', 'formatSql');
+		addFromText('csv', 'csv');
+		addFromText('plantUml', 'plantUml');
+		addFromText('text', 'fromText');
+
+		if (fromText.length > 0)
+		{
+			categories['fromText'] = fromText;
+		}
 	}
 	
 	function resetTemplates()
@@ -3496,24 +3700,26 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 			tagsList.__tagsList__ = true;
 		}
 		
-		var results = [], resMap = {}, index = 0;
-		
+		var results = [], resMap = Object.create(null), index = 0;
+
 		for (var i = 0; i < tmp.length; i++)
 		{
 			if (tmp[i].length > 0)
 			{
 				var list = tagsList[tmp[i]];
-				var tmpResMap = {};
+				var tmpResMap = Object.create(null);
 				results = [];
-				
+
 				if (list != null)
 				{
 					for (var j = 0; j < list.length; j++)
 					{
 						var temp = list[j];
-						
-						//ANDing terms
-						if ((index == 0) == (resMap[temp.url] == null))
+
+						// ANDing terms, once per template if a tag
+						// is repeated (eg. Sequence;Diagram;Sequence)
+						if (tmpResMap[temp.url] == null &&
+							(index == 0) == (resMap[temp.url] == null))
 						{
 							tmpResMap[temp.url] = true;
 							results.push(temp);
@@ -3570,7 +3776,8 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 
 		if (customCatCount > 0)
 		{
-			var titleCss = 'font-weight: bold;background: #f9f9f9;padding: 5px 0 5px 0;text-align: center;';
+			var titleCss = 'font-weight: bold;background: light-dark(var(--soft-color), var(--dark-soft-color));' +
+				'padding: 5px 0 5px 0;text-align: center;';
 			var title = document.createElement('div');
 			title.style.cssText = titleCss;
 			mxUtils.write(title, mxResources.get('custom'));
@@ -3584,7 +3791,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 				
 				if (label.length > 18)
 				{
-					label = label.substring(0, 18) + '&hellip;';
+					label = label.substring(0, 18) + '…';
 				}
 				
 				entry.style.cssText = 'display:block;cursor:pointer;padding:6px;white-space:nowrap;margin-bottom:-1px;overflow:hidden;text-overflow:ellipsis;user-select:none;';
@@ -3618,6 +3825,8 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 						}
 					});
 				})(cat, entry);
+
+				Editor.initKeyboardButton(entry);
 			}
 			
 			title = document.createElement('div');
@@ -3634,7 +3843,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 			
 			if (label.length > 18)
 			{
-				label = label.substring(0, 18) + '&hellip;';
+				label = label.substring(0, 18) + '…';
 			}
 			
 			return label + ((templateList != null) ?
@@ -3643,6 +3852,8 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 		
 		function addEntryHandler(cat, entry, subCat)
 		{
+			Editor.initKeyboardButton(entry);
+
 			mxEvent.addListener(entry, 'click', function()
 			{
 				if (currentEntry != entry)
@@ -3935,6 +4146,13 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 
 				spinner.stop();
 					initUi();
+					templatesReady = true;
+
+					if (pendingSearch != null)
+					{
+						pendingSearch = null;
+						filterTemplates();
+					}
 				}
 			});
 		};
@@ -4011,7 +4229,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 					{
 						templateXml = data;
 						templateLibs = null;
-						templateRealURl = fileUrl;
+						templateRealUrl = fileUrl;
 
 						editorUi.hideDialog();
 						create();
@@ -4059,7 +4277,7 @@ var NewDialog = function(editorUi, compact, showName, callback, createOnly, canc
 	
 	btns.appendChild(createButton);
 	
-	if (!editorUi.editor.cancelFirst && callback == null && (!createOnly || cancelCallback != null))
+	if (!editorUi.editor.cancelFirst && (!createOnly || cancelCallback != null))
 	{
 		btns.appendChild(cancelBtn);
 	}
@@ -4250,8 +4468,8 @@ var SaveDialog = function(editorUi, title, saveFn, disabledModes, data, mimeType
 	{
 		var option = null;
 
-		// Dropbox and GitLab storage are deprecated, no longer offered as save targets
-		if (mode != App.MODE_DROPBOX && mode != App.MODE_GITLAB &&
+		// GitLab storage is deprecated, no longer offered as a save target
+		if (mode != App.MODE_GITLAB &&
 			(disabledModes == null || mxUtils.indexOf(disabledModes, mode) < 0) &&
 			(folderPickerMode == null || mode == folderPickerMode) &&
 			(enabledModes == null || mxUtils.indexOf(enabledModes, mode) >= 0))
@@ -4439,7 +4657,6 @@ var SaveDialog = function(editorUi, title, saveFn, disabledModes, data, mimeType
 		editorUi.resetRecent('Folders');
 		storageSelect.innerHTML = '';
 		storageSelect.value = '';
-		pickFolderOption = null;
 		entries = {};
 		addStorageEntries();
 	}, null, 'geBtn');
@@ -4691,10 +4908,8 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 		editorUi.addLanguageMenu(div);
 	}
 
-	var h3 = document.createElement('h2');
+	var h3 = document.createElement('h3');
 	mxUtils.write(h3, dlgTitle || mxResources.get('create'));
-	h3.style.marginTop = '0px';
-	h3.style.marginBottom = '24px';
 	div.appendChild(h3);
 
 	var span = document.createElement('span');
@@ -4706,6 +4921,7 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 	div.appendChild(span);
 
 	var nameInput = document.createElement('input');
+	nameInput.setAttribute('aria-label', mxResources.get('filename'));
 	nameInput.setAttribute('value', title);
 	nameInput.style.width = '180px';
 	nameInput.style.marginLeft = '10px';
@@ -4792,9 +5008,12 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 	{
 		var button = document.createElement('a');
 		button.style.overflow = 'hidden';
-		
+		Editor.initKeyboardButton(button);
+
+		// The name of the storage is next to the logo
 		var logo = document.createElement('img');
 		logo.src = img;
+		logo.setAttribute('alt', '');
 		logo.setAttribute('border', '0');
 		logo.setAttribute('align', 'absmiddle');
 		logo.style.width = '60px';
@@ -4808,8 +5027,8 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 		button.style.whiteSpace = 'nowrap';
 		
 		button.appendChild(logo);
-		
-		button.style.color = 'gray';
+
+		button.classList.add('geSecondaryText');
 		button.style.fontSize = '11px';
 		
 		var label = document.createElement('div');
@@ -4829,8 +5048,10 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 		// Supports lazy loading
 		if (clientName != null && editorUi[clientName] == null)
 		{
+			// Disabled for the keyboard and screen readers until it can be used
 			logo.style.visibility = 'hidden';
 			mxUtils.setOpacity(label, 10);
+			button.setAttribute('disabled', 'disabled');
 			var size = 12;
 			
 			var spinner = new Spinner({
@@ -4848,6 +5069,7 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 				zIndex: 2e9 // The z-index (defaults to 2000000000)
 			});
 			spinner.spin(button);
+			spinner.el.setAttribute('aria-label', mxResources.get('loading'));
 			
 			// Timeout after 30 secs
 			var timeout = window.setTimeout(function()
@@ -4866,6 +5088,7 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 					window.clearTimeout(timeout);
 					mxUtils.setOpacity(label, 100);
 					logo.style.visibility = '';
+					button.removeAttribute('disabled');
 					spinner.stop();
 					initButton();
 				}
@@ -5024,10 +5247,6 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 				{
 					ext = editorUi.trello.extension;
 				}
-				else if (newMode == App.MODE_DROPBOX)
-				{
-					ext = editorUi.dropbox.extension;
-				}
 				else if (newMode == App.MODE_ONEDRIVE)
 				{
 					ext = editorUi.oneDrive.extension;
@@ -5060,13 +5279,7 @@ var CreateDialog = function(editorUi, title, createFn, cancelFn, dlgTitle, btnLa
 	
 	if (helpLink != null)
 	{
-		var helpBtn = mxUtils.button(mxResources.get('help'), function()
-		{
-			editorUi.openLink(helpLink);
-		});
-		
-		helpBtn.className = 'geBtn';
-		btns.appendChild(helpBtn);
+		btns.appendChild(editorUi.createHelpIcon(helpLink));
 	}
 	
 	var cancelBtn = mxUtils.button(mxResources.get((cancelFn != null) ? 'close' : 'cancel'), function()
@@ -5393,42 +5606,8 @@ var PopupDialog = function(editorUi, url, pre, fallback, hideDialog)
 		{
 			linkInput.setAttribute('placeholder', mxResources.get('dragImagesHere'));
 			
-			// Setup the dnd listeners
-			var dlg = div.parentNode;
-			var graph = editorUi.editor.graph;
-			var dropElt = null;
-				
-			mxEvent.addListener(dlg, 'dragleave', function(evt)
+			editorUi.addDropHandler(div.parentNode, function(evt)
 			{
-				if (dropElt != null)
-			    {
-			    	dropElt.parentNode.removeChild(dropElt);
-			    	dropElt = null;
-			    }
-			    
-				evt.stopPropagation();
-				evt.preventDefault();
-			});
-			
-			mxEvent.addListener(dlg, 'dragover', mxUtils.bind(this, function(evt)
-			{
-				if (dropElt == null)
-				{
-					dropElt = editorUi.highlightElement(dlg);
-				}
-				
-				evt.stopPropagation();
-				evt.preventDefault();
-			}));
-					
-			mxEvent.addListener(dlg, 'drop', mxUtils.bind(this, function(evt)
-			{
-			    if (dropElt != null)
-			    {
-					dropElt.parentNode.removeChild(dropElt);
-					dropElt = null;
-			    }
-
 			    if (evt.dataTransfer.files.length > 0)
 			    {
 			    	editorUi.importFiles(evt.dataTransfer.files, 0, 0, editorUi.maxImageSize, function(data, mimeType, x, y, w, h, fileName, resize)
@@ -5459,16 +5638,13 @@ var PopupDialog = function(editorUi, url, pre, fallback, hideDialog)
 				    	apply(decodeURIComponent(uri));
 					}
 			    }
-
-			    evt.stopPropagation();
-			    evt.preventDefault();
-			}), false);
+			});
 		}
 	};
 	
 	var btns = document.createElement('div');
 	btns.style.marginTop = '14px';
-	btns.style.textAlign = 'center';
+	btns.style.textAlign = 'right';
 	
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
@@ -5700,9 +5876,17 @@ var PopupDialog = function(editorUi, url, pre, fallback, hideDialog)
 };
 
 /**
- * Overrides link dialog to add Google Picker.
+ * Overrides link dialog to add Google Picker. mixed is an optional object
+ * whose link and linkTarget flags mark values that differ between the cells
+ * being edited. A mixed link shows an empty field and stays unchanged if the
+ * result is empty and the user neither typed into the field nor reset it. A
+ * mixed target shows an indeterminate checkbox and stays unchanged if it was
+ * not clicked. fn is then called with an object as its fourth argument whose
+ * link and linkTarget flags mark the mixed values the user left unchanged,
+ * so the caller keeps each cell's own value.
  */
-var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showNewWindowOption, linkTarget)
+var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages,
+	showNewWindowOption, linkTarget, mixed)
 {
 	var div = document.createElement('div');
 	div.style.paddingBottom = '10px';
@@ -5734,11 +5918,21 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 	var actionValue = (initialValue != null &&
 		initialValue.substring(0, 17) == 'data:action/json,') ? initialValue : null;
 
+	var mixedLink = mixed != null && mixed.link == true;
+	var mixedTarget = mixed != null && mixed.linkTarget == true;
+	var linkEdited = false;
+
 	var linkInput = document.createElement('input');
-	linkInput.setAttribute('placeholder', mxResources.get('dragUrlsHere'));
+	linkInput.setAttribute('placeholder', mxResources.get((mixedLink) ?
+		'multipleValues' : 'dragUrlsHere'));
 	linkInput.setAttribute('type', 'text');
 	linkInput.style.flex = '1';
 	linkInput.style.minWidth = '0';
+
+	mxEvent.addListener(linkInput, 'input', function()
+	{
+		linkEdited = true;
+	});
 
 	var cross = document.createElement('div');
 	cross.setAttribute('title', mxResources.get('reset'));
@@ -5751,16 +5945,23 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 	cross.style.marginLeft = '-20px';
 	cross.style.marginRight = '8px';
 
-	mxEvent.addListener(cross, 'click', function()
-	{
-		linkInput.value = '';
-		linkInput.focus();
-	});
-
 	var pageSelect = document.createElement('select');
 	pageSelect.style.flex = '1';
 	pageSelect.style.minWidth = '0';
 	pageSelect.style.marginLeft = '0';
+
+	var checkUrl = Dialog.checkRadioOnInput(linkInput, urlRadio, pageRadio);
+	Dialog.checkRadioOnInput(pageSelect, pageRadio, urlRadio);
+
+	mxEvent.addListener(cross, 'click', function()
+	{
+		linkInput.value = '';
+		checkUrl();
+		linkInput.focus();
+		linkEdited = true;
+	});
+
+	Editor.initKeyboardButton(cross);
 
 	var newWindowCheckbox = document.createElement('input');
 	newWindowCheckbox.setAttribute('type', 'checkbox');
@@ -5773,6 +5974,16 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 
 	linkTarget = (linkTarget != null) ? linkTarget : '_blank';
 	newWindowCheckbox.setAttribute('title', linkTarget);
+
+	// Clicking clears the indeterminate state, so it is
+	// still set when the user left the targets unchanged
+	newWindowCheckbox.indeterminate = mixedTarget;
+
+	var getUnchanged = function(value)
+	{
+		return {link: mixedLink && !linkEdited && value == '',
+			linkTarget: mixedTarget && newWindowCheckbox.indeterminate};
+	};
 
 	// Link section
 	var linkSection = document.createElement('div');
@@ -5898,7 +6109,8 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 			{
 				actionValue = newValue;
 				fn(newValue, LinkDialog.selectedDocs,
-					(newWindowCheckbox.checked) ? linkTarget : null);
+					(newWindowCheckbox.checked) ? linkTarget : null,
+					getUnchanged(newValue));
 			}, editorUi.editor.graph.getSelectionCells());
 		});
 		editActionBtn.className = 'geBtn';
@@ -6014,7 +6226,8 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 			value = linkInput.value;
 		}
 
-		fn(value, LinkDialog.selectedDocs, (newWindowCheckbox.checked) ? linkTarget : null);
+		fn(value, LinkDialog.selectedDocs, (newWindowCheckbox.checked) ?
+			linkTarget : null, getUnchanged(value));
 	});
 	mainBtn.style.verticalAlign = 'middle';
 	mainBtn.className = 'geBtn gePrimaryBtn';
@@ -6039,60 +6252,13 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 			}
 		}
 
-		mxEvent.addListener(pageSelect, 'focus', function()
-		{
-			urlRadio.removeAttribute('checked');
-			pageRadio.setAttribute('checked', 'checked');
-			pageRadio.checked = true;
-		});
-
-		mxEvent.addListener(linkInput, 'focus', function()
-		{
-			pageRadio.removeAttribute('checked');
-			urlRadio.setAttribute('checked', 'checked');
-			urlRadio.checked = true;
-		});
-
 		// Installs drag and drop handler for links
 		if (Graph.fileSupport && div.parentNode != null)
 		{
-			// Setup the dnd listeners
-			var dlg = div.parentNode;
-			var dropElt = null;
-
-			mxEvent.addListener(dlg, 'dragleave', function(evt)
-			{
-				if (dropElt != null)
-				{
-					dropElt.parentNode.removeChild(dropElt);
-					dropElt = null;
-				}
-
-				evt.stopPropagation();
-				evt.preventDefault();
-			});
-
-			mxEvent.addListener(dlg, 'dragover', mxUtils.bind(this, function(evt)
-			{
-				if (dropElt == null)
-				{
-					dropElt = editorUi.highlightElement(dlg);
-				}
-
-				evt.stopPropagation();
-				evt.preventDefault();
-			}));
-
-			mxEvent.addListener(dlg, 'drop', mxUtils.bind(this, function(evt)
+			editorUi.addDropHandler(div.parentNode, function(evt)
 			{
 				try
 				{
-					if (dropElt != null)
-					{
-						dropElt.parentNode.removeChild(dropElt);
-						dropElt = null;
-					}
-
 					if (mxUtils.indexOf(evt.dataTransfer.types, 'text/uri-list') >= 0)
 					{
 						linkInput.value = decodeURIComponent(evt.dataTransfer.getData('text/uri-list'));
@@ -6105,10 +6271,7 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 				{
 					editorUi.handleError(e);
 				}
-
-				evt.stopPropagation();
-				evt.preventDefault();
-			}), false);
+			});
 		}
 	};
 
@@ -6154,6 +6317,7 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 			}
 
 			linkInput.value = href;
+			checkUrl();
 			linkInput.focus();
 		}
 		else
@@ -6212,29 +6376,6 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 		});
 	}
 
-	if (typeof(Dropbox) != 'undefined' && typeof(Dropbox.choose) != 'undefined')
-	{
-		addButton('dropbox', function()
-		{
-			// Authentication will be carried out on open to make sure the
-			// autosave does not show an auth dialog. Showing it here will
-			// block the second dialog (the file picker) so it's too early.
-			Dropbox.choose(
-			{
-				linkType : 'direct',
-				cancel: function()
-				{
-					// do nothing
-				},
-				success : function(files)
-				{
-					linkInput.value = files[0].link;
-					linkInput.focus();
-				}
-			});
-		});
-	}
-
 	if (editorUi.oneDrive != null)
 	{
 		addButton('oneDrive', function()
@@ -6244,6 +6385,7 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 				if (files != null && files.value != null && files.value.length > 0)
 				{
 					linkInput.value = files.value[0].webUrl;
+					checkUrl();
 					linkInput.focus();
 				}
 			}, true);
@@ -6266,6 +6408,7 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 
 					linkInput.value = 'https://github.com/' + org + '/' +
 						repo + '/blob/' + ref + '/' + path;
+					checkUrl();
 					linkInput.focus();
 				}
 			});
@@ -6288,6 +6431,7 @@ var LinkDialog = function(editorUi, initialValue, btnLabel, fn, showPages, showN
 
 					linkInput.value = DRAWIO_GITLAB_URL + '/' + org + '/' +
 						repo + '/blob/' + ref + '/' + path;
+					checkUrl();
 					linkInput.focus();
 				}
 			});
@@ -6347,14 +6491,27 @@ LinkDialog.editCustomAction = function(editorUi, currentValue, onSave, cells)
 
 	var open = function()
 	{
-		editorUi.actionWindow = new CustomActionDialog(editorUi, currentValue, onSave);
-		editorUi.actionWindow.cells = cells;
+		var dlg = new CustomActionDialog(editorUi, currentValue, onSave, cells);
+		dlg.cells = cells;
+		editorUi.actionWindow = dlg;
 
 		// The reference is cleared on close, so a fresh Edit later opens a
-		// new dialog bound to the current cell.
-		editorUi.actionWindow.window.addListener('hide', function()
+		// new dialog bound to the current cell. The closed dialog is never
+		// shown again and is destroyed to remove its listeners on the model,
+		// the editor and the window. Deferred as it can close from inside
+		// one of these listeners (fileLoaded), where removing the listener
+		// would skip the next one.
+		dlg.window.addListener('hide', function()
 		{
 			editorUi.actionWindow = null;
+
+			window.setTimeout(function()
+			{
+				if (dlg.window.div != null)
+				{
+					dlg.destroy();
+				}
+			}, 0);
 		});
 	};
 
@@ -6407,35 +6564,10 @@ LinkDialog.sameCells = function(a, b)
 	return true;
 };
 
-/**
- * Inline SVG icons used by the selector chips. Single-stroke pictograms
- * sized to render at 14×14 px against the chip's hairline border. The
- * `currentColor` fill picks up the surrounding text color, so the same
- * markup works in light and dark mode.
- */
 // End-user manual for the animation / custom-action editors.
 var ANIMATION_HELP_URL =
 	'https://www.drawio.com/docs/manual/links-tooltips-tags/animations-custom-actions/';
 
-var SELECTOR_ICONS = {
-	// Down-arrow into a tray — "use the current canvas selection"
-	arrowDown: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" ' +
-		'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" ' +
-		'stroke-linejoin="round" aria-hidden="true">' +
-		'<path d="M8 2v8M4.5 6.5L8 10l3.5-3.5M3 13h10"/></svg>',
-	// Crosshair / target — "show these cells on canvas"
-	target: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" ' +
-		'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" ' +
-		'stroke-linejoin="round" aria-hidden="true">' +
-		'<circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.5" ' +
-		'fill="currentColor" stroke="none"/><path d="M8 1.5v2M8 12.5v2M' +
-		'1.5 8h2M12.5 8h2"/></svg>',
-	// Asterisk / wildcard — "match all cells"
-	asterisk: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" ' +
-		'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" ' +
-		'aria-hidden="true">' +
-		'<path d="M8 3.5v9M4 5.5l8 5M4 10.5l8-5"/></svg>'
-};
 
 /**
  * Polished selector styles (cell-list chip, tag pills, tag picker popover).
@@ -6779,7 +6911,7 @@ SelectorChips.create = function(graph, editorUi)
 		b.type = 'button';
 		b.title = title;
 		b.className = 'geSelIconBtn';
-		b.innerHTML = SELECTOR_ICONS[iconKey];
+		b.appendChild(CustomActionDialog.createIcon(iconKey, 16));
 		b.addEventListener('click', function(e)
 		{
 			e.preventDefault();
@@ -7355,7 +7487,8 @@ SelectorChips.create = function(graph, editorUi)
 			body.appendChild(cloud);
 
 			// Footer: "Select cells" (only when any tags are active) and
-			// "Reset" (clears the whole selection).
+			// "None" (clears the whole selection, same label as the cells
+			// and excludes chip menus).
 			var footer = document.createElement('div');
 			footer.className = 'geTagPickerFooter';
 
@@ -7379,7 +7512,7 @@ SelectorChips.create = function(graph, editorUi)
 			var resetBtn = document.createElement('button');
 			resetBtn.type = 'button';
 			resetBtn.className = 'geActionMenuItem geActionMenuItemDanger';
-			mxUtils.write(resetBtn, mxResources.get('reset'));
+			mxUtils.write(resetBtn, mxResources.get('none'));
 			resetBtn.addEventListener('click', function(e)
 			{
 				e.preventDefault();
@@ -7394,7 +7527,7 @@ SelectorChips.create = function(graph, editorUi)
 			footer.appendChild(resetBtn);
 			body.appendChild(footer);
 
-			// Dim Select cells / Reset when nothing's selected — they're
+			// Dim Select cells / None when nothing's selected — they're
 			// no-ops at that point but stay visible so the user can
 			// discover the actions even before toggling any tag.
 			var refreshFooter = function()
@@ -7507,8 +7640,9 @@ SelectorChips.create = function(graph, editorUi)
 
 		body.appendChild(list);
 
-		// Footer: "Select cells in diagram" + "Reset". Layers are model
-		// containers (mxGraph never selects the layer cell itself), so the
+		// Footer: "Select cells in diagram" + "None" (clears the picked
+		// layers, same label as the cells and excludes chip menus).
+		// Layers are model containers (mxGraph never selects the layer cell itself), so the
 		// select button resolves each picked layer to its descendant cells
 		// via getCellsForLayers and selects those — mirroring the tag
 		// picker. Disabled when no layer is picked.
@@ -7535,7 +7669,7 @@ SelectorChips.create = function(graph, editorUi)
 		var resetBtn = document.createElement('button');
 		resetBtn.type = 'button';
 		resetBtn.className = 'geActionMenuItem geActionMenuItemDanger';
-		mxUtils.write(resetBtn, mxResources.get('reset'));
+		mxUtils.write(resetBtn, mxResources.get('none'));
 		resetBtn.addEventListener('click', function(e)
 		{
 			e.preventDefault();
@@ -7770,9 +7904,9 @@ SelectorChips.create = function(graph, editorUi)
  * into / out of AnimationDialog's `{title?, steps}` shape and forwards the
  * save callback. All UI (picker, row rendering, selector chips, preview
  * session, footer buttons) lives in AnimationDialog; the wrapper is just
- * the format adapter.
+ * the format adapter. cells are the cells whose link is edited.
  */
-var CustomActionDialog = function(editorUi, currentValue, onSave)
+var CustomActionDialog = function(editorUi, currentValue, onSave, cells)
 {
 	installCustomActionStyles();
 
@@ -7806,7 +7940,8 @@ var CustomActionDialog = function(editorUi, currentValue, onSave)
 						flat.push(a);
 					}
 				}
-				initial.steps = flat;
+				initial.steps = CustomActionDialog.liftLegacyLayers(
+					editorUi.editor.graph, flat);
 			}
 
 			if (typeof parsed.title == 'string' && parsed.title !== '')
@@ -7833,6 +7968,7 @@ var CustomActionDialog = function(editorUi, currentValue, onSave)
 
 	var dialog = new AnimationDialog(editorUi, x, y, w, h, {
 		kind: 'action',
+		cells: cells,
 		showTitle: true,
 		windowTitleKey: 'action',
 		windowTitleFallback: 'Action',
@@ -7876,6 +8012,72 @@ var CustomActionDialog = function(editorUi, currentValue, onSave)
 
 
 /**
+ * Moves layer IDs that legacy links list under `cells` of a toggle/show/hide
+ * action (e.g. {"toggle":{"cells":["<layerId>"]}}, written before the
+ * `layers` selector existed) to `layers`. On click both forms flip the
+ * layer's own `visible` (getCellsForAction with layerCells resolves `layers`
+ * to the layer cell itself), but the dialog listed the layer as a cell and
+ * its transient preview did nothing, since a layer has no shape to fade.
+ * Actions with an explicit `transient: true` are left alone: they never
+ * touched a layer listed as a cell, so moving it would change what the link
+ * does. Mutates and returns the given steps.
+ */
+CustomActionDialog.liftLegacyLayers = function(graph, steps)
+{
+	var model = graph.getModel();
+	var keys = ['toggle', 'show', 'hide'];
+
+	for (var i = 0; i < steps.length; i++)
+	{
+		for (var k = 0; steps[i] != null && k < keys.length; k++)
+		{
+			var sel = steps[i][keys[k]];
+
+			if (sel != null && typeof sel == 'object' && Array.isArray(sel.cells) &&
+				sel.transient !== true)
+			{
+				var cells = [];
+				var layers = Array.isArray(sel.layers) ? sel.layers.slice() : [];
+
+				for (var j = 0; j < sel.cells.length; j++)
+				{
+					var id = sel.cells[j];
+					var cell = (typeof id == 'string') ? model.getCell(id) : null;
+
+					if (cell != null && model.isLayer(cell))
+					{
+						if (mxUtils.indexOf(layers, id) < 0)
+						{
+							layers.push(id);
+						}
+					}
+					else
+					{
+						cells.push(id);
+					}
+				}
+
+				if (cells.length < sel.cells.length)
+				{
+					sel.layers = layers;
+
+					if (cells.length > 0)
+					{
+						sel.cells = cells;
+					}
+					else
+					{
+						delete sel.cells;
+					}
+				}
+			}
+		}
+	}
+
+	return steps;
+};
+
+/**
  * Schema describing the form fields each action type needs in the dialog.
  * `selector: true` means the action carries cells/tags/excludeCells.
  * `fields` is a list of inline inputs for action-specific params, rendered
@@ -7883,6 +8085,250 @@ var CustomActionDialog = function(editorUi, currentValue, onSave)
  * `primary` is a single value-bearing field used by actions that aren't
  * objects (e.g. `wait: 1000` or `open: "https://..."`).
  */
+/**
+ * Icons of the action and animation dialogs: Material Symbols (outlined,
+ * weight 400, 24px; Apache License 2.0), the set of the app's own icons
+ * (Editor.helpImage, Editor.copyImage, ...). Only the path data is kept:
+ * createIcon draws it with fill=currentColor, so an icon takes the color
+ * of its text (light and dark mode, the amber warning, the gray handle).
+ * The step icons were emoji and text symbols from different fonts, which
+ * looked inconsistent and differed per platform (Kym, 2026-09-25).
+ */
+CustomActionDialog.ICONS = {
+	swap_horiz: 'M280-160 80-360l200-200 56 57-103 103h287v80H233l103 103-56 57Zm' +
+		'400-240-56-57 103-103H440v-80h287L624-743l56-57 200 200-200 200Z',
+	visibility: 'M607.5-372.5Q660-425 660-500t-52.5-127.5Q555-680 480-680t-127.5 ' +
+		'52.5Q300-575 300-500t52.5 127.5Q405-320 480-320t127.5-52.5Zm-204' +
+		'-51Q372-455 372-500t31.5-76.5Q435-608 480-608t76.5 31.5Q588-545 ' +
+		'588-500t-31.5 76.5Q525-392 480-392t-76.5-31.5ZM214-281.5Q94-363 ' +
+		'40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-1' +
+		'74 218.5T480-200q-146 0-266-81.5ZM480-500Zm207.5 160.5Q782-399 8' +
+		'32-500q-50-101-144.5-160.5T480-720q-113 0-207.5 59.5T128-500q50 ' +
+		'101 144.5 160.5T480-280q113 0 207.5-59.5Z',
+	visibility_off: 'm644-428-58-58q9-47-27-88t-93-32l-58-58q17-8 34.5-12t37.5-4q75 0' +
+		' 127.5 52.5T660-500q0 20-4 37.5T644-428Zm128 126-58-56q38-29 67.' +
+		'5-63.5T832-500q-50-101-143.5-160.5T480-720q-29 0-57 4t-55 12l-62' +
+		'-62q41-17 84-25.5t90-8.5q151 0 269 83.5T920-500q-23 59-60.5 109.' +
+		'5T772-302Zm20 246L624-222q-35 11-70.5 16.5T480-200q-151 0-269-83' +
+		'.5T40-500q21-53 53-98.5t73-81.5L56-792l56-56 736 736-56 56ZM222-' +
+		'624q-29 26-53 57t-41 67q50 101 143.5 160.5T480-280q20 0 39-2.5t3' +
+		'9-5.5l-36-38q-11 3-21 4.5t-21 1.5q-75 0-127.5-52.5T300-500q0-11 ' +
+		'1.5-21t4.5-21l-84-82Zm319 93Zm-151 75Z',
+	select: 'M200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-' +
+		'160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.' +
+		'5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640' +
+		'v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-64' +
+		'0v-80h80v80h-80Zm160 560h80q0 33-23.5 56.5T760-120v-80Zm0-80v-80' +
+		'h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q' +
+		'33 0 56.5 23.5T840-760h-80Z',
+	jump_to_element: 'M440-440v-160h80v80h80v80H440Zm280 0v-80h80v-80h80v160H720ZM440-' +
+		'720v-160h160v80h-80v80h-80Zm360 0v-80h-80v-80h160v160h-80ZM136-8' +
+		'0l-56-56 224-224H120v-80h320v320h-80v-184L136-80Z',
+	opacity: 'M253.5-212Q160-304 160-436q0-65 25-121.5T254-658l226-222 226 222' +
+		'q44 44 69 100.5T800-436q0 132-93.5 224T480-120q-133 0-226.5-92ZM' +
+		'242-400h474q12-72-13.5-123T650-600L480-768 310-600q-27 26-53 77t' +
+		'-15 123Z',
+	transition_fade: 'M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h200' +
+		'v720H200Zm251.5-11.5Q440-143 440-160t11.5-28.5Q463-200 480-200t2' +
+		'8.5 11.5Q520-177 520-160t-11.5 28.5Q497-120 480-120t-28.5-11.5Zm' +
+		'0-160Q440-303 440-320t11.5-28.5Q463-360 480-360t28.5 11.5Q520-33' +
+		'7 520-320t-11.5 28.5Q497-280 480-280t-28.5-11.5Zm0-160Q440-463 4' +
+		'40-480t11.5-28.5Q463-520 480-520t28.5 11.5Q520-497 520-480t-11.5' +
+		' 28.5Q497-440 480-440t-28.5-11.5Zm0-160Q440-623 440-640t11.5-28.' +
+		'5Q463-680 480-680t28.5 11.5Q520-657 520-640t-11.5 28.5Q497-600 4' +
+		'80-600t-28.5-11.5Zm0-160Q440-783 440-800t11.5-28.5Q463-840 480-8' +
+		'40t28.5 11.5Q520-817 520-800t-11.5 28.5Q497-760 480-760t-28.5-11' +
+		'.5Zm80 560Q520-223 520-240t11.5-28.5Q543-280 560-280t28.5 11.5Q6' +
+		'00-257 600-240t-11.5 28.5Q577-200 560-200t-28.5-11.5Zm0-160Q520-' +
+		'383 520-400t11.5-28.5Q543-440 560-440t28.5 11.5Q600-417 600-400t' +
+		'-11.5 28.5Q577-360 560-360t-28.5-11.5Zm0-160Q520-543 520-560t11.' +
+		'5-28.5Q543-600 560-600t28.5 11.5Q600-577 600-560t-11.5 28.5Q577-' +
+		'520 560-520t-28.5-11.5Zm0-160Q520-703 520-720t11.5-28.5Q543-760 ' +
+		'560-760t28.5 11.5Q600-737 600-720t-11.5 28.5Q577-680 560-680t-28' +
+		'.5-11.5Zm80 560Q600-143 600-160t11.5-28.5Q623-200 640-200t28.5 1' +
+		'1.5Q680-177 680-160t-11.5 28.5Q657-120 640-120t-28.5-11.5Zm0-160' +
+		'Q600-303 600-320t11.5-28.5Q623-360 640-360t28.5 11.5Q680-337 680' +
+		'-320t-11.5 28.5Q657-280 640-280t-28.5-11.5Zm0-160Q600-463 600-48' +
+		'0t11.5-28.5Q623-520 640-520t28.5 11.5Q680-497 680-480t-11.5 28.5' +
+		'Q657-440 640-440t-28.5-11.5Zm0-160Q600-623 600-640t11.5-28.5Q623' +
+		'-680 640-680t28.5 11.5Q680-657 680-640t-11.5 28.5Q657-600 640-60' +
+		'0t-28.5-11.5Zm0-160Q600-783 600-800t11.5-28.5Q623-840 640-840t28' +
+		'.5 11.5Q680-817 680-800t-11.5 28.5Q657-760 640-760t-28.5-11.5ZM7' +
+		'20-200q-17 0-28.5-11.5T680-240q0-17 11.5-28.5T720-280q17 0 28.5 ' +
+		'11.5T760-240q0 17-11.5 28.5T720-200Zm0-160q-17 0-28.5-11.5T680-4' +
+		'00q0-17 11.5-28.5T720-440q17 0 28.5 11.5T760-400q0 17-11.5 28.5T' +
+		'720-360Zm0-160q-17 0-28.5-11.5T680-560q0-17 11.5-28.5T720-600q17' +
+		' 0 28.5 11.5T760-560q0 17-11.5 28.5T720-520Zm-28.5-171.5Q680-703' +
+		' 680-720t11.5-28.5Q703-760 720-760t28.5 11.5Q760-737 760-720t-11' +
+		'.5 28.5Q737-680 720-680t-28.5-11.5Zm80 560Q760-143 760-160t11.5-' +
+		'28.5Q783-200 800-200t28.5 11.5Q840-177 840-160t-11.5 28.5Q817-12' +
+		'0 800-120t-28.5-11.5Zm0-160Q760-303 760-320t11.5-28.5Q783-360 80' +
+		'0-360t28.5 11.5Q840-337 840-320t-11.5 28.5Q817-280 800-280t-28.5' +
+		'-11.5Zm0-160Q760-463 760-480t11.5-28.5Q783-520 800-520t28.5 11.5' +
+		'Q840-497 840-480t-11.5 28.5Q817-440 800-440t-28.5-11.5Zm0-160Q76' +
+		'0-623 760-640t11.5-28.5Q783-680 800-680t28.5 11.5Q840-657 840-64' +
+		'0t-11.5 28.5Q817-600 800-600t-28.5-11.5Zm0-160Q760-783 760-800t1' +
+		'1.5-28.5Q783-840 800-840t28.5 11.5Q840-817 840-800t-11.5 28.5Q81' +
+		'7-760 800-760t-28.5-11.5Z',
+	transition_dissolve: 'M220-160q-25 0-42.5-17.5T160-220q0-25 17.5-42.5T220-280q25 0 42.' +
+		'5 17.5T280-220q0 25-17.5 42.5T220-160Zm173 0q-25 0-42.5-17.5T333' +
+		'-220q0-25 17.5-42.5T393-280q25 0 42.5 17.5T453-220q0 25-17.5 42.' +
+		'5T393-160Zm174 0q-25 0-42.5-17.5T507-220q0-25 17.5-42.5T567-280q' +
+		'25 0 42.5 17.5T627-220q0 25-17.5 42.5T567-160Zm173 0q-25 0-42.5-' +
+		'17.5T680-220q0-25 17.5-42.5T740-280q25 0 42.5 17.5T800-220q0 25-' +
+		'17.5 42.5T740-160ZM220-333q-25 0-42.5-17.5T160-393q0-25 17.5-42.' +
+		'5T220-453q25 0 42.5 17.5T280-393q0 25-17.5 42.5T220-333Zm173 0q-' +
+		'25 0-42.5-17.5T333-393q0-25 17.5-42.5T393-453q25 0 42.5 17.5T453' +
+		'-393q0 25-17.5 42.5T393-333Zm174 0q-25 0-42.5-17.5T507-393q0-25 ' +
+		'17.5-42.5T567-453q25 0 42.5 17.5T627-393q0 25-17.5 42.5T567-333Z' +
+		'm173 0q-25 0-42.5-17.5T680-393q0-25 17.5-42.5T740-453q25 0 42.5 ' +
+		'17.5T800-393q0 25-17.5 42.5T740-333ZM220-507q-25 0-42.5-17.5T160' +
+		'-567q0-25 17.5-42.5T220-627q25 0 42.5 17.5T280-567q0 25-17.5 42.' +
+		'5T220-507Zm173 0q-25 0-42.5-17.5T333-567q0-25 17.5-42.5T393-627q' +
+		'25 0 42.5 17.5T453-567q0 25-17.5 42.5T393-507Zm174 0q-25 0-42.5-' +
+		'17.5T507-567q0-25 17.5-42.5T567-627q25 0 42.5 17.5T627-567q0 25-' +
+		'17.5 42.5T567-507Zm173 0q-25 0-42.5-17.5T680-567q0-25 17.5-42.5T' +
+		'740-627q25 0 42.5 17.5T800-567q0 25-17.5 42.5T740-507ZM220-680q-' +
+		'25 0-42.5-17.5T160-740q0-25 17.5-42.5T220-800q25 0 42.5 17.5T280' +
+		'-740q0 25-17.5 42.5T220-680Zm173 0q-25 0-42.5-17.5T333-740q0-25 ' +
+		'17.5-42.5T393-800q25 0 42.5 17.5T453-740q0 25-17.5 42.5T393-680Z' +
+		'm174 0q-25 0-42.5-17.5T507-740q0-25 17.5-42.5T567-800q25 0 42.5 ' +
+		'17.5T627-740q0 25-17.5 42.5T567-680Zm173 0q-25 0-42.5-17.5T680-7' +
+		'40q0-25 17.5-42.5T740-800q25 0 42.5 17.5T800-740q0 25-17.5 42.5T' +
+		'740-680Z',
+	invert_colors: 'M480-120q-133 0-226.5-92.5T160-436q0-66 25-122t69-100l226-222 22' +
+		'6 222q44 44 69 100t25 122q0 131-93.5 223.5T480-120Zm0-80v-568L31' +
+		'0-600q-35 33-52.5 74.5T240-436q0 97 70 166.5T480-200Z',
+	arrow_right_alt: 'm560-240-56-58 142-142H160v-80h486L504-662l56-58 240 240-240 240' +
+		'Z',
+	arrow_left_alt: 'M400-240 160-480l240-240 56 58-142 142h486v80H314l142 142-56 58Z',
+	open_in_full: 'M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L256-200h18' +
+		'4v80H120Z',
+	close_fullscreen: 'm136-80-56-56 264-264H160v-80h320v320h-80v-184L136-80Zm344-400v-' +
+		'320h80v184l264-264 56 56-264 264h184v80H480Z',
+	highlight: 'm226-640-86-84 56-58 86 86-56 56Zm214-120v-120h80v120h-80Zm296 1' +
+		'20-58-56 86-84 56 56-84 84ZM360-80v-200L240-400v-200h480v200L600' +
+		'-280v200H360Zm80-80h80v-153l120-120v-87H320v87l120 120v153Zm40-1' +
+		'80Z',
+	palette: 'M480-80q-82 0-155-31.5t-127.5-86Q143-252 111.5-325T80-480q0-83 3' +
+		'2.5-156t88-127Q256-817 330-848.5T488-880q80 0 151 27.5t124.5 76q' +
+		'53.5 48.5 85 115T880-518q0 115-70 176.5T640-280h-74q-9 0-12.5 5t' +
+		'-3.5 11q0 12 15 34.5t15 51.5q0 50-27.5 74T480-80Zm0-400Zm-177 23' +
+		'q17-17 17-43t-17-43q-17-17-43-17t-43 17q-17 17-17 43t17 43q17 17' +
+		' 43 17t43-17Zm120-160q17-17 17-43t-17-43q-17-17-43-17t-43 17q-17' +
+		' 17-17 43t17 43q17 17 43 17t43-17Zm200 0q17-17 17-43t-17-43q-17-' +
+		'17-43-17t-43 17q-17 17-17 43t17 43q17 17 43 17t43-17Zm120 160q17' +
+		'-17 17-43t-17-43q-17-17-43-17t-43 17q-17 17-17 43t17 43q17 17 43' +
+		' 17t43-17ZM480-160q9 0 14.5-5t5.5-13q0-14-15-33t-15-57q0-42 29-6' +
+		'7t71-25h70q66 0 113-38.5T800-518q0-121-92.5-201.5T488-800q-136 0' +
+		'-232 93t-96 227q0 133 93.5 226.5T480-160Z',
+	format_paint: 'M440-80q-33 0-56.5-23.5T360-160v-160H240q-33 0-56.5-23.5T160-400' +
+		'v-280q0-66 47-113t113-47h480v440q0 33-23.5 56.5T720-320H600v160q' +
+		'0 33-23.5 56.5T520-80h-80ZM240-560h480v-200h-40v160h-80v-160h-40' +
+		'v80h-80v-80H320q-33 0-56.5 23.5T240-680v120Zm0 160h480v-80H240v8' +
+		'0Zm0 0v-80 80Z',
+	conversion_path: 'M760-120q-39 0-70-22.5T647-200H440q-66 0-113-47t-47-113q0-66 47-' +
+		'113t113-47h80q33 0 56.5-23.5T600-600q0-33-23.5-56.5T520-680H313q' +
+		'-13 35-43.5 57.5T200-600q-50 0-85-35t-35-85q0-50 35-85t85-35q39 ' +
+		'0 69.5 22.5T313-760h207q66 0 113 47t47 113q0 66-47 113t-113 47h-' +
+		'80q-33 0-56.5 23.5T360-360q0 33 23.5 56.5T440-280h207q13-35 43.5' +
+		'-57.5T760-360q50 0 85 35t35 85q0 50-35 85t-85 35ZM228.5-691.5Q24' +
+		'0-703 240-720t-11.5-28.5Q217-760 200-760t-28.5 11.5Q160-737 160-' +
+		'720t11.5 28.5Q183-680 200-680t28.5-11.5Z',
+	conversion_path_off: 'M818-28 26-820l57-57L875-85l-57 57ZM440-200q-66 0-113-47t-47-113' +
+		'q0-66 47-113t113-47l80 80h-80q-33 0-56.5 23.5T360-360q0 33 23.5 ' +
+		'56.5T440-280h240l142 142q-14 8-29.5 13t-32.5 5q-39 0-70-22.5T647' +
+		'-200H440Zm433-1L721-353q9-3 18.5-5t20.5-2q50 0 85 35t35 85q0 11-' +
+		'2 20.5t-5 18.5ZM608-466l-59-59q23-9 37-29t14-46q0-33-23.5-56.5T5' +
+		'20-680H394l-80-80h206q66 0 113 47t47 113q0 42-20 77t-52 57ZM200-' +
+		'600q-50 0-85-35t-35-85q0-32 16-59t42-43l164 164q-16 26-43 42t-59' +
+		' 16Z',
+	timer: 'M360-840v-80h240v80H360Zm80 440h80v-240h-80v240Zm-99.5 291.5Q275' +
+		'-137 226-186t-77.5-114.5Q120-366 120-440t28.5-139.5Q177-645 226-' +
+		'694t114.5-77.5Q406-800 480-800q62 0 119 20t107 58l56-56 56 56-56' +
+		' 56q38 50 58 107t20 119q0 74-28.5 139.5T734-186q-49 49-114.5 77.' +
+		'5T480-80q-74 0-139.5-28.5ZM678-242q82-82 82-198t-82-198q-82-82-1' +
+		'98-82t-198 82q-82 82-82 198t82 198q82 82 198 82t198-82ZM480-440Z',
+	link: 'M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160' +
+		'v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h' +
+		'320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H5' +
+		'20v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z',
+	sell: 'M856-390 570-104q-12 12-27 18t-30 6q-15 0-30-6t-27-18L103-457q-1' +
+		'1-11-17-25.5T80-513v-287q0-33 23.5-56.5T160-880h287q16 0 31 6.5t' +
+		'26 17.5l352 353q12 12 17.5 27t5.5 30q0 15-5.5 29.5T856-390ZM513-' +
+		'160l286-286-353-354H160v286l353 354ZM260-640q25 0 42.5-17.5T320-' +
+		'700q0-25-17.5-42.5T260-760q-25 0-42.5 17.5T200-700q0 25 17.5 42.' +
+		'5T260-640Zm220 160Z',
+	crop_free: 'M200-120q-33 0-56.5-23.5T120-200v-160h80v160h160v80H200Zm400 0v-' +
+		'80h160v-160h80v160q0 33-23.5 56.5T760-120H600ZM120-600v-160q0-33' +
+		' 23.5-56.5T200-840h160v80H200v160h-80Zm640 0v-160H600v-80h160q33' +
+		' 0 56.5 23.5T840-760v160h-80Z',
+	drag_indicator: 'M360-160q-33 0-56.5-23.5T280-240q0-33 23.5-56.5T360-320q33 0 56.' +
+		'5 23.5T440-240q0 33-23.5 56.5T360-160Zm240 0q-33 0-56.5-23.5T520' +
+		'-240q0-33 23.5-56.5T600-320q33 0 56.5 23.5T680-240q0 33-23.5 56.' +
+		'5T600-160ZM360-400q-33 0-56.5-23.5T280-480q0-33 23.5-56.5T360-56' +
+		'0q33 0 56.5 23.5T440-480q0 33-23.5 56.5T360-400Zm240 0q-33 0-56.' +
+		'5-23.5T520-480q0-33 23.5-56.5T600-560q33 0 56.5 23.5T680-480q0 3' +
+		'3-23.5 56.5T600-400ZM360-640q-33 0-56.5-23.5T280-720q0-33 23.5-5' +
+		'6.5T360-800q33 0 56.5 23.5T440-720q0 33-23.5 56.5T360-640Zm240 0' +
+		'q-33 0-56.5-23.5T520-720q0-33 23.5-56.5T600-800q33 0 56.5 23.5T6' +
+		'80-720q0 33-23.5 56.5T600-640Z',
+	warning: 'm40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51' +
+		'.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297' +
+		' 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-8' +
+		'0v200Zm40-100Z',
+	hourglass_empty: 'M320-160h320v-120q0-66-47-113t-113-47q-66 0-113 47t-47 113v120Zm' +
+		'273-407q47-47 47-113v-120H320v120q0 66 47 113t113 47q66 0 113-47' +
+		'ZM160-80v-80h80v-120q0-61 28.5-114.5T348-480q-51-32-79.5-85.5T24' +
+		'0-680v-120h-80v-80h640v80h-80v120q0 61-28.5 114.5T612-480q51 32 ' +
+		'79.5 85.5T720-280v120h80v80H160Z',
+	fast_forward: 'M100-240v-480l360 240-360 240Zm400 0v-480l360 240-360 240ZM180-4' +
+		'80Zm400 0Zm-400 90 136-90-136-90v180Zm400 0 136-90-136-90v180Z',
+	play_arrow: 'M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268' +
+		'Z',
+	download: 'M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200' +
+		'ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 ' +
+		'33-23.5 56.5T720-160H240Z',
+	// Same picture as Editor.exploreImage (the Explore buttons)
+	explore: 'M286.6-718.6L422.6-582.6L377.4-537.4L241.4-673.4ZM718.6-673.4L58' +
+		'2.6-537.4L537.4-582.6L673.4-718.6ZM512-360L512-240L448-240L448-36' +
+		'0ZM360-480a120 120 0 1 1 240 0a120 120 0 1 1-240 0ZM112-760a88 88' +
+		' 0 1 1 176 0a88 88 0 1 1-176 0ZM672-760a88 88 0 1 1 176 0a88 88 0' +
+		' 1 1-176 0ZM392-160a88 88 0 1 1 176 0a88 88 0 1 1-176 0Z'
+};
+
+/**
+ * Returns true if name is a key of CustomActionDialog.ICONS. Schemas
+ * that a plugin adds may still use a character as their icon.
+ */
+CustomActionDialog.hasIcon = function(name)
+{
+	return typeof name === 'string' && Object.prototype.hasOwnProperty.call(
+		CustomActionDialog.ICONS, name);
+};
+
+/**
+ * Returns an SVG element for the given icon name, size x size pixels.
+ */
+CustomActionDialog.createIcon = function(name, size)
+{
+	var svg = document.createElementNS(mxConstants.NS_SVG, 'svg');
+	svg.setAttribute('viewBox', '0 -960 960 960');
+	svg.setAttribute('width', size);
+	svg.setAttribute('height', size);
+	svg.setAttribute('fill', 'currentColor');
+	svg.setAttribute('aria-hidden', 'true');
+	svg.style.display = 'block';
+	svg.style.flex = '0 0 auto';
+
+	var path = document.createElementNS(mxConstants.NS_SVG, 'path');
+	path.setAttribute('d', (CustomActionDialog.hasIcon(name)) ?
+		CustomActionDialog.ICONS[name] : '');
+	svg.appendChild(path);
+
+	return svg;
+};
+
 // `allowLayers: true` adds the "Select layers" item to the cells-chip
 // popover. It's set on every cell-targeting (selector) action; the layer
 // resolves to the cells *within* it at playback (getCellsForLayers). The
@@ -7890,44 +8336,48 @@ var CustomActionDialog = function(editorUi, currentValue, onSave)
 // transient:false, where the engine flips the layer cell's own `visible`
 // (cascading) instead — see the layerCells branch in getCellsForAction.
 CustomActionDialog.SCHEMAS = {
-	toggle:      {label: 'Toggle',        icon: '⇄', selector: true, allowLayers: true},
-	show:        {label: 'Show',          icon: '✓', selector: true, allowLayers: true},
-	hide:        {label: 'Hide',          icon: '✗', selector: true, allowLayers: true},
-	select:      {label: 'Select',        icon: '☑', selector: true, allowLayers: true},
-	scroll:      {label: 'Scroll To',     icon: '↓', selector: true, allowLayers: true,
+	toggle:      {label: 'Toggle',        icon: 'swap_horiz', selector: true, allowLayers: true},
+	show:        {label: 'Show',          icon: 'visibility', selector: true, allowLayers: true},
+	hide:        {label: 'Hide',          icon: 'visibility_off', selector: true, allowLayers: true},
+	select:      {label: 'Select',        icon: 'select', selector: true, allowLayers: true},
+	scroll:      {label: 'Scroll To',     icon: 'jump_to_element', selector: true, allowLayers: true,
 		fields: [{name: 'border', type: 'number', placeholder: '0', width: 36, label: '',
 			titleKey: 'border', title: 'Border'},
 		         {name: 'smooth', type: 'checkbox',
 			labelKey: 'transition', label: 'Transition'}]},
-	opacity:     {label: 'Set Opacity',   icon: '◐', selector: true, allowLayers: true,
+	// labelKey: the plain `opacity` resource reads "Opacity", which is the
+	// property rather than the action; the picker, step list and link
+	// summary all show "Set Opacity" instead.
+	opacity:     {label: 'Set Opacity',   labelKey: 'setOpacity',
+		icon: 'opacity', selector: true, allowLayers: true,
 		fields: [{name: 'value', type: 'number', min: 0, max: 1, step: 0.1, def: '1',
 			width: 50, label: '', titleKey: 'opacity', title: 'Opacity'}]},
-	fadeIn:      {label: 'Fade In',       icon: '↗', selector: true, allowLayers: true,
+	fadeIn:      {label: 'Fade In',       icon: 'transition_fade', selector: true, allowLayers: true,
 		fields: [{name: 'delay', type: 'number', min: 0, step: 100, width: 50,
 			placeholder: '400', label: 'ms',
 			titleKey: 'duration', title: 'Duration (ms)'}]},
-	fadeOut:     {label: 'Fade Out',      icon: '↘', selector: true, allowLayers: true,
+	fadeOut:     {label: 'Fade Out',      icon: 'transition_dissolve', selector: true, allowLayers: true,
 		fields: [{name: 'delay', type: 'number', min: 0, step: 100, width: 50,
 			placeholder: '400', label: 'ms',
 			titleKey: 'duration', title: 'Duration (ms)'}]},
-	fadeTo:      {label: 'Fade To',       icon: '◐', selector: true, allowLayers: true,
+	fadeTo:      {label: 'Fade To',       icon: 'invert_colors', selector: true, allowLayers: true,
 		fields: [{name: 'value', type: 'number', min: 0, max: 1, step: 0.1, def: '0.5',
 			width: 50, label: '', titleKey: 'opacity', title: 'Opacity'},
 		         {name: 'delay', type: 'number', min: 0, step: 100, width: 50,
 			placeholder: '400', label: 'ms',
 			titleKey: 'duration', title: 'Duration (ms)'}]},
-	wipeIn:      {label: 'Wipe In',       icon: '→', selector: true, allowLayers: true},
-	wipeOut:     {label: 'Wipe Out',      icon: '←', selector: true, allowLayers: true},
-	popIn:       {label: 'Pop In',        icon: '✨', selector: true, allowLayers: true},
-	popOut:      {label: 'Pop Out',       icon: '💨', selector: true, allowLayers: true},
-	highlight:   {label: 'Highlight',     icon: '🌟', selector: true, allowLayers: true,
+	wipeIn:      {label: 'Wipe In',       icon: 'arrow_right_alt', selector: true, allowLayers: true},
+	wipeOut:     {label: 'Wipe Out',      icon: 'arrow_left_alt', selector: true, allowLayers: true},
+	popIn:       {label: 'Pop In',        icon: 'open_in_full', selector: true, allowLayers: true},
+	popOut:      {label: 'Pop Out',       icon: 'close_fullscreen', selector: true, allowLayers: true},
+	highlight:   {label: 'Highlight',     icon: 'highlight', selector: true, allowLayers: true,
 		// Native <input type="color"> can't be empty / placeholder, so
 		// we pre-fill with mxGraph's default highlight color
 		// (DEFAULT_VALID_COLOR — lime green). The runtime's
 		// graph.highlightCells() falls back to the same value when the
 		// field is absent, so the picker mirrors the runtime default.
 		fields: [{name: 'color',    type: 'color',  def: '#00FF00', width: 36, label: '',
-			title: 'Color'},
+			titleKey: 'color', title: 'Color'},
 		         {name: 'duration', type: 'number', min: 0, step: 100, width: 50,
 			placeholder: '1000', label: 'ms',
 			titleKey: 'duration', title: 'Duration (ms)'},
@@ -7941,7 +8391,7 @@ CustomActionDialog.SCHEMAS = {
 	// a value that is already set, so a step with an empty key looked
 	// configured (Kym, 2026-09-18). `colorValue` adds a color swatch to
 	// the field while the key names a color.
-	style:       {label: 'Set Style',     icon: '🎨', selector: true, allowLayers: true,
+	style:       {label: 'Set Style',     icon: 'palette', selector: true, allowLayers: true,
 		fields: [{name: 'key',   type: 'text', placeholderKey: 'enterStyleKey',
 			placeholder: 'Enter style key...', width: 90, label: '',
 			titleKey: 'property', title: 'Key', styleKey: true},
@@ -7951,7 +8401,7 @@ CustomActionDialog.SCHEMAS = {
 	// Toggles key between value and defaultValue (an empty default removes
 	// the key so the stylesheet default applies); with value left empty the
 	// legacy 0 ↔ 1 boolean toggle runs (Graph.nextToggleStyleValue).
-	toggleStyle: {label: 'Toggle Style',  icon: '🔀', selector: true, allowLayers: true,
+	toggleStyle: {label: 'Toggle Style',  icon: 'format_paint', selector: true, allowLayers: true,
 		fields: [{name: 'key',          type: 'text', placeholderKey: 'enterStyleKey',
 			placeholder: 'Enter style key...', width: 90, label: '',
 			titleKey: 'property', title: 'Key', styleKey: true},
@@ -7963,17 +8413,22 @@ CustomActionDialog.SCHEMAS = {
 		         {name: 'defaultValue', type: 'text', placeholderKey: 'default',
 			placeholder: 'Default', width: 50, label: '',
 			titleKey: 'default', title: 'Default value', colorValue: true}]},
-	flow:        {label: 'Flow',          icon: '➡', selector: true, allowLayers: true,
+	flow:        {label: 'Flow',          icon: 'conversion_path', selector: true, allowLayers: true,
 		fields: [{name: 'start', type: 'select', options: [
-			{value: '', label: '(toggle)'},
-			{value: 'true', label: 'On'},
-			{value: 'false', label: 'Off'}], label: ''}]},
-	wait:        {label: 'Wait',          icon: '⏱', noSelector: true,
+			{value: '', labelKey: 'toggle', label: 'Toggle'},
+			{value: 'true', labelKey: 'on', label: 'On'},
+			{value: 'false', labelKey: 'off', label: 'Off'}], label: ''}]},
+	wait:        {label: 'Wait',          icon: 'timer', noSelector: true,
 		primary: {name: 'value', type: 'number', min: 0, step: 100, width: 60,
 			def: '1000', label: 'ms', titleKey: 'wait', title: 'Wait'}},
-	open:        {label: 'Open Link',     icon: '🔗', noSelector: true,
-		primary: {name: 'value', type: 'text',
-			placeholder: 'https://… or data:page/id,…', label: '', title: 'URL'}},
+	// `grow: true` lets the URL field take the free width of the row
+	// instead of a fixed 80px box at the right edge, which cut the
+	// placeholder and any link down to a few characters (Kym, 2026-09-25).
+	open:        {label: 'Open Link',     icon: 'link', noSelector: true,
+		primary: {name: 'value', type: 'text', grow: true,
+			placeholderKey: 'openLinkPlaceholder',
+			placeholder: 'https://… or data:page/id,…', label: '',
+			titleKey: 'url', title: 'URL'}},
 	// labelKey reroutes the action label to the generic `view` resource
 	// so we don't need to ship a dedicated `viewbox` translation across
 	// every locale — the picker, step list, and link summary all honor
@@ -7983,7 +8438,7 @@ CustomActionDialog.SCHEMAS = {
 	// and the static x/y/width/height (`staticOnly` fields, grayed out
 	// while a selector is active) are ignored [jgraph/drawio#4584].
 	viewbox:     {label: 'View',          labelKey: 'view',
-		icon: '⊞', selector: true, allowLayers: true,
+		icon: 'crop_free', selector: true, allowLayers: true,
 		fields: [{name: 'x',      type: 'number', placeholder: 'x', width: 36, label: '',
 			title: 'X', staticOnly: true},
 		         {name: 'y',      type: 'number', placeholder: 'y', width: 36, label: '',
@@ -7996,7 +8451,17 @@ CustomActionDialog.SCHEMAS = {
 			titleKey: 'border', title: 'Border'},
 		         {name: 'smooth', type: 'checkbox',
 			labelKey: 'transition', label: 'Transition'}]},
-	tags:        {label: 'Toggle Tags',   icon: '🏷', noSelector: true,
+	// Opens the explorer for the shape with the link, so the picker only
+	// offers it for custom links (see AnimationDialog). Classic opens the
+	// classic Explore view, which has no levels (see Graph.exploreFromCell),
+	// so it disables the levels.
+	explore:     {label: 'Explore',       icon: 'explore', noSelector: true,
+		fields: [{name: 'depth', type: 'number', min: 1, max: 6, step: 1,
+			width: 36, placeholder: '1', labelKey: 'levels', label: 'Levels',
+			titleKey: 'levels', title: 'Levels', disabledBy: 'classic'},
+		         {name: 'classic', type: 'checkbox',
+			labelKey: 'classic', label: 'Classic'}]},
+	tags:        {label: 'Toggle Tags',   icon: 'sell', noSelector: true,
 		fields: [{name: 'toggle',  type: 'tagList',
 			labelKey: 'toggle', label: 'Toggle',
 			modeField: 'toggleMatch'},
@@ -8016,6 +8481,8 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 {
 	var div = document.createElement('div');
 	
+	// Exception to the plain h3 title: the list and preview below are absolutely
+	// positioned, so the title must keep this margin to stay aligned with them
 	var title = document.createElement('h3');
 	title.style.marginTop = '3px';
 	mxUtils.write(title, mxResources.get('revisionHistory'));
@@ -8024,14 +8491,14 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 	var list = document.createElement('div');
 	list.style.position = 'absolute';
 	list.style.overflow = 'auto';
-	list.style.width = '170px';
+	list.style.width = '210px';
 	list.style.height = '378px';
 	div.appendChild(list);
 	
 	var container = document.createElement('div');
 	container.style.position = 'absolute';
-	container.style.left = '200px';
-	container.style.width = '470px';
+	container.style.left = '240px';
+	container.style.width = '430px';
 	container.style.height = '376px';
 	container.style.overflow = 'hidden';
 	container.style.borderWidth = '1px';
@@ -8196,8 +8663,8 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 	cmpGraph.centerZoom = true;
 
 	var fileInfo = document.createElement('div');
+	fileInfo.className = 'geDialogHint';
 	fileInfo.style.textAlign = 'left';
-	fileInfo.style.color = 'gray';
 	fileInfo.style.backgroundColor = 'transparent';
 	fileInfo.style.overflow = 'hidden';
 	fileInfo.style.textOverflow = 'ellipsis';
@@ -8508,7 +8975,6 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 		table.style.borderSpacing = '0px';
 		table.style.width = '100%';
 		var tbody = document.createElement('tbody');
-		var today = new Date().toDateString();
 
 		if (editorUi.currentPage != null && editorUi.pages != null)
 		{
@@ -8542,21 +9008,13 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 					}
 					else
 					{
-						if (ts.toDateString() === today)
-						{
-							mxUtils.write(date, ts.toLocaleTimeString());
-						}
-						else
-						{
-							mxUtils.write(date, ts.toLocaleDateString() + ' ' +
-								ts.toLocaleTimeString());
-						}
+						mxUtils.write(date, editorUi.formatDateTime(ts, true));
 					}
 					
 					row.appendChild(date);
 
-					row.setAttribute('title', ts.toLocaleDateString() + ' ' +
-						ts.toLocaleTimeString() + ((item.fileSize != null)? ' ' +
+					row.setAttribute('title', editorUi.formatDateTime(ts) +
+						((item.fileSize != null)? ' ' +
 						editorUi.formatFileSize(parseInt(item.fileSize)) : '') +
 						((item.lastModifyingUserName != null) ? ' ' +
 						item.lastModifyingUserName : ''));
@@ -8575,7 +9033,6 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 							pageSelect.innerText = '';
 							currentDoc = doc;
 							currentXml = xml;
-							parseSelectFunction = null;
 							diagrams = null;
 							realPage = 0;
 							
@@ -8706,8 +9163,7 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 							
 							fileInfo.innerText = '';
 							mxUtils.write(fileInfo, ((shortUser != null) ?
-								(shortUser + ' ') : '') + ts.toLocaleDateString() +
-								' ' + ts.toLocaleTimeString());
+								(shortUser + ' ') : '') + editorUi.formatDateTime(ts));
 							
 							fileInfo.setAttribute('title', row.getAttribute('title'));
 							zoomInBtn.removeAttribute('disabled');
@@ -8858,8 +9314,7 @@ var RevisionDialog = function(editorUi, revs, restoreFn)
 		table.appendChild(tbody);
 		list.appendChild(table);
 	}
-	else if (file == null || (editorUi.drive == null && file.constructor == window.DriveFile) ||
-		(editorUi.dropbox == null && file.constructor == window.DropboxFile))
+	else if (file == null || (editorUi.drive == null && file.constructor == window.DriveFile))
 	{
 		container.style.display = 'none';
 		tb.style.display = 'none';
@@ -9074,7 +9529,8 @@ var DraftDialog = function(editorUi, title, xml, editFn, discardFn, editLabel, d
 	
 	var container = document.createElement('div');
 	container.style.position = 'absolute';
-	container.style.border = '1px solid lightGray';
+	container.style.borderWidth = '1px';
+	container.style.borderStyle = 'solid';
 	container.style.marginTop = '10px';
 	container.style.left = '40px';
 	container.style.right = '40px';
@@ -9362,7 +9818,9 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 	var allChecked = false;
 	var lblMatch = null;
 	var lblMatchPos = 0;
-	var marker = 1;
+	var searchThread = null;
+	var notFoundColor = 'light-dark(var(--error-background-color), ' +
+		'var(--dark-error-background-color))';
 	
 	var div = document.createElement('div');
 	div.style.userSelect = 'none';
@@ -9421,6 +9879,14 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
     
 	mxUtils.br(div);
 
+	// Shows the position of the current match and the number of matches
+	var countLabel = document.createElement('span');
+	countLabel.style.float = 'right';
+	countLabel.style.marginTop = '2px';
+	countLabel.style.fontSize = '12px';
+	countLabel.style.opacity = '0.7';
+	div.appendChild(countLabel);
+
     var allPagesInput = document.createElement('input');
     allPagesInput.setAttribute('id', 'geFindWinAllPagesChck');
     allPagesInput.setAttribute('type', 'checkbox');
@@ -9435,6 +9901,33 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
     
 	var tmp = document.createElement('div');
 	
+	//Caches the text of HTML labels so that unchanged labels are not
+	//sanitized and parsed again for each search while typing
+	var htmlLabelText = new Map();
+
+	//Returns the lowercase label text of the given state with control
+	//characters and whitespace collapsed to single spaces
+	function getSearchLabel(state)
+	{
+		var label = graph.getLabel(state.cell);
+
+		if (state.style != null && state.style['html'] == '1')
+		{
+			var text = htmlLabelText.get(label);
+
+			if (text == null)
+			{
+				tmp.innerHTML = graph.sanitizeHtml(label);
+				text = mxUtils.extractTextWithWhitespace([tmp]);
+				htmlLabelText.set(label, text);
+			}
+
+			label = text;
+		}
+
+		return mxUtils.trim(label.replace(/[\x00-\x1F\x7F-\x9F]|\s+/g, ' ')).toLowerCase();
+	};
+
 	function testMeta(re, cell, search)
 	{
 		//Plain search matches the full ID only since short search terms
@@ -9455,7 +9948,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			
 			for (var i = 0; i < attrs.length; i++)
 			{
-				if (attrs[i].nodeName != 'label')
+				if (attrs[i].nodeName != 'label' && !Graph.isDataSourceBaseAttribute(attrs[i].nodeName))
 				{
 					var value = mxUtils.trim(attrs[i].nodeValue.replace(/[\x00-\x1F\x7F-\x9F]|\s+/g, ' ')).toLowerCase();
 					
@@ -9470,7 +9963,60 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 		
 		return false;
 	};
-	
+
+	//Returns the collapsed ancestors of the given cell (an empty array if it
+	//is not inside a collapsed container) or null if the cell or one of its
+	//ancestors is invisible
+	// True if the given cell or one of its ancestors is hidden
+	function isHidden(cell)
+	{
+		var model = graph.model;
+
+		while (cell != null && model.getParent(cell) != null)
+		{
+			if (!graph.isCellVisible(cell))
+			{
+				return true;
+			}
+
+			cell = model.getParent(cell);
+		}
+
+		return false;
+	};
+
+	function getCollapsedAncestors(cell)
+	{
+		var model = graph.model;
+		var result = [];
+
+		// Edges with a hidden terminal are not rendered either
+		if (!graph.isCellVisible(cell) || (model.isEdge(cell) &&
+			(isHidden(model.getTerminal(cell, true)) ||
+			isHidden(model.getTerminal(cell, false)))))
+		{
+			return null;
+		}
+
+		var parent = model.getParent(cell);
+
+		while (parent != null && model.getParent(parent) != null)
+		{
+			if (!graph.isCellVisible(parent))
+			{
+				return null;
+			}
+			else if (graph.isCellCollapsed(parent))
+			{
+				result.push(parent);
+			}
+
+			parent = model.getParent(parent);
+		}
+
+		return result;
+	};
+
 	function updateReplBtns()
 	{
 		if (lastSearchSuccessful)
@@ -9494,10 +10040,18 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 		}
 	}
 				
-	function search(internalCall, trySameCell, stayOnPage)
+	function search(internalCall, trySameCell, stayOnPage, backwards)
 	{
+		//Supersedes a pending search while typing
+		window.clearTimeout(searchThread);
 		replAllNotif.innerText = '';
 		var cells = graph.model.getDescendants(graph.model.getRoot());
+
+		if (backwards)
+		{
+			cells.reverse();
+		}
+
 		var searchStr = searchInput.value.toLowerCase();
 		var re = (regexInput.checked) ? new RegExp(searchStr) : null;
 		var firstMatch = null;
@@ -9530,20 +10084,35 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 					}
 				}
 				
-				var nextPageIndex = (currentPageIndex + 1) % ui.pages.length, nextPage;
+				var step = (backwards) ? ui.pages.length - 1 : 1;
+				var nextPageIndex = (currentPageIndex + step) % ui.pages.length, nextPage;
 				lastFound = null;
-				
-				do
+
+				//Other pages are searched in a single offscreen graph with model
+				//events disabled so that the pages are not rendered (the cells
+				//have no state and use a temporary state below)
+				graph = ui.createTemporaryGraph(graph.getStylesheet());
+				graph.model.setEventsEnabled(false);
+
+				try
 				{
-					allChecked = false;
-					nextPage = ui.pages[nextPageIndex];
-					graph = ui.createTemporaryGraph(graph.getStylesheet());
-					ui.updatePageRoot(nextPage);
-					graph.model.setRoot(nextPage.root);
-					nextPageIndex = (nextPageIndex + 1) % ui.pages.length;
+					do
+					{
+						allChecked = false;
+						nextPage = ui.pages[nextPageIndex];
+						ui.updatePageRoot(nextPage);
+						graph.model.setRoot(nextPage.root);
+						nextPageIndex = (nextPageIndex + step) % ui.pages.length;
+					}
+					while(!search(true, trySameCell, stayOnPage, backwards) && nextPageIndex != currentPageIndex);
 				}
-				while(!search(true, trySameCell, stayOnPage) && nextPageIndex != currentPageIndex);
-				
+				finally
+				{
+					// Removes the document listeners of the offscreen graph
+					graph.destroy();
+					graph = ui.editor.graph;
+				}
+
 				if (lastFound)
 				{
 					lastFound = null;
@@ -9555,13 +10124,16 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 					else
 					{
 						ui.editor.graph.model.execute(new SelectPage(ui, nextPage));
+
+						//Creates the states of the new page which are otherwise only
+						//created at the end of the open update of Replace All
+						ui.editor.graph.view.validate();
 					}
 				}
 				
 				allChecked = false;
-				graph = ui.editor.graph;
 				
-				return search(true, trySameCell, stayOnPage);
+				return search(true, trySameCell, stayOnPage, backwards);
 			}
 			
 			var i;
@@ -9569,36 +10141,48 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			for (i = 0; i < cells.length; i++)
 			{
 				var state = graph.view.getState(cells[i]);
-				
+
+				//Cells on other pages and inside collapsed containers have
+				//no state so a temporary state is used to check their label
+				//(only if the containers can be expanded to reveal the match)
+				if (state == null && (graph.model.isVertex(cells[i]) ||
+					graph.model.isEdge(cells[i])))
+				{
+					var collapsed = getCollapsedAncestors(cells[i]);
+
+					if (collapsed != null && ((collapsed.length > 0) ?
+						ui.editor.graph.isEnabled() : graph != ui.editor.graph))
+					{
+						state = {cell: cells[i], style: graph.getCellStyle(cells[i])};
+					}
+				}
+
+				var isLastFound = state != null && lastFound != null &&
+					state.cell == lastFound.cell;
+
 				//Try the same cell with replace to find other occurances
 				if (trySameCell)
 				{
-					active = active || state == lastFound;
+					active = active || isLastFound;
 				}
 							
 				if (state != null && state.cell.value != null && (active || firstMatch == null) &&
 					(graph.model.isVertex(state.cell) || graph.model.isEdge(state.cell)))
 				{
-					if (state.style != null && state.style['html'] == '1')
-					{
-						tmp.innerHTML = graph.sanitizeHtml(graph.getLabel(state.cell));
-						label = mxUtils.extractTextWithWhitespace([tmp]);
-					}
-					else
-					{
-						label = graph.getLabel(state.cell);
-					}
-		
-					label = mxUtils.trim(label.replace(/[\x00-\x1F\x7F-\x9F]|\s+/g, ' ')).toLowerCase();
+					var label = getSearchLabel(state);
 					var lblPosShift = 0;
 					
-					if (trySameCell && withReplace && state == lastFound)
+					//Continues in the label of the last match after a replace
+					//without matching its data and ID again
+					var sameCell = trySameCell && withReplace && isLastFound;
+
+					if (sameCell)
 					{
 						label = label.substr(lblMatchPos);
 						lblPosShift = lblMatchPos;
 					}
 					
-					var checkMeta = replaceInput == null || replaceInput.value == '';
+					var checkMeta = !sameCell && (replaceInput == null || replaceInput.value == '');
 					
 					if ((re == null && ((label.indexOf(searchStr) >= 0) ||
 						(checkMeta && testMeta(re, state.cell, searchStr)))) ||
@@ -9637,7 +10221,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 					}
 				}
 	
-				active = active || state == lastFound;
+				active = active || isLastFound;
 			}
 		}
 					
@@ -9647,16 +10231,33 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			{
 				lastFound = null;
 				allChecked = true;
-				return search(true, trySameCell, stayOnPage);
+				return search(true, trySameCell, stayOnPage, backwards);
 			}
 			
 			lastFound = firstMatch;
+
+			//Expands collapsed containers to reveal the match
+			if (graph.view.getState(lastFound.cell) == null)
+			{
+				var collapsed = getCollapsedAncestors(lastFound.cell);
+
+				if (collapsed != null && !stayOnPage && graph.isEnabled())
+				{
+					graph.foldCells(false, false, collapsed);
+					lastFound = graph.view.getState(lastFound.cell) || lastFound;
+				}
+			}
+
 			var c = graph.container;
 
 			//Centers the match unless it is already fully visible, so it
 			//does not end up flush against the viewport edge where it is
 			//easily missed
-			if (c == null || lastFound.x < c.scrollLeft ||
+			if (lastFound.width == null)
+			{
+				// Match is still hidden in a collapsed container
+			}
+			else if (c == null || lastFound.x < c.scrollLeft ||
 				lastFound.y < c.scrollTop ||
 				lastFound.x + lastFound.width > c.scrollLeft + c.clientWidth ||
 				lastFound.y + lastFound.height > c.scrollTop + c.clientHeight)
@@ -9682,7 +10283,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 		else if (!internalCall && allPagesInput.checked)
 		{
 			allChecked = true;
-			return search(true, trySameCell, stayOnPage);
+			return search(true, trySameCell, stayOnPage, backwards);
 		}
 		else if (graph.isEnabled() && !stayOnPage)
 		{
@@ -9699,6 +10300,133 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 		return searchStr.length == 0 || firstMatch != null;
 	};
 
+	//Returns true if the given cell is counted as a match in the given graph
+	//using the same conditions as search
+	function isMatch(cell, re, searchStr)
+	{
+		var model = graph.model;
+		var state = graph.view.getState(cell);
+
+		if (state == null && (model.isVertex(cell) || model.isEdge(cell)))
+		{
+			var collapsed = getCollapsedAncestors(cell);
+
+			if (collapsed != null && ((collapsed.length > 0) ?
+				ui.editor.graph.isEnabled() : graph != ui.editor.graph))
+			{
+				state = {cell: cell, style: graph.getCellStyle(cell)};
+			}
+		}
+
+		if (state != null && cell.value != null &&
+			(model.isVertex(cell) || model.isEdge(cell)))
+		{
+			var label = getSearchLabel(state);
+			var checkMeta = replaceInput == null || replaceInput.value == '';
+
+			return (re == null) ? (label.indexOf(searchStr) >= 0 ||
+				(checkMeta && testMeta(re, cell, searchStr))) :
+				(re.test(label) || (checkMeta && testMeta(re, cell, searchStr)));
+		}
+
+		return false;
+	};
+
+	//Updates the label with the position of the current match and the
+	//number of matches in the current page or in all pages
+	function updateCount()
+	{
+		var searchStr = searchInput.value.toLowerCase();
+		var text = '';
+
+		try
+		{
+			if (searchStr.length > 0)
+			{
+				var re = (regexInput.checked) ? new RegExp(searchStr) : null;
+				var pages = (allPagesInput.checked && ui.pages != null &&
+					ui.pages.length > 1) ? ui.pages : [ui.currentPage];
+				var current = 0;
+				var total = 0;
+
+				for (var i = 0; i < pages.length; i++)
+				{
+					var temp = null;
+
+					//Other pages are counted in an offscreen graph as in search
+					if (pages[i] != null && pages[i] != ui.currentPage)
+					{
+						temp = ui.createTemporaryGraph(graph.getStylesheet());
+						temp.model.setEventsEnabled(false);
+						ui.updatePageRoot(pages[i]);
+						temp.model.setRoot(pages[i].root);
+						graph = temp;
+					}
+
+					try
+					{
+						var cells = graph.model.getDescendants(graph.model.getRoot());
+
+						for (var j = 0; j < cells.length; j++)
+						{
+							if (isMatch(cells[j], re, searchStr))
+							{
+								total++;
+
+								if (temp == null && lastFound != null &&
+									lastFound.cell == cells[j])
+								{
+									current = total;
+								}
+							}
+						}
+					}
+					finally
+					{
+						if (temp != null)
+						{
+							temp.destroy();
+							graph = ui.editor.graph;
+						}
+					}
+				}
+
+				if (total > 0)
+				{
+					text = ((current > 0) ? current : '-') + '/' + total;
+				}
+			}
+		}
+		catch (e)
+		{
+			// Ignores invalid regular expressions
+		}
+
+		countLabel.innerText = text;
+	};
+
+	function find(backwards, showError)
+	{
+		try
+		{
+			searchInput.style.backgroundColor = search(false, false,
+				false, backwards) ? '' : notFoundColor;
+		}
+		catch (e)
+		{
+			if (showError)
+			{
+				ui.handleError(e);
+			}
+			else
+			{
+				searchInput.style.backgroundColor = notFoundColor;
+			}
+		}
+
+		updateCount();
+	};
+
 	mxUtils.br(div);
 	
 	var btnsCont = document.createElement('div');
@@ -9710,6 +10438,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 
 	var resetBtn = mxUtils.button(mxResources.get('reset'), function()
 	{
+		window.clearTimeout(searchThread);
 		replAllNotif.innerText = '';
 		searchInput.value = '';
 		searchInput.style.backgroundColor = '';
@@ -9723,6 +10452,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 		lastFound = null;
 		lastSearch = null;
 		allChecked = false;
+		countLabel.innerText = '';
 		searchInput.focus();
 	});
 	
@@ -9742,15 +10472,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 
 	var btn = mxUtils.button(mxResources.get('find'), function()
 	{
-		try
-		{
-			searchInput.style.backgroundColor = search() ? '' :
-				'light-dark(#ffcfcf, #ff0000)';
-		}
-		catch (e)
-		{
-			ui.handleError(e);	
-		}
+		find(false, true);
 	});
 	
 	// TODO: Reset state after selection change
@@ -9762,6 +10484,28 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 	btn.style.overflow = 'hidden';
 	btn.style.textOverflow = 'ellipsis';
 	btn.className = 'geBtn gePrimaryBtn';
+
+	if (!withReplace)
+	{
+		var prevBtn = mxUtils.button('', function()
+		{
+			find(true, true);
+		});
+
+		prevBtn.setAttribute('title', mxResources.get('find') + ' (Shift+Enter)');
+		prevBtn.className = 'geBtn';
+		prevBtn.style.minWidth = '0';
+		prevBtn.style.width = '30px';
+		prevBtn.style.padding = '0';
+		prevBtn.style.marginTop = '6px';
+
+		var prevImg = document.createElement('img');
+		prevImg.setAttribute('src', Editor.arrowUpImage);
+		prevImg.className = 'geAdaptiveAsset';
+		prevImg.style.width = '18px';
+		prevBtn.appendChild(prevImg);
+		btnsCont.appendChild(prevBtn);
+	}
 	
 	btnsCont.appendChild(btn);
 
@@ -9789,18 +10533,22 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			
 			var origStr = str;
 			substr = mxUtils.htmlEntities(substr, false, false, false);
-			var tagPos = [], p = -1;
+			var tagPos = [];
 			
 			//Original position (startIndex) counts for \n which is removed when tags are removed, so handle <br> separately
 			// The same for block level elements which are replaced by \n
 			str = str.replace(/<br>/ig, '\n').replace(/(\s|\S)(<(BLOCKQUOTE|DIV|H1|H2|H3|H4|H5|H6|OL|P|PRE|TABLE|UL)[^>]*>)/ig, '$1\n$2');
 
-			while((p = str.indexOf('<', p + 1)) > -1)
+			//Positions of the tags only since a < in the text (eg. in the value
+			//of a placeholder) or in an attribute does not start a tag
+			var tags = [], tagRe = /<[^>]*>/g, tag;
+
+			while ((tag = tagRe.exec(str)) != null)
 			{
-				tagPos.push(p);
+				tagPos.push(tag.index);
+				tags.push(tag[0]);
 			}
-			
-			var tags = str.match(/<[^>]*>/g);
+
 			str = str.replace(/<[^>]*>/g, '');
 			var lStr = str.toLowerCase();
 			var replStart = lStr.indexOf(substr, startIndex);
@@ -9840,22 +10588,261 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			return newStr.replace(/\n(<(BLOCKQUOTE|DIV|H1|H2|H3|H4|H5|H6|OL|P|PRE|TABLE|UL)[^>]*>)/ig, '$1').replace(/\n/g, '<br>');
 		};
 		
+		//Returns the cell and the name of the attribute that the placeholder
+		//with the given name shows in the label of the given cell as in
+		//Graph.replacePlaceholders, or null if it shows no attribute (eg.
+		//%id%, %width%, %date{...}%, the page number or the file name)
+		function getPlaceholderAttribute(cell, name)
+		{
+			var model = graph.model;
+
+			if (name == 'id' || name.indexOf('{') >= 0 || name.substring(0, 6) == 'length' ||
+				(model.isVertex(cell) && (name.substring(0, 5) == 'width' ||
+				name.substring(0, 6) == 'height')))
+			{
+				return null;
+			}
+
+			var current = cell;
+
+			while (current != null)
+			{
+				if (current.value != null && typeof(current.value) == 'object')
+				{
+					if (Graph.translateDiagram && Graph.diagramLanguage != null &&
+						current.getAttribute(name + '_' + Graph.diagramLanguage) != null)
+					{
+						return {cell: current, name: name + '_' + Graph.diagramLanguage};
+					}
+					else if (current.hasAttribute(name))
+					{
+						return {cell: current, name: name};
+					}
+				}
+
+				current = model.getParent(current);
+			}
+
+			return null;
+		};
+
+		//Returns the parts of the shown label of the given cell with the given
+		//label template as in Graph.getLabel: the text of the template and the
+		//value of each placeholder with its attribute. If html is true then
+		//values from data sources are text, which is HTML-escaped as in
+		//getLabel, and value is the value of such a part.
+		function getPlaceholderParts(cell, template, html)
+		{
+			var re = new RegExp(graph.placeholderPattern.source, 'g');
+			var parts = [];
+			var last = 0;
+			var match;
+
+			while ((match = re.exec(template)) != null)
+			{
+				var val = match[0];
+
+				if (val != '%label%' && val != '%tooltip%')
+				{
+					parts.push({text: template.substring(last, match.index)});
+
+					//Escaped placeholders (%%name%) are shown as text without
+					//the first % but are not replaced like values
+					if (match.index > last && template.charAt(match.index - 1) == '%')
+					{
+						parts.push({text: val.substring(1), placeholder: val});
+					}
+					else
+					{
+						var attr = getPlaceholderAttribute(cell, val.substring(1, val.length - 1));
+
+						parts.push({text: graph.replacePlaceholders(cell, val, null, null, html),
+							placeholder: val, attr: attr, value: (html && attr != null &&
+							graph.isDataSourceValue(attr.cell, attr.name)) ?
+							graph.replacePlaceholders(cell, val) : null});
+					}
+
+					last = match.index + val.length;
+				}
+			}
+
+			parts.push({text: template.substring(last)});
+
+			return parts;
+		};
+
+		//Replaces the current match in the shown label of the given cell with
+		//placeholders where the text is stored: in the label template for text
+		//of the template and in the attribute that a placeholder shows for text
+		//of its value (like cells with a placeholder attribute). Matches in
+		//other values (eg. %id% or %date{...}%) or across the start or end of
+		//a value are not replaced since the label would lose its placeholders.
+		function replacePlaceholderMatch(cell, lbl, startIndex, style)
+		{
+			var html = graph.isHtmlLabelShown(cell);
+			var parts = getPlaceholderParts(cell, graph.convertValueToString(cell), html);
+			var texts = parts.map(function(part) { return part.text; });
+			var index = -1;
+			var text = null;
+
+			//Hidden labels are empty here and dates may have changed
+			if (texts.join('') != lbl)
+			{
+				return;
+			}
+
+			if (style == null || style['html'] != '1')
+			{
+				var replStart = lbl.toLowerCase().indexOf(lblMatch, startIndex);
+				var replEnd = replStart + lblMatch.length;
+
+				for (var i = 0, start = 0; i < texts.length && replStart >= 0; i++)
+				{
+					var end = start + texts[i].length;
+
+					if (replStart >= start && replEnd <= end)
+					{
+						index = i;
+						text = texts[i].substring(0, replStart - start) +
+							((parts[i].value != null) ? mxUtils.htmlEntities(replaceInput.value) :
+							replaceInput.value) + texts[i].substring(replEnd - start);
+
+						break;
+					}
+
+					start = end;
+				}
+			}
+			else
+			{
+				//Separates the parts with tags, which keep their position in the
+				//text, and compares the parts with the parts after replacing an
+				//empty match, which normalizes the line breaks in the same way,
+				//so that the part with the match is the only one that differs.
+				//A match across the end of a part moves the tag before the new
+				//text and changes two parts.
+				var sep = '<\uE000>';
+
+				//Quotes in values from data sources are raw like in HTML that
+				//users typed, as replaceInLabel escapes the search text without
+				//quotes
+				var marked = parts.map(function(part, i)
+				{
+					return (part.value != null) ? mxUtils.htmlEntities(
+						part.value, false, false) : texts[i];
+				}).join(sep);
+				var value = replaceInLabel(marked, lblMatch, replaceInput.value, startIndex, style);
+				var before = replaceInLabel(marked, '', '', 0, style).split(sep);
+				var after = value.split(sep);
+				var changed = [];
+
+				if (value != marked && before.length == texts.length && after.length == texts.length)
+				{
+					for (var i = 0; i < after.length; i++)
+					{
+						if (after[i] != before[i])
+						{
+							changed.push(i);
+						}
+					}
+				}
+
+				if (changed.length == 1)
+				{
+					index = changed[0];
+					text = after[index];
+				}
+			}
+
+			if (index >= 0 && parts[index].placeholder == null)
+			{
+				//Writes the new text into the template if the label then shows
+				//the new text, which is not the case if the replacement adds a
+				//placeholder or the text before a placeholder ends with %
+				var tmp = texts.slice();
+				tmp[index] = text;
+
+				var template = parts.map(function(part, i)
+				{
+					return (i == index) ? text : ((part.placeholder != null) ?
+						part.placeholder : part.text);
+				}).join('');
+
+				if (graph.replacePlaceholders(cell, template, null, null, html) == tmp.join(''))
+				{
+					graph.cellLabelChanged(cell, template);
+				}
+			}
+			else if (index >= 0 && parts[index].attr != null)
+			{
+				var attr = parts[index].attr;
+				var stored = parts[index].text;
+
+				//Values from data sources are text, so the new value is the text
+				//of the escaped part, whose only tags are the line breaks of
+				//replaceInLabel (decodeHtml creates no elements)
+				if (parts[index].value != null)
+				{
+					stored = parts[index].value;
+					text = mxUtils.decodeHtml(text.replace(/<br>/g, '\n'));
+				}
+
+				if (attr.cell.getAttribute(attr.name) == stored)
+				{
+					graph.setAttributeForCell(attr.cell, attr.name,
+						Graph.zapGremlins(text));
+				}
+			}
+		};
+
+		//Replaces the current match in the label of the given cell. Changes
+		//only the label like an in-place edit so that the data, link and
+		//tooltip of cells with an XML value are kept.
+		function replaceMatch(cell)
+		{
+			//Regular expressions that match only the data have no match
+			if (lblMatch != null)
+			{
+				var lbl = graph.getLabel(cell);
+				var startIndex = lblMatchPos - lblMatch.length;
+				var style = graph.getCurrentCellStyle(cell);
+
+				//Cells with a placeholder attribute show and change an attribute
+				//of an ancestor in cellLabelChanged below
+				if (graph.isReplacePlaceholders(cell) && cell.getAttribute('placeholder') == null)
+				{
+					replacePlaceholderMatch(cell, lbl, startIndex, style);
+				}
+				else
+				{
+					var value = replaceInLabel(lbl, lblMatch, replaceInput.value,
+						startIndex, style);
+
+					//Matches in the data or ID leave the label unchanged, which
+					//is not written back since hidden labels are empty here
+					if (value != lbl)
+					{
+						graph.cellLabelChanged(cell, value);
+					}
+				}
+			}
+		};
+
 		var replaceFindBtn = mxUtils.button(mxResources.get('replFind'), function()
 		{
 			try
 			{
 				if (lblMatch != null && lastFound != null)
 				{
-					var cell = lastFound.cell, lbl = graph.getLabel(cell);
+					var cell = lastFound.cell;
 					
 					if (graph.isCellEditable(cell))
 					{
-						graph.model.setValue(cell, replaceInLabel(lbl, lblMatch, replaceInput.value,
-							lblMatchPos - lblMatch.length, graph.getCurrentCellStyle(cell)));
+						replaceMatch(cell);
 					}
 					
-					searchInput.style.backgroundColor = search(false, true) ? '' :
-						'light-dark(#ffcfcf, #ff0000)';
+					searchInput.style.backgroundColor = search(false, true) ? '' : notFoundColor;
+					updateCount();
 				}
 			}
 			catch (e)
@@ -9883,10 +10870,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			{
 				if (lblMatch != null && lastFound != null)
 				{
-					var cell = lastFound.cell, lbl = graph.getLabel(cell);
-					
-					graph.model.setValue(cell, replaceInLabel(lbl, lblMatch, replaceInput.value,
-						lblMatchPos - lblMatch.length, graph.getCurrentCellStyle(cell)));
+					replaceMatch(lastFound.cell);
 					replaceFindBtn.setAttribute('disabled', 'disabled');
 					replaceBtn.setAttribute('disabled', 'disabled');
 				}
@@ -9922,24 +10906,24 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			try
 			{
 				var safeguard = 0;
-				var seen = {};
-				
+
+				//Uses the cells as keys since IDs are only unique in a page
+				var seen = new Map();
+
 				while (search(false, true, true) && safeguard < 100)
 				{
-					var cell = lastFound.cell, lbl = graph.getLabel(cell);
-					var oldSeen = seen[cell.id];
-					
-					if (oldSeen && oldSeen.replAllMrk == marker && oldSeen.replAllPos >= lblMatchPos)
+					var cell = lastFound.cell;
+
+					if (seen.has(cell) && seen.get(cell) >= lblMatchPos)
 					{
 						break;
 					}
-					
-					seen[cell.id] = {replAllMrk: marker, replAllPos: lblMatchPos};
+
+					seen.set(cell, lblMatchPos);
 					
 					if (graph.isCellEditable(cell))
 					{
-						graph.model.setValue(cell, replaceInLabel(lbl, lblMatch, replaceInput.value,
-							lblMatchPos - lblMatch.length, graph.getCurrentCellStyle(cell)));
+						replaceMatch(cell);
 						safeguard++;
 					}
 				}
@@ -9950,6 +10934,7 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 				}
 				
 				mxUtils.write(replAllNotif, mxResources.get('matchesRepl', [safeguard]));
+				countLabel.innerText = '';
 			}
 			catch (e)
 			{
@@ -9961,8 +10946,6 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 				ui.editor.graph.setSelectionCells(cells);
 				ui.editor.graph.rendering = true;
 			}
-			
-			marker++;
 		});
 		
 		replaceAllBtn.setAttribute('title', mxResources.get('replaceAll'));
@@ -10011,16 +10994,21 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			// Escape closes window
 			action.funct();
 		}
-		else if (lastSearch != searchInput.value.toLowerCase() || evt.keyCode == 13)
+		else
 		{
-			try
+			window.clearTimeout(searchThread);
+
+			//Searches after a delay while typing since searching all pages
+			//can take a while (Enter searches immediately)
+			if (lastSearch != searchInput.value.toLowerCase() || evt.keyCode == 13)
 			{
-				searchInput.style.backgroundColor = search() ? '' :
-					'light-dark(#ffcfcf, #ff0000)';
-			}
-			catch (e)
-			{
-				searchInput.style.backgroundColor = 'light-dark(#ffcfcf, #ff0000)';
+				//Shift+Enter finds the previous match
+				var backwards = evt.keyCode == 13 && mxEvent.isShiftDown(evt);
+
+				searchThread = window.setTimeout(function()
+				{
+					find(backwards);
+				}, (evt.keyCode == 13) ? 0 : 250);
 			}
 		}
 	});
@@ -10075,6 +11063,12 @@ var FindWindow = function(ui, x, y, w, h, withReplace)
 			graph.container.focus();
 		}
 	}));
+
+	this.window.addListener('hide', function()
+	{
+		window.clearTimeout(searchThread);
+		htmlLabelText.clear();
+	});
 	
 	ui.installResizeHandler(this, false);
 
@@ -10099,34 +11093,98 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 	div.style.overflow = 'hidden';
 	div.style.height = '100%';
 	
+	// Mode dropdown on the left and the settings and color buttons on the
+	// right, centered vertically on the same row
+	var row = document.createElement('div');
+	row.style.display = 'flex';
+	row.style.alignItems = 'center';
+	row.style.height = '20px';
+	row.style.margin = '7px 8px 0px 10px';
+	div.appendChild(row);
+
+	// Drawing modes: the freehand tool without and with the brush (stored in
+	// the freehand tool as before), the polygon tool (see PolygonTool) and
+	// the tie tool (see TieTool). The polygon and tie modes are stored in the
+	// editor so that they are kept if the window is created again (eg. after
+	// a theme change). Without the brush, the freehand tool is used in the
+	// mode it has.
+	var modeSelect = document.createElement('select');
+	modeSelect.style.boxSizing = 'border-box';
+	modeSelect.style.minWidth = '0px';
+	modeSelect.style.height = '20px';
+	modeSelect.style.marginRight = '4px';
+	modeSelect.style.padding = '0px 2px';
+	modeSelect.style.textOverflow = 'ellipsis';
+
+	var addMode = function(value, key)
+	{
+		var option = document.createElement('option');
+		option.setAttribute('value', value);
+		mxUtils.write(option, mxResources.get(key));
+		modeSelect.appendChild(option);
+	};
+
+	addMode('freehand', 'freehand');
+
 	if (withBrush)
 	{
-		var brushInput = document.createElement('input');
-		brushInput.setAttribute('id', 'geFreehandBrush');
-		brushInput.setAttribute('type', 'checkbox');
-		brushInput.checked = graph.freehand.isPerfectFreehandMode();
-		brushInput.style.margin = '10px 5px 0px 10px';
-		brushInput.style.float = 'left';
-		div.appendChild(brushInput);
-		
-		// Used to retrieve default styles
-		graph.freehand.setPerfectFreehandMode(brushInput.checked);
-		
-		var brushLabel = document.createElement('label');
-		brushLabel.setAttribute('for', 'geFreehandBrush');
-		brushLabel.style.float = 'left';
-		brushLabel.style.marginTop = '10px';
-		div.appendChild(brushLabel);
-		mxUtils.write(brushLabel, mxResources.get('brush'));
-		div.appendChild(brushLabel);
+		addMode('brush', 'brush');
+	}
 
+	addMode('polygon', 'polygon');
+	addMode('tie', 'tie');
+	modeSelect.value = (editorUi.freehandTieMode) ? 'tie' :
+		((editorUi.freehandPolygonMode) ? 'polygon' :
+		((withBrush && graph.freehand.isPerfectFreehandMode()) ?
+		'brush' : 'freehand'));
+	row.appendChild(modeSelect);
+
+	var spacer = document.createElement('div');
+	spacer.style.flexGrow = '1';
+	row.appendChild(spacer);
+
+	// Selects the ties of the selected connectors or all ties in the tie mode,
+	// in the place of the settings and color buttons of the other modes
+	var selectTies = document.createElement('img');
+	selectTies.setAttribute('title', mxResources.get('selectAll'));
+	selectTies.setAttribute('alt', mxResources.get('selectAll'));
+	selectTies.className = 'geAdaptiveAsset';
+
+	// The padding makes the button a 24 px target and the margin keeps the row (WCAG 2.5.8)
+	selectTies.style.margin = '-4px -4px -4px 0px';
+	selectTies.style.padding = '4px';
+	selectTies.style.width = '16px';
+	selectTies.style.height = '16px';
+	selectTies.style.flexShrink = '0';
+	selectTies.style.cursor = 'pointer';
+	selectTies.style.display = 'none';
+	selectTies.src = Editor.selectImage;
+
+	mxEvent.addListener(selectTies, 'click', mxUtils.bind(this, function(evt)
+	{
+		var cells = graph.getSelectionCells();
+
+		if (this.isDrawing())
+		{
+			this.stopDrawing();
+		}
+
+		graph.setSelectionCells(graph.getTies(cells));
+		mxEvent.consume(evt);
+	}));
+
+	row.appendChild(selectTies);
+
+	if (withBrush)
+	{
 		var tempDiv = document.createElement('tempDiv');
 		tempDiv.style.display = 'block';
 		tempDiv.style.width = '100%';
 		tempDiv.style.height = '100%';
 		tempDiv.style.borderRadius = '2px';
 		tempDiv.style.boxSizing = 'border-box';
-		tempDiv.style.border = '1px solid black';
+		tempDiv.style.borderWidth = '1px';
+		tempDiv.style.borderStyle = 'solid';
 		tempDiv.style.backgroundColor = graph.freehand.getStrokeColor();
 
 		function updateName()
@@ -10163,6 +11221,19 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 		
 		updateName();
 
+		var settings = document.createElement('img');
+		settings.setAttribute('title', mxResources.get('settings'));
+		settings.setAttribute('src', Editor.gearImage);
+		settings.className = 'geButton';
+		settings.style.boxSizing = 'border-box';
+		settings.style.flexShrink = '0';
+		settings.style.padding = '2px';
+		settings.style.margin = '0px 4px 0px 0px';
+		settings.style.width = '18px';
+		settings.style.height = '18px';
+		settings.style.opacity = '0.6';
+		row.appendChild(settings);
+
 		var btn = mxUtils.button('', mxUtils.bind(this, function(evt)
 		{
 			editorUi.pickColor(graph.freehand.getStrokeColor(true), function(newColor)
@@ -10175,31 +11246,16 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 			mxEvent.consume(evt);
 		}));
 		
-		btn.style.position = 'absolute';
 		btn.style.boxSizing = 'border-box';
+		btn.style.flexShrink = '0';
 		btn.style.padding = '2px';
-		btn.style.top = '8px';
-		btn.style.right = '8px';
+		btn.style.margin = '0px';
 		btn.style.width = '28px';
 		btn.style.height = '18px';
 		btn.className = 'geColorBtn';
 		btn.innerText = '';
 		btn.appendChild(tempDiv);
-		div.appendChild(btn);
-
-		var settings = document.createElement('img');
-		settings.setAttribute('title', mxResources.get('settings'));
-		settings.setAttribute('src', Editor.gearImage);
-		settings.className = 'geButton';
-		settings.style.position = 'absolute';
-		settings.style.boxSizing = 'border-box';
-		settings.style.padding = '2px';
-		settings.style.top = '8px';
-		settings.style.right = '38px';
-		settings.style.width = '18px';
-		settings.style.height = '18px';
-		settings.style.opacity = '0.6';
-		div.appendChild(settings);
+		row.appendChild(btn);
 
 		mxEvent.addListener(settings, 'click', mxUtils.bind(this, function(evt)
 		{
@@ -10214,8 +11270,6 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 			});
 		}));
 
-		mxUtils.br(div);
-
 		var brushSize = document.createElement('input');
 		brushSize.setAttribute('type', 'range');
 		brushSize.setAttribute('min', '2');
@@ -10226,32 +11280,135 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 		div.appendChild(brushSize);
 		mxUtils.br(div);
 
-		var updateBrushState = function()
-		{
-			graph.freehand.setPerfectFreehandMode(brushInput.checked)
-			brushSize.style.visibility = brushInput.checked? 'visible' : 'hidden';
-		};
-
-		mxEvent.addListener(brushInput, 'change', updateBrushState);
-		updateBrushState();
-
 		mxEvent.addListener(brushSize, 'change', function()
 		{
 			graph.freehand.setBrushSize(parseInt(this.value));
 		});
 	}
-	
-	var startBtn = mxUtils.button(mxResources.get('startDrawing'), function()
+	else
 	{
+		mxUtils.br(div);
+	}
+
+	var updateMode = function()
+	{
+		var mode = modeSelect.value;
+		editorUi.freehandPolygonMode = mode == 'polygon';
+		editorUi.freehandTieMode = mode == 'tie';
+		selectTies.style.display = (mode == 'tie') ? '' : 'none';
+
+		if (withBrush)
+		{
+			if (mode != 'polygon' && mode != 'tie')
+			{
+				graph.freehand.setPerfectFreehandMode(mode == 'brush');
+			}
+
+			brushSize.style.visibility = (mode == 'brush') ? 'visible' : 'hidden';
+
+			// Smoothing only applies to the freehand tool and ties have no color
+			settings.style.visibility = (mode == 'polygon') ? 'hidden' : 'visible';
+			settings.style.display = (mode == 'tie') ? 'none' : '';
+			btn.style.display = (mode == 'tie') ? 'none' : '';
+		}
+	};
+
+	updateMode();
+
+	/**
+	 * Returns the mode of the tool that is drawing or null.
+	 */
+	var getActiveMode = function()
+	{
+		return (editorUi.tieTool != null && editorUi.tieTool.isActive()) ? 'tie' :
+			((editorUi.polygonTool != null && editorUi.polygonTool.isActive()) ? 'polygon' :
+			((graph.freehand.isDrawing()) ? 'freehand' : null));
+	};
+
+	/**
+	 * Returns true if the freehand, the polygon or the tie tool is drawing.
+	 */
+	this.isDrawing = function()
+	{
+		return getActiveMode() != null;
+	};
+
+	/**
+	 * Starts drawing in the selected mode.
+	 */
+	this.startDrawing = function()
+	{
+		if (modeSelect.value == 'polygon')
+		{
+			if (editorUi.polygonTool == null)
+			{
+				editorUi.polygonTool = new PolygonTool(editorUi);
+			}
+
+			editorUi.polygonTool.start();
+		}
+		else if (modeSelect.value == 'tie')
+		{
+			if (editorUi.tieTool == null)
+			{
+				editorUi.tieTool = new TieTool(editorUi);
+			}
+
+			editorUi.tieTool.start();
+		}
+		else
+		{
+			// Stops the polygon tool (freehandStateChanged)
+			graph.freehand.startDrawing();
+		}
+	};
+
+	/**
+	 * Stops drawing and discards an unfinished polygon.
+	 */
+	this.stopDrawing = function()
+	{
+		if (editorUi.polygonTool != null)
+		{
+			editorUi.polygonTool.cancel();
+		}
+
+		if (editorUi.tieTool != null)
+		{
+			editorUi.tieTool.cancel();
+		}
+
 		if (graph.freehand.isDrawing())
 		{
 			graph.freehand.stopDrawing();
 		}
+	};
+
+	// Continues drawing in the new mode
+	mxEvent.addListener(modeSelect, 'change', mxUtils.bind(this, function()
+	{
+		var active = getActiveMode();
+		updateMode();
+
+		if (active != null && active != ((modeSelect.value == 'brush') ?
+			'freehand' : modeSelect.value))
+		{
+			this.stopDrawing();
+			this.startDrawing();
+		}
+	}));
+
+	var startBtn = mxUtils.button(mxResources.get('startDrawing'), mxUtils.bind(this, function()
+	{
+		if (this.isDrawing())
+		{
+			this.stopDrawing();
+		}
 		else
 		{
-			graph.freehand.startDrawing();
+			this.startDrawing();
 		}
-	});
+	}));
 	
 	startBtn.setAttribute('title', mxResources.get('startDrawing') + ' (X)');
 	startBtn.style.width = '90%';
@@ -10267,10 +11424,11 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 	this.window.setResizable(false);
 	this.window.setClosable(true);
 	
-	graph.addListener('freehandStateChanged', mxUtils.bind(this, function()
+	var updateButton = mxUtils.bind(this, function()
 	{
+		var drawing = this.isDrawing();
 		startBtn.innerText = '';
-		mxUtils.write(startBtn, mxResources.get(graph.freehand.isDrawing() ? 'stopDrawing' : 'startDrawing'));
+		mxUtils.write(startBtn, mxResources.get(drawing ? 'stopDrawing' : 'startDrawing'));
 
 		var shortcut = document.createElement('span');
 		shortcut.className = 'geShortcutKey';
@@ -10278,9 +11436,13 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 		mxUtils.write(shortcut, 'X');
 		startBtn.appendChild(shortcut);
 
-		startBtn.setAttribute('title', mxResources.get(graph.freehand.isDrawing() ? 'stopDrawing' : 'startDrawing') + ' (X)');
-		startBtn.className = 'geBtn' + (graph.freehand.isDrawing() ? ' gePrimaryBtn' : '');
-	}));
+		startBtn.setAttribute('title', mxResources.get(drawing ? 'stopDrawing' : 'startDrawing') + ' (X)');
+		startBtn.className = 'geBtn' + (drawing ? ' gePrimaryBtn' : '');
+	});
+
+	graph.addListener('freehandStateChanged', updateButton);
+	graph.addListener('polygonStateChanged', updateButton);
+	graph.addListener('tieToolStateChanged', updateButton);
 	
 	this.window.addListener('show', mxUtils.bind(this, function()
 	{
@@ -10289,13 +11451,18 @@ var FreehandWindow = function(editorUi, x, y, w, h, withBrush)
 	
 	this.window.addListener('hide', mxUtils.bind(this, function()
 	{
-		if (graph.freehand.isDrawing())
+		if (this.isDrawing())
 		{
-			graph.freehand.stopDrawing();
+			this.stopDrawing();
 		}
 	}));
 	
-	editorUi.installResizeHandler(this, false);
+	// Stops drawing if the window is destroyed (eg. after a theme change)
+	editorUi.installResizeHandler(this, false, mxUtils.bind(this, function()
+	{
+		graph.removeListener(updateButton);
+		this.stopDrawing();
+	}));
 };
 
 /**
@@ -11808,14 +12975,18 @@ var ChatWindow = function(editorUi, x, y, w, h)
 		}
 		else
 		{
+			var version = EditorUi.getInsertMermaidVersion();
+
 			editorUi.parseMermaidDiagram(mermaid, null, function(xml)
 			{
 				try
 				{
 					// Wraps in an editable mermaid group (carries the source
 					// for double-click edit), as the insert dialog does
-					renderResponseData(target, ['', mxMermaidToDrawio.wrapGroup(
-						xml, mermaid, EditorUi.getInsertMermaidConfig()), ''], opts);
+					renderResponseData(target, ['', editorUi.addMermaidTooltip(
+						mxMermaidToDrawio.wrapGroup(xml, mermaid,
+						EditorUi.getInsertMermaidConfig(),
+						(version != null) ? {version: version} : null)), ''], opts);
 
 					if (opts.recordTurn != null)
 					{
@@ -11828,7 +12999,7 @@ var ChatWindow = function(editorUi, x, y, w, h)
 				{
 					onError(e);
 				}
-			}, onError);
+			}, onError, null, version);
 		}
 	};
 
@@ -12254,6 +13425,15 @@ var ChatWindow = function(editorUi, x, y, w, h)
 					};
 
 					var url = Editor.replacePlaceholders(config.endpoint, resolver);
+
+					if (!Editor.isAllowedAiEndpoint(url))
+					{
+						EditorUi.debug('EditorUi.ChatWindow.send', 'blocked url', url);
+						handleErrorWithTimeout({message: mxResources.get('serviceUnavailableOrBlocked')});
+
+						return;
+					}
+
 					var req = new mxXmlRequest(url, JSON.stringify(params), 'POST');
 
 					req.setRequestHeaders = function(request, params)
@@ -12865,6 +14045,14 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		// and the right-aligned inputs both visible instead of letting
 		// the inputs slide into the chip's space.
 		'overflow:auto;padding:4px;box-sizing:border-box;' +
+		// One grid column as wide as the list so every row gets the same
+		// width and the right-hand inputs and the preview button line up
+		// in one column. Rows wrap their fields instead of widening the
+		// column: as wide as the widest row, a row with style fields
+		// pushed its fields and every preview button behind a horizontal
+		// scrollbar that was easy to miss (Kym, 2026-09-28).
+		'display:grid;grid-template-columns:minmax(0,1fr);' +
+		'align-content:start;' +
 		'border:1px solid light-dark(var(--field-border-color), var(--dark-field-border-color));border-radius:6px;' +
 		'background:light-dark(var(--field-color), var(--dark-field-color))';
 	// Contain row-reorder drag events — otherwise dragover bubbles to
@@ -13140,7 +14328,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	var STEP_KEYS = ['wait', 'fadeIn', 'fadeOut', 'fadeTo', 'opacity',
 		'wipeIn', 'wipeOut', 'popIn', 'popOut', 'flow',
 		'toggle', 'show', 'hide', 'select', 'style', 'toggleStyle',
-		'highlight', 'scroll', 'viewbox', 'open', 'tags'];
+		'highlight', 'scroll', 'viewbox', 'open', 'explore', 'tags'];
 
 	var getStepKey = function(step)
 	{
@@ -13164,6 +14352,33 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		return step[key];
 	};
 
+	// Returns the first cell whose link is edited, or null. Explore runs
+	// for the shape with the link only, which the preview does not pass to
+	// executeCustomActions (cell == null keeps the preview transient).
+	var getLinkCell = function()
+	{
+		var cells = (kind != 'page') ? opts.cells : null;
+
+		return (cells != null && cells.length > 0 &&
+			graph.model.contains(cells[0])) ? cells[0] : null;
+	};
+
+	// Opens the explorer of the first explore step in the given steps for
+	// the cell whose link is edited.
+	var previewExplore = function(steps)
+	{
+		var cell = getLinkCell();
+
+		for (var i = 0; i < steps.length && cell != null; i++)
+		{
+			if (steps[i] != null && steps[i].explore != null)
+			{
+				Graph.exploreFromCell(graph, cell, steps[i].explore);
+				break;
+			}
+		}
+	};
+
 	// Display name + icon for a step. fadeTo with value 1 or 0 is shown as
 	// Fade In / Fade Out so common cases get familiar labels.
 	var stepLabel = function(step)
@@ -13176,21 +14391,19 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		if (key == 'fadeTo')
 		{
 			var v = step.fadeTo.value;
-			if (v === 1) return {icon: '↗', text: T('fadeIn', 'Fade In')};
-			if (v === 0) return {icon: '↘', text: T('fadeOut', 'Fade Out')};
-			return {icon: '◐', text: T('fadeTo', 'Fade To')};
+			if (v === 1) return {icon: 'transition_fade', text: T('fadeIn', 'Fade In')};
+			if (v === 0) return {icon: 'transition_dissolve', text: T('fadeOut', 'Fade Out')};
+			return {icon: 'invert_colors', text: T('fadeTo', 'Fade To')};
 		}
 
 		// Flow direction surfaces in the label so the row is readable
 		// without inspecting the inline select control.
 		if (key == 'flow')
 		{
-			if (step.flow.start === true) return {icon: '➡', text: T('flowOn', 'Flow On')};
-			if (step.flow.start === false) return {icon: '⏸', text: T('flowOff', 'Flow Off')};
-			return {icon: '➡', text: T('flowOn', 'Flow Toggle')};
+			if (step.flow.start === true) return {icon: 'conversion_path', text: T('flowOn', 'Flow On')};
+			if (step.flow.start === false) return {icon: 'conversion_path_off', text: T('flowOff', 'Flow Off')};
+			return {icon: 'conversion_path', text: T('flowToggle', 'Flow Toggle')};
 		}
-
-		if (key == 'opacity') return {icon: '◐', text: T('setOpacity', 'Set Opacity')};
 
 		// Generic fallback: read icon/label from the SCHEMAS catalogue so
 		// any action type (highlight, viewbox, scroll, etc.) renders with
@@ -13333,12 +14546,82 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	{
 		syncTextarea();
 		setDirty(true);
+		updateImmediateToggles();
+	};
+
+	// Explore opens the explorer over the diagram, so an action explores
+	// once and last: the steps after it would run behind the explorer (Kym,
+	// 2026-10-22). Moves the given explore step, eg. the one that was in the
+	// list before a paste, or else the first one to the end and removes the
+	// others. The selection stays on the same steps. The picker offers no
+	// second one (see renderList), this is for steps that are added after
+	// the explore step, pasted, duplicated or moved.
+	var keepExploreLast = function(keep)
+	{
+		var selected = selectionOrder().map(function(index)
+		{
+			return data.steps[index];
+		});
+		var anchor = (selectionAnchor != null) ? data.steps[selectionAnchor] : null;
+		var explore = null;
+		var steps = [];
+
+		for (var i = 0; i < data.steps.length; i++)
+		{
+			if (data.steps[i] != null && data.steps[i].explore != null)
+			{
+				if (explore == null || data.steps[i] == keep)
+				{
+					explore = data.steps[i];
+				}
+			}
+			else
+			{
+				steps.push(data.steps[i]);
+			}
+		}
+
+		if (explore != null)
+		{
+			steps.push(explore);
+			Array.prototype.splice.apply(data.steps,
+				[0, data.steps.length].concat(steps));
+			selectedSteps.clear();
+
+			for (var i = 0; i < selected.length; i++)
+			{
+				var index = data.steps.indexOf(selected[i]);
+
+				if (index >= 0)
+				{
+					selectedSteps.add(index);
+				}
+			}
+
+			selectionAnchor = (anchor != null && data.steps.indexOf(anchor) >= 0) ?
+				data.steps.indexOf(anchor) : null;
+		}
+	};
+
+	// Option of the picker that adds an explore step (see keepExploreLast)
+	var exploreOption = null;
+
+	var updateExploreOption = function()
+	{
+		if (exploreOption != null)
+		{
+			exploreOption.disabled = data.steps.some(function(step)
+			{
+				return step != null && step.explore != null;
+			});
+		}
 	};
 
 	// Convenience: append a step and scroll into view.
 	var appendStep = function(step)
 	{
 		data.steps.push(step);
+		keepExploreLast();
 		refresh();
 		stepList.scrollTop = stepList.scrollHeight;
 	};
@@ -13472,19 +14755,40 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	// deleted or re-copied immediately.
 	var insertSteps = function(steps, at)
 	{
+		// Pasted explore steps do not replace the one in the list
+		var existing = null;
+
+		for (var i = 0; i < data.steps.length && existing == null; i++)
+		{
+			if (data.steps[i] != null && data.steps[i].explore != null)
+			{
+				existing = data.steps[i];
+			}
+		}
+
 		var clones = clone(steps);
 		Array.prototype.splice.apply(data.steps, [at, 0].concat(clones));
+		keepExploreLast(existing);
 
 		selectedSteps.clear();
+		selectionAnchor = null;
+
 		for (var i = 0; i < clones.length; i++)
 		{
-			selectedSteps.add(at + i);
+			var index = data.steps.indexOf(clones[i]);
+
+			if (index >= 0)
+			{
+				selectedSteps.add(index);
+				selectionAnchor = (selectionAnchor == null) ? index :
+					Math.min(selectionAnchor, index);
+			}
 		}
-		selectionAnchor = at;
 
 		refresh();
 
-		var row = stepList.querySelector('[data-step-idx="' + at + '"]');
+		var row = stepList.querySelector('[data-step-idx="' +
+			selectionAnchor + '"]');
 		if (row != null && row.scrollIntoView != null)
 		{
 			row.scrollIntoView({block: 'nearest'});
@@ -13552,11 +14856,11 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	var makeDragHandle = function(row, index)
 	{
 		var handle = document.createElement('span');
-		handle.style.cssText = 'flex:0 0 14px;text-align:center;font-size:14px;' +
-			'line-height:1;color:light-dark(#86868b,#86868b);cursor:grab;' +
-			'user-select:none';
+		handle.style.cssText = 'flex:0 0 16px;display:inline-flex;' +
+			'justify-content:center;color:light-dark(#86868b,#86868b);' +
+			'cursor:grab;user-select:none';
 		handle.title = mxResources.get('reorder');
-		handle.textContent = '⋮⋮';
+		handle.appendChild(CustomActionDialog.createIcon('drag_indicator', 16));
 
 		handle.addEventListener('mousedown', function()
 		{
@@ -13571,8 +14875,14 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		row.addEventListener('dragstart', function(e)
 		{
 			dragState = {sourceIndex: index};
-			e.dataTransfer.effectAllowed = 'move';
-			e.dataTransfer.setData('text/plain', 'animstep');
+
+			// Drag events created by scripts may have no dataTransfer
+			if (e.dataTransfer != null)
+			{
+				e.dataTransfer.effectAllowed = 'move';
+				e.dataTransfer.setData('text/plain', 'animstep');
+			}
+
 			row.style.opacity = '0.4';
 		});
 
@@ -13612,7 +14922,12 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			}
 
 			e.preventDefault();
-			e.dataTransfer.dropEffect = 'move';
+
+			if (e.dataTransfer != null)
+			{
+				e.dataTransfer.dropEffect = 'move';
+			}
+
 			row._dropInsertAt = insertAt;
 
 			var color = 'light-dark(var(--focus-color), var(--dark-focus-color))';
@@ -13652,6 +14967,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			var step = data.steps.splice(s, 1)[0];
 			if (s < insertAt) insertAt--;
 			data.steps.splice(insertAt, 0, step);
+			keepExploreLast();
 			// Reorder shifts an arbitrary span of indices — drop the
 			// selection instead of remapping it.
 			selectedSteps.clear();
@@ -13667,7 +14983,12 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		var b = document.createElement('button');
 		b.type = 'button';
 		b.title = title;
-		b.style.cssText = 'flex:0 0 22px;height:22px;line-height:1;padding:0;' +
+		// The width as well as the flex basis: Safari sizes a flex
+		// container from its items' widths, not their bases, and took
+		// the ▶ button as 19px, so a step row's field group came out
+		// too narrow and wrapped ▶ onto a line of its own.
+		b.style.cssText = 'flex:0 0 22px;width:22px;height:22px;' +
+			'line-height:1;padding:0;box-sizing:border-box;' +
 			'border:1px solid light-dark(var(--field-border-color), var(--dark-field-border-color));border-radius:3px;' +
 			'background:transparent;cursor:pointer;font-size:14px;' +
 			'color:light-dark(var(--strong-text-color), var(--dark-strong-text-color))';
@@ -13686,6 +15007,17 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			b.addEventListener('click', fn);
 		}
 
+		return b;
+	};
+
+	// Variant of makeIconButton with a CustomActionDialog.ICONS icon.
+	var makeSvgButton = function(name, title, fn)
+	{
+		var b = makeIconButton('', title, true, fn);
+		b.style.display = 'inline-flex';
+		b.style.alignItems = 'center';
+		b.style.justifyContent = 'center';
+		b.appendChild(CustomActionDialog.createIcon(name, 16));
 		return b;
 	};
 
@@ -13738,8 +15070,16 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		if (sel == null) return;
 
 		var wrap = document.createElement('span');
-		wrap.style.cssText = 'display:inline-flex;align-items:center;' +
-			'flex:1 1 auto;min-width:0;gap:6px';
+		// Never shrinks below its chips: with flex-shrink and min-width:0
+		// the chips overflowed a narrowed wrap and the fields and the
+		// preview button after it painted over them (Kym, 2026-09-25).
+		// The spacer after the chips takes the leftover width instead.
+		// Chips wider than the row wrap to more lines inside the group
+		// (max-width:100%): cells, layer, tag and excluded chips take
+		// ~340px and scrolled the list sideways in the minimum-size
+		// dialog.
+		wrap.style.cssText = 'display:inline-flex;flex-wrap:wrap;' +
+			'align-items:center;flex:0 0 auto;gap:4px 6px;max-width:100%';
 
 		// Helper: getter/setter pair for a specific field on this step's
 		// selector object. Mirrors how CustomActionDialog binds chips.
@@ -13986,6 +15326,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	var renderList = function()
 	{
 		stepList.innerHTML = '';
+		updateExploreOption();
 
 		if (data.steps.length == 0)
 		{
@@ -14011,14 +15352,14 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	var rowBase = function(isLast)
 	{
 		var row = document.createElement('div');
-		// min-width:max-content makes the row as wide as its content
-		// when content exceeds the stepList width — the stepList then
-		// shows a horizontal scrollbar (overflow:auto). When stepList
-		// is wide, the spacer between chips and inputs grows to push
-		// inputs to the right edge. No overflow:hidden so nothing
-		// clips; the scrollbar keeps everything reachable.
-		row.style.cssText = 'display:flex;align-items:center;gap:6px;' +
-			'min-width:max-content;' +
+		// A row that doesn't fit the list wraps: the trailing group with
+		// the fields and the preview button (see makeStepRow) moves to a
+		// second line as one unit, right-aligned, so fields are never
+		// hidden behind the horizontal scrollbar. When the row fits, the
+		// spacer between chips and inputs grows to push the group to the
+		// right edge. No overflow:hidden so nothing clips.
+		row.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;' +
+			'gap:4px 6px;min-width:0;' +
 			'padding:6px 4px;border-radius:4px;' +
 			'border-bottom:1px solid light-dark(rgba(0,0,0,0.05),rgba(255,255,255,0.05))';
 
@@ -14041,11 +15382,25 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		row.appendChild(sp);
 	};
 
-	var appendIcon = function(row, ch)
+	// The action's icon, drawn like the text (not as a button: only the
+	// immediate toggle and the preview are clickable). A plugin schema
+	// may still give a character instead of an icon name.
+	var appendIcon = function(row, name)
 	{
 		var icon = document.createElement('span');
-		icon.style.cssText = 'flex:0 0 18px;text-align:center;font-size:14px';
-		mxUtils.write(icon, ch);
+		icon.style.cssText = 'flex:0 0 18px;display:inline-flex;' +
+			'justify-content:center;font-size:14px;' +
+			'color:light-dark(var(--strong-text-color), var(--dark-strong-text-color))';
+
+		if (CustomActionDialog.hasIcon(name))
+		{
+			icon.appendChild(CustomActionDialog.createIcon(name, 16));
+		}
+		else
+		{
+			mxUtils.write(icon, name);
+		}
+
 		row.appendChild(icon);
 		return icon;
 	};
@@ -14080,19 +15435,90 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		return hasTarget && graph.getCellsForAction(sel, true).length == 0;
 	};
 
+	// True when a step holds the chain back in executeCustomActions (the
+	// effects that bump its waitCounter). Nested animations and anything
+	// unknown count as blocking so a toggle is never hidden wrongly.
+	var isBlockingStep = function(step)
+	{
+		return step != null && (step.wait != null || step.fadeIn != null ||
+			step.fadeOut != null || step.fadeTo != null || step.wipeIn != null ||
+			step.wipeOut != null || step.popIn != null || step.popOut != null ||
+			step.animation != null || getStepKey(step) == null ||
+			(step.scroll != null && step.scroll.smooth === true) ||
+			(step.viewbox != null && step.viewbox.smooth === true));
+	};
+
+	// The immediate toggle of a step only changes playback when the batch
+	// before it (the previous step plus its immediate predecessors) has a
+	// blocking effect. Otherwise that batch finishes synchronously, so the
+	// step starts at the same moment either way — e.g. after a highlight,
+	// which does not block for its duration.
+	var immediateHasEffect = function(idx)
+	{
+		for (var i = idx - 1; i >= 0; i--)
+		{
+			if (isBlockingStep(data.steps[i]))
+			{
+				return true;
+			}
+			else if (data.steps[i] == null || data.steps[i].immediate !== true)
+			{
+				break;
+			}
+		}
+
+		return false;
+	};
+
+	// Re-evaluates immediateHasEffect for all rows after inline edits: a
+	// toggle or a smooth checkbox changes the batches behind later rows.
+	var updateImmediateToggles = function()
+	{
+		var btns = stepList.querySelectorAll('[data-immediate-toggle]');
+
+		for (var i = 0; i < btns.length; i++)
+		{
+			var btnIdx = parseInt(btns[i].getAttribute('data-immediate-toggle'));
+			btns[i].style.visibility = (immediateHasEffect(btnIdx)) ? '' : 'hidden';
+		}
+	};
+
+	// True when the step's own cells, tags or layers do match cells and
+	// it is only the exclude list that removes all of them (e.g. the
+	// listed cells were also excluded), so the warning can name the
+	// cause instead of claiming nothing matches (Kym, 2026-09-25).
+	var excludesRemoveAll = function(sel)
+	{
+		if (!Array.isArray(sel.excludeCells) ||
+			sel.excludeCells.length == 0)
+		{
+			return false;
+		}
+
+		// Only the keys getCellsForAction reads, rather than a clone of
+		// the parsed JSON.
+		return graph.getCellsForAction({cells: sel.cells, tags: sel.tags,
+			layers: sel.layers, tagsMatch: sel.tagsMatch,
+			descendants: sel.descendants}, true).length > 0;
+	};
+
 	// Warning glyph behind the action label of a step that would run
 	// without any visible effect (see resolvesToNothing). The step stays:
 	// its cells may come back through undo or paste, and its other
-	// settings are worth keeping either way. U+FE0E keeps the glyph
-	// monochrome, like the immediate toggle's icons.
-	var appendNoEffectMarker = function(row)
+	// settings are worth keeping either way. A plain tooltip like
+	// the amber chip and field warnings: no help cursor, which in this app
+	// marks clickable help icons that open a page.
+	var appendNoEffectMarker = function(row, sel)
 	{
 		var mark = document.createElement('span');
-		mark.style.cssText = 'flex:0 0 auto;font-size:13px;line-height:1;' +
-			'color:light-dark(#e6a700,#ffcc4d);cursor:help';
-		mark.title = mxResources.get('stepNoEffect', null,
-			'No effect: this step matches no cells in the diagram');
-		mxUtils.write(mark, '⚠︎');
+		mark.style.cssText = 'flex:0 0 auto;display:inline-flex;' +
+			'color:light-dark(#e6a700,#ffcc4d);cursor:default';
+		mark.title = (excludesRemoveAll(sel)) ?
+			mxResources.get('stepExcludesAll', null,
+				'No effect: the excluded cells remove every cell this step targets') :
+			mxResources.get('stepNoEffect', null,
+				'No effect: this step matches no cells in the diagram');
+		mark.appendChild(CustomActionDialog.createIcon('warning', 16));
 		row.appendChild(mark);
 	};
 
@@ -14179,7 +15605,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			// Opacity, textOpacity / Text Opacity) doubles every entry for
 			// no gain (Kym, 2026-09-18). Keep it only where it adds
 			// something the key doesn't say — another word (strokeWidth /
-			// Linewidth) or a translation.
+			// Line Width) or a translation.
 			if (AnimationDialog.normalizeStyleLabel(label) !=
 				AnimationDialog.normalizeStyleLabel(entry.key))
 			{
@@ -14219,7 +15645,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			}
 		}
 
-		var btn = selectorChips.iconButton('arrowDown',
+		var btn = selectorChips.iconButton('download',
 			mxResources.get('useSelection'), function()
 		{
 			var cell = graph.getSelectionCell();
@@ -14331,6 +15757,18 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			{
 				if (cb.checked) set(true);
 				else set(undefined);
+
+				// Updates the fields this checkbox disables (see disabledBy)
+				var schema = CustomActionDialog.SCHEMAS[key];
+
+				if (schema != null && Array.isArray(schema.fields) &&
+					schema.fields.some(function(f)
+					{
+						return f.disabledBy == spec.name;
+					}))
+				{
+					refresh();
+				}
 			});
 			wrap.appendChild(cb);
 
@@ -14391,7 +15829,9 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			{
 				var o = document.createElement('option');
 				o.value = spec.options[i].value;
-				o.textContent = spec.options[i].label;
+				o.textContent = (spec.options[i].labelKey != null) ?
+					mxResources.get(spec.options[i].labelKey, null,
+						spec.options[i].label) : spec.options[i].label;
 				sel.appendChild(o);
 			}
 			var cur = get();
@@ -14448,7 +15888,13 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			}
 			else
 			{
-				inp.style.cssText = 'flex:0 0 ' + w + 'px;min-width:0;padding:2px 4px;' +
+				// `grow` fields fill the free width, `w` is their basis.
+				// Others shrink (down to 32px) when their row's field
+				// group is wider than the list, as in the minimum-size
+				// dialog with a Toggle Style step's three text fields.
+				inp.style.cssText = 'flex:' + (spec.grow ? '1 1 ' : '0 1 ') +
+					w + 'px;min-width:' + (spec.grow ? '0' : '32px') +
+					';padding:2px 4px;' +
 					'border:1px solid light-dark(var(--field-border-color), var(--dark-field-border-color));border-radius:3px;' +
 					'background:light-dark(var(--field-color), var(--dark-field-color));' +
 					'color:light-dark(var(--strong-text-color), var(--dark-strong-text-color))';
@@ -14526,6 +15972,27 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			updateKeyWarning();
 
 			row.appendChild(createStyleKeyPicker(inp, idx, key));
+		}
+
+		// A page link typed without the comma is not a page link at all
+		// (it did nothing), a page ID, name or number on its own opens
+		// as a relative URL in a new tab, and a mistyped ID reports
+		// "Page not found" only when the step runs (Kym, 2026-09-25).
+		// Marks the URL field of an Open step in those cases, with the
+		// reason as its tooltip.
+		if (isPrimary && key == 'open' && spec.type == 'text')
+		{
+			var updateLinkWarning = function()
+			{
+				var msg = AnimationDialog.getPageLinkWarning(
+					editorUi, inp.value);
+				inp.classList.toggle('geAnimationFieldWarn', msg != null);
+				inp.title = (msg != null) ? msg : (title || '');
+			};
+
+			inp.addEventListener('input', updateLinkWarning);
+			inp.addEventListener('change', updateLinkWarning);
+			updateLinkWarning();
 		}
 
 		// Color swatch for a style value once the key names a color —
@@ -14625,7 +16092,14 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			var lbl = document.createElement('span');
 			lbl.className = 'geDialogHint';
 			lbl.style.cssText = 'flex:0 0 auto';
-			mxUtils.write(lbl, spec.label);
+			mxUtils.write(lbl, (spec.labelKey != null) ?
+				mxResources.get(spec.labelKey, null, spec.label) : spec.label);
+
+			if (disabled)
+			{
+				lbl.style.opacity = '0.4';
+			}
+
 			row.appendChild(lbl);
 		}
 	};
@@ -14693,55 +16167,16 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		// "Immediate" toggle — when active, this step runs in parallel
 		// with the previous step (sets `immediate: true` at the step root).
 		// The default is sequential (this step waits for the previous step's
-		// blocking effects to finish). Hidden on the first step via
-		// visibility:hidden so the row layout stays consistent — there's
-		// nothing to be parallel with at idx 0. The button's icon AND
-		// tooltip swap to reflect state: ⏩ + "Immediate" when on (this
-		// step skips the wait), ⏱ + "Wait" when off (this step waits
-		// for the previous one to finish). Both glyphs carry the U+FE0E
-		// variation selector to force monochrome text presentation —
-		// otherwise the system font renders them as colorful emoji,
-		// which clashes with the surrounding monochrome UI.
-		var immediateBtn = document.createElement('button');
-		immediateBtn.type = 'button';
-		var applyImmediateIcon = function()
-		{
-			immediateBtn.textContent = '';
-			if (step.immediate === true)
-			{
-				mxUtils.write(immediateBtn, '⏩︎');
-				immediateBtn.title = mxResources.get('immediate',
-					null, 'Immediate');
-			}
-			else
-			{
-				mxUtils.write(immediateBtn, '⏱︎');
-				immediateBtn.title = mxResources.get('wait',
-					null, 'Wait');
-			}
-		};
-		// Force monochrome rendering for the ⏩ / ⏱ glyphs:
-		//   1. `font-variant-emoji: text` + the U+FE0E text-variation
-		//      selector in the string ask the browser for text rendering.
-		//   2. The "Segoe UI Symbol" / "Apple Symbols" font-family list
-		//      prefers the monochrome symbol fonts on each platform.
-		//   3. `filter: grayscale(1)` is the safety net — Windows Chrome
-		//      ignores the variation selector for ⏩ specifically (it
-		//      always pulls Segoe UI Emoji's blue colour-glyph), so we
-		//      desaturate the rendered pixels as a last resort. Harmless
-		//      for already-monochrome glyphs.
-		immediateBtn.style.cssText = 'flex:0 0 22px;height:22px;line-height:1;' +
-			'padding:0;border:1px solid light-dark(var(--field-border-color), var(--dark-field-border-color));' +
-			'border-radius:3px;background:transparent;cursor:pointer;' +
-			'font-size:14px;color:light-dark(var(--strong-text-color), var(--dark-strong-text-color));' +
-			'font-family:"Segoe UI Symbol","Apple Symbols",sans-serif;' +
-			'font-variant-emoji:text;filter:grayscale(1) contrast(2)';
-		applyImmediateIcon();
-		if (idx === 0)
-		{
-			immediateBtn.style.visibility = 'hidden';
-		}
-		immediateBtn.addEventListener('click', function()
+		// blocking effects to finish). Hidden via visibility:hidden (keeps
+		// the column aligned) wherever it would change nothing: on the
+		// first step and after non-blocking steps (immediateHasEffect,
+		// kept current by updateImmediateToggles). The button's icon AND
+		// tooltip swap to reflect state: fast_forward + "Immediate" when
+		// on (this step skips the wait), hourglass_empty + "Wait" when off
+		// (this step waits for the previous one to finish). Same bordered
+		// button as the preview, so the two clickable icons of a row look
+		// clickable and the action's icon does not (Kym, 2026-09-25).
+		var immediateBtn = makeIconButton('', '', true, function()
 		{
 			if (step.immediate === true)
 			{
@@ -14756,6 +16191,35 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			applyImmediateIcon();
 			syncOnly();
 		});
+		immediateBtn.style.display = 'inline-flex';
+		immediateBtn.style.alignItems = 'center';
+		immediateBtn.style.justifyContent = 'center';
+
+		var applyImmediateIcon = function()
+		{
+			immediateBtn.textContent = '';
+
+			if (step.immediate === true)
+			{
+				immediateBtn.appendChild(CustomActionDialog.createIcon(
+					'fast_forward', 16));
+				immediateBtn.title = mxResources.get('immediate',
+					null, 'Immediate');
+			}
+			else
+			{
+				immediateBtn.appendChild(CustomActionDialog.createIcon(
+					'hourglass_empty', 16));
+				immediateBtn.title = mxResources.get('wait',
+					null, 'Wait');
+			}
+		};
+		applyImmediateIcon();
+		immediateBtn.setAttribute('data-immediate-toggle', idx);
+		if (!immediateHasEffect(idx))
+		{
+			immediateBtn.style.visibility = 'hidden';
+		}
 		row.appendChild(immediateBtn);
 
 		appendIcon(row, info.icon);
@@ -14763,16 +16227,44 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 
 		if (schema != null && schema.selector && resolvesToNothing(sel))
 		{
-			appendNoEffectMarker(row);
+			appendNoEffectMarker(row, sel);
 		}
+
+		// Fields and the preview button share one trailing group, so a
+		// row that doesn't fit the list wraps them to a second line as
+		// a unit (right-aligned by margin-left:auto) instead of pushing
+		// them behind the list's horizontal scrollbar, and the preview
+		// button stays at the right edge of every row (Kym, 2026-09-28).
+		var tail = document.createElement('span');
+		// max-width keeps the group inside the row. A group still wider
+		// than the row wraps inside itself, right-aligned so the preview
+		// button ends the last line at the row's right edge: the View
+		// step's five fixed-width number fields, Transition and Use
+		// Current need ~520px and cannot shrink (.geNoSpin), which put
+		// its ▶ behind a horizontal scrollbar in the default 480px
+		// dialog. Text fields also shrink (renderStepField).
+		tail.style.cssText = 'display:inline-flex;flex-wrap:wrap;' +
+			'justify-content:flex-end;align-items:center;gap:4px 6px;' +
+			'flex:0 0 auto;margin-left:auto;max-width:100%;min-width:0';
 
 		if (schema != null && schema.primary != null)
 		{
 			// Primary-value action (wait, open). Spacer pushes the
 			// single input over to the right edge of the row, in line
-			// with the input column of object-shaped actions below.
-			appendSpacer(row);
-			renderStepField(row, idx, key, schema.primary, true);
+			// with the input column of object-shaped actions below. A
+			// `grow` field (open) fills that space itself, so its group
+			// takes the free width instead.
+			if (schema.primary.grow)
+			{
+				tail.style.flex = '1 1 auto';
+				tail.style.minWidth = '0';
+			}
+			else
+			{
+				appendSpacer(row);
+			}
+
+			renderStepField(tail, idx, key, schema.primary, true);
 		}
 		else
 		{
@@ -14800,8 +16292,14 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 
 				for (var f = 0; f < schema.fields.length; f++)
 				{
-					renderStepField(row, idx, key, schema.fields[f], false,
-						schema.fields[f].staticOnly === true && hasSelector);
+					// `disabledBy` fields are ignored while the checkbox
+					// they name is on (explore levels in classic mode)
+					var disabledBy = schema.fields[f].disabledBy;
+
+					renderStepField(tail, idx, key, schema.fields[f], false,
+						(schema.fields[f].staticOnly === true && hasSelector) ||
+						(disabledBy != null && sel != null &&
+						typeof sel == 'object' && sel[disabledBy] === true));
 				}
 			}
 
@@ -14827,13 +16325,13 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 					else data.steps[idx][key].delay = d;
 					syncOnly();
 				});
-				row.appendChild(durInput);
+				tail.appendChild(durInput);
 
 				var msLbl = document.createElement('span');
 				msLbl.className = 'geDialogHint';
 				msLbl.style.cssText = 'flex:0 0 auto';
 				mxUtils.write(msLbl, 'ms');
-				row.appendChild(msLbl);
+				tail.appendChild(msLbl);
 			}
 
 			// "Use Current" affordance for viewbox — re-captures the
@@ -14876,25 +16374,50 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 					delete s.excludeCells;
 					refresh();  // re-render so inputs reflect the new numbers
 				});
-				row.appendChild(useCurrentBtn);
+				tail.appendChild(useCurrentBtn);
 			}
 		}
 
 		// Preview — execute just this one step inside the shared
 		// preview session, so the original opacity stays captured for
-		// Reset to restore. (No margin-left:auto needed — the spacer
-		// inserted between selector chips and fields already pushes
-		// the right side of the row out to the edge.)
-		var previewIconBtn = makeIconButton('▶',
-			mxResources.get('preview'),
-			true, function()
+		// Reset to restore. Last item of the trailing group, which the
+		// spacer and its margin-left:auto keep at the row's right edge.
+		var previewIconBtn = makeSvgButton('play_arrow',
+			mxResources.get('preview'), function()
 			{
 				startPreviewSession();
 				var single = JSON.parse(JSON.stringify(
 					Graph.flattenAnimationActions([step])));
 				graph.executeCustomActions(single);
+				previewExplore([step]);
 			});
-		row.appendChild(previewIconBtn);
+		// A wait step on its own shows nothing, so its preview is hidden
+		// like the immediate toggle (keeps the column aligned). Same for
+		// an explore step without a cell to explore from.
+		if ((key == 'wait' && Object.keys(step).every(function(k)
+			{ return k == 'wait' || k == 'immediate'; })) ||
+			(key == 'explore' && getLinkCell() == null))
+		{
+			previewIconBtn.style.visibility = 'hidden';
+		}
+
+		// The preview button wraps together with the field before it, so
+		// a group that wraps (View, Tags) never leaves ▶ on a line alone.
+		// Not after a growing field (Open), which fills the group itself.
+		var lastGroup = tail;
+
+		if (tail.lastElementChild != null && !(schema != null &&
+			schema.primary != null && schema.primary.grow))
+		{
+			lastGroup = document.createElement('span');
+			lastGroup.style.cssText = 'display:inline-flex;' +
+				'align-items:center;gap:6px;flex:0 0 auto';
+			lastGroup.appendChild(tail.lastElementChild);
+			tail.appendChild(lastGroup);
+		}
+
+		lastGroup.appendChild(previewIconBtn);
+		row.appendChild(tail);
 
 		return row;
 	};
@@ -14912,7 +16435,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		else
 		{
 			list.style.display = 'none';
-			stepList.style.display = 'block';
+			stepList.style.display = 'grid';
 			// The list view is driven by the (always valid) data, so a
 			// stale textarea parse error is irrelevant while it's hidden.
 			showJsonError(null);
@@ -14987,7 +16510,9 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	addSection.appendChild(pickRow);
 
 	var pickSelect = document.createElement('select');
-	pickSelect.style.cssText = 'flex:1 1 200px;min-width:180px;padding:5px 6px;' +
+	// Zero basis: the picker takes whatever the edit buttons leave, down
+	// to its min-width, before the button group wraps below it.
+	pickSelect.style.cssText = 'flex:1 1 0;min-width:120px;padding:5px 6px;' +
 		'border:1px solid light-dark(var(--field-border-color), var(--dark-field-border-color));border-radius:4px;' +
 		'background:light-dark(var(--field-color), var(--dark-field-color));' +
 		'color:light-dark(var(--strong-text-color), var(--dark-strong-text-color));font-size:13px';
@@ -15027,8 +16552,11 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			       'wipeIn', 'wipeOut', 'popIn', 'popOut']},
 		{labelKey: 'style',             label: 'Style',
 			keys: ['opacity', 'style', 'toggleStyle', 'highlight', 'flow']},
+		// Explore needs the shape with the link, which page animations
+		// do not have
 		{labelKey: 'navigation',        label: 'Navigation',
-			keys: ['select', 'scroll', 'viewbox', 'open']},
+			keys: ['select', 'scroll', 'viewbox', 'open'].concat(
+				(kind == 'page') ? [] : ['explore'])},
 		{labelKey: 'tags',              label: 'Tags',
 			keys: ['tags']},
 		{labelKey: 'timing',            label: 'Timing',
@@ -15058,9 +16586,16 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			pickerL10n.push({el: o, prop: 'textContent',
 				key: resKey, fallback: schema.label});
 			og.appendChild(o);
+
+			if (pk == 'explore')
+			{
+				exploreOption = o;
+			}
 		}
 		pickSelect.appendChild(og);
 	}
+
+	updateExploreOption();
 
 	// Destructive entry: clears every step. Lives in its own divider
 	// optgroup so it sits below all the action types. The CSS class
@@ -15094,11 +16629,19 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	// inserts the copy right behind the selected block.
 	var editBtnL10n = [];
 
+	// One unbreakable group, so a narrow dialog wraps the four buttons
+	// together below the picker instead of leaving Delete alone on the
+	// next line (Kym, 2026-09-25).
+	var editBtnGroup = document.createElement('div');
+	editBtnGroup.style.cssText = 'display:flex;align-items:center;gap:8px;' +
+		'flex:0 0 auto';
+	pickRow.appendChild(editBtnGroup);
+
 	var makeEditButton = function(src, key, fallback, fn)
 	{
 		var b = makeImgButton(src, mxResources.get(key, null, fallback), fn);
 		editBtnL10n.push({el: b, key: key, fallback: fallback});
-		pickRow.appendChild(b);
+		editBtnGroup.appendChild(b);
 		return b;
 	};
 
@@ -15404,11 +16947,22 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 
 	// Bottom action row — generous margin-top per docs/dialog-style-guide.md
 	// (CustomDialog uses 34px; we use 20px because mxWindow already has
-	// its own title-bar chrome above the content). No flex-wrap here —
-	// the spacer's behavior gets undefined when buttons wrap; the
-	// minimum dialog size (360px) keeps all buttons on one line.
+	// its own title-bar chrome above the content). Two unbreakable groups
+	// — help / Preview / Reset on the left, Cancel / Save pushed right by
+	// margin-left:auto — and the row wraps between them: the buttons do
+	// not fit into the minimum dialog width (360px, less still with longer
+	// translations), and without wrapping Save was cut off at the right
+	// edge (Kym, 2026-09-25). A wrapped Cancel / Save stays right-aligned.
 	var actions = document.createElement('div');
-	actions.style.cssText = 'margin-top:20px;display:flex;gap:6px;flex:0 0 auto';
+	actions.style.cssText = 'margin-top:20px;display:flex;flex-wrap:wrap;' +
+		'gap:6px;flex:0 0 auto';
+	var actionsLeft = document.createElement('div');
+	actionsLeft.style.cssText = 'display:flex;gap:6px;flex:0 0 auto';
+	actions.appendChild(actionsLeft);
+	var actionsRight = document.createElement('div');
+	actionsRight.style.cssText = 'display:flex;gap:6px;flex:0 0 auto;' +
+		'margin-left:auto';
+	actions.appendChild(actionsRight);
 
 	// `playingSteps` is hoisted to the top of the function — see comment
 	// there. It tracks the currently-playing step(s) as a Set so a parallel
@@ -15448,7 +17002,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	};
 
 	// Help button — opens the end-user manual in a new window.
-	actions.appendChild(editorUi.createHelpIcon(ANIMATION_HELP_URL));
+	actionsLeft.appendChild(editorUi.createHelpIcon(ANIMATION_HELP_URL));
 
 	var thisDialog = this;
 
@@ -15516,7 +17070,12 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 			// upper bound of the parallel batch, so two-step batches
 			// light up both rows at once. Single-step (sequential)
 			// dispatches have end = start + 1.
-			onStep: function(start, end) { setPlayingStep(start, end); }
+			onStep: function(start, end)
+			{
+				setPlayingStep(start, end);
+				previewExplore(data.steps.slice(start,
+					(end != null) ? end : start + 1));
+			}
 		});
 	});
 	previewBtn.className = 'geBtn';
@@ -15526,7 +17085,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		previewBtn.title = mxResources.get('preview');
 	});
 	previewBtn.title = mxResources.get('preview');
-	actions.appendChild(previewBtn);
+	actionsLeft.appendChild(previewBtn);
 
 	// Reset — restores the canvas to its pre-preview state and stops
 	// any running playback. Disabled until a preview session is open.
@@ -15547,11 +17106,7 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 	resetBtn.title = mxResources.get('reset');
 	resetBtnRef = resetBtn;
 	updateResetBtn();
-	actions.appendChild(resetBtn);
-
-	var spacer = document.createElement('span');
-	spacer.style.flex = '1 1 auto';
-	actions.appendChild(spacer);
+	actionsLeft.appendChild(resetBtn);
 
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
@@ -15575,7 +17130,11 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		cancelBtn.title = mxResources.get('cancel');
 	});
 	cancelBtn.title = mxResources.get('cancel');
-	actions.appendChild(cancelBtn);
+
+	if (editorUi.editor.cancelFirst)
+	{
+		actionsRight.appendChild(cancelBtn);
+	}
 
 	applyBtn = mxUtils.button(mxResources.get('save'), function()
 	{
@@ -15599,7 +17158,12 @@ var AnimationDialog = function(editorUi, x, y, w, h, opts)
 		applyBtn.title = mxResources.get('save');
 	});
 	applyBtn.title = mxResources.get('save');
-	actions.appendChild(applyBtn);
+	actionsRight.appendChild(applyBtn);
+
+	if (!editorUi.editor.cancelFirst)
+	{
+		actionsRight.appendChild(cancelBtn);
+	}
 
 	div.appendChild(actions);
 
@@ -15853,7 +17417,7 @@ AnimationDialog.knownStyleKeys = null;
  * natural-language names map to the keys the actions need.
  */
 AnimationDialog.STYLE_KEYS = [
-	{key: 'strokeWidth', label: 'linewidth', fallback: 'Linewidth'},
+	{key: 'strokeWidth', label: 'linewidth', fallback: 'Line Width'},
 	{key: 'strokeColor', label: 'strokeColor', fallback: 'Line Color'},
 	{key: 'fillColor', label: 'fillColor', fallback: 'Fill Color'},
 	{key: 'gradientColor', label: 'gradient', fallback: 'Gradient'},
@@ -15895,6 +17459,54 @@ AnimationDialog.STYLE_KEYS = [
 AnimationDialog.isColorStyleKey = function(key)
 {
 	return key != null && /colou?r$/i.test(String(key));
+};
+
+/**
+ * Returns why the given Open step URL won't reach a page of the current
+ * file, or null if it is fine or not meant as a page link: a data:page
+ * link that isn't data:page/id,ID (no comma, leading whitespace — the
+ * runtime ignores it or opens it as a URL), one whose page does not
+ * exist, or a page ID, name or number entered on its own (opened as a
+ * relative URL in a new tab).
+ */
+AnimationDialog.getPageLinkWarning = function(editorUi, value)
+{
+	var pages = editorUi.pages;
+	var text = (value != null) ? mxUtils.trim(String(value)) : '';
+	var format = mxResources.get('pageLinkFormat', null,
+		'Page links use the format data:page/id,ID');
+
+	if (text.toLowerCase().substring(0, 9) == 'data:page')
+	{
+		if (!Graph.isPageLink(value))
+		{
+			return format;
+		}
+		else if (pages != null && editorUi.getPageByLink(value) == null)
+		{
+			return mxResources.get('pageNotFound', null, 'Page not found');
+		}
+	}
+	else if (text != '' && pages != null &&
+		text.substring(0, 5).toLowerCase() != 'data:')
+	{
+		var index = (/^[0-9]+$/.test(text)) ? parseInt(text) - 1 : -1;
+
+		if (pages[index] != null || editorUi.getPageById(text) != null)
+		{
+			return format;
+		}
+
+		for (var i = 0; i < pages.length; i++)
+		{
+			if (pages[i].getName() == text)
+			{
+				return format;
+			}
+		}
+	}
+
+	return null;
 };
 
 /**
@@ -15994,16 +17606,21 @@ var CustomGitLabUrlWarningDialog = function(editorUi, requestedUrl)
 	var div = document.createElement('div');
 
 	var hd = document.createElement('h3');
-	mxUtils.write(hd, mxResources.get('customGitlabUrlTitle'));
+	mxUtils.write(hd, mxResources.get('customGitlabUrlTitle', null,
+		'Custom GitLab Server'));
 	div.appendChild(hd);
 
 	var p = document.createElement('p');
-	mxUtils.write(p, mxResources.get('customGitlabUrlWarning'));
+	mxUtils.write(p, mxResources.get('customGitlabUrlWarning', null,
+		'Custom GitLab servers are disabled for security reasons. ' +
+		'To use a self-hosted GitLab server, set enableCustomGitLabUrl ' +
+		'to true in the configuration.'));
 	div.appendChild(p);
 
 	var urlRow = document.createElement('p');
 	var lbl = document.createElement('strong');
-	mxUtils.write(lbl, mxResources.get('customGitlabUrlServer') + ' ');
+	mxUtils.write(lbl, mxResources.get('customGitlabUrlServer', null,
+		'Requested server:') + ' ');
 	urlRow.appendChild(lbl);
 	var urlCode = document.createElement('code');
 	mxUtils.write(urlCode, requestedUrl);
@@ -16015,7 +17632,8 @@ var CustomGitLabUrlWarningDialog = function(editorUi, requestedUrl)
 	link.setAttribute('href', 'https://github.com/jgraph/drawio/issues/493');
 	link.setAttribute('target', '_blank');
 	link.setAttribute('rel', 'noopener noreferrer');
-	mxUtils.write(link, mxResources.get('customGitlabUrlLearnMore'));
+	mxUtils.write(link, mxResources.get('customGitlabUrlLearnMore', null,
+		'Learn more'));
 	linkRow.appendChild(link);
 	div.appendChild(linkRow);
 
@@ -16039,9 +17657,74 @@ var AuthDialog = function(editorUi, peer, showRememberOption, fn)
 	hd.style.color = 'gray';
 	
 	mxUtils.write(hd, mxResources.get('authorizationRequired'));
+
+	var service = AuthDialog.getServiceInfo(editorUi, peer);
+
+	var p = document.createElement('p');
+	mxUtils.write(p, mxResources.get('authorizeThisAppIn', [service.name]));
+
+	var cb = document.createElement('input');
+	cb.setAttribute('type', 'checkbox');
+
+	// The button accepts the Terms of Use where the notice shows
+	var notice = editorUi.createTermsNotice();
+
+	var button = mxUtils.button(mxResources.get('authorize'), function()
+	{
+		if (notice != null)
+		{
+			editorUi.acceptTerms(peer);
+		}
+
+		fn(cb.checked);
+	});
+
+	button.insertBefore(service.img, button.firstChild);
+	button.style.marginTop = '6px';
+	button.className = 'geBigButton';
+	button.style.fontSize = '18px';
+	button.style.padding = '14px';
+
+	div.appendChild(hd);
+	div.appendChild(p);
+	div.appendChild(button);
+
+	if (notice != null)
+	{
+		notice.style.margin = '14px 0 0 0';
+		div.appendChild(notice);
+	}
 	
+	if (showRememberOption)
+	{
+		var p2 = document.createElement('p');
+		p2.style.marginTop = '20px';
+		p2.appendChild(cb);
+		var span = document.createElement('span');
+		mxUtils.write(span, ' ' + mxResources.get('rememberMe'));
+		p2.appendChild(span);
+		div.appendChild(p2);
+		cb.checked = true;
+		cb.defaultChecked = true;
+		
+		mxEvent.addListener(span, 'click', function(evt)
+		{
+			cb.checked = !cb.checked;
+			mxEvent.consume(evt);
+		});
+	}
+	
+	this.notice = notice;
+	this.container = div;
+};
+
+/**
+ * Returns the display name and a new logo image for the given storage client.
+ */
+AuthDialog.getServiceInfo = function(editorUi, peer)
+{
 	var service = 'Unknown';
-	
+
 	var img = document.createElement('img');
 	img.setAttribute('border', '0');
 	img.setAttribute('align', 'absmiddle');
@@ -16051,11 +17734,6 @@ var AuthDialog = function(editorUi, peer, showRememberOption, fn)
 	{
 		service = mxResources.get('googleDrive');
 		img.src = IMAGE_PATH + '/google-drive-logo-white.svg';
-	}
-	else if (peer == editorUi.dropbox)
-	{
-		service = mxResources.get('dropbox');
-		img.src = IMAGE_PATH + '/dropbox-logo-white.svg';
 	}
 	else if (peer == editorUi.oneDrive)
 	{
@@ -16083,51 +17761,11 @@ var AuthDialog = function(editorUi, peer, showRememberOption, fn)
 		service = mxResources.get('m365');
 		img.src = IMAGE_PATH + '/onedrive-logo-white.svg';
 	}
-	
-	var p = document.createElement('p');
-	mxUtils.write(p, mxResources.get('authorizeThisAppIn', [service]));
 
-	var cb = document.createElement('input');
-	cb.setAttribute('type', 'checkbox');
-	
-	var button = mxUtils.button(mxResources.get('authorize'), function()
-	{
-		fn(cb.checked);
-	});
-
-	button.insertBefore(img, button.firstChild);
-	button.style.marginTop = '6px';
-	button.className = 'geBigButton';
-	button.style.fontSize = '18px';
-	button.style.padding = '14px';
-
-	div.appendChild(hd);
-	div.appendChild(p);
-	div.appendChild(button);
-	
-	if (showRememberOption)
-	{
-		var p2 = document.createElement('p');
-		p2.style.marginTop = '20px';
-		p2.appendChild(cb);
-		var span = document.createElement('span');
-		mxUtils.write(span, ' ' + mxResources.get('rememberMe'));
-		p2.appendChild(span);
-		div.appendChild(p2);
-		cb.checked = true;
-		cb.defaultChecked = true;
-		
-		mxEvent.addListener(span, 'click', function(evt)
-		{
-			cb.checked = !cb.checked;
-			mxEvent.consume(evt);
-		});
-	}
-	
-	this.container = div;
+	return {name: service, img: img};
 };
 
-var MoreShapesDialog = function(editorUi, expanded, entries) 
+var MoreShapesDialog = function(editorUi, expanded, entries)
 {
 	entries = (entries != null) ? entries : editorUi.sidebar.entries;
 	var div = document.createElement('div');
@@ -16209,6 +17847,7 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 
 							var checkbox = document.createElement('input');
 							checkbox.setAttribute('type', 'checkbox');
+							checkbox.setAttribute('aria-label', entry.title);
 							checkbox.checked = editorUi.sidebar.isEntryVisible(entry.id);
 							checkbox.defaultChecked = checkbox.checked;
 							option.appendChild(checkbox);
@@ -16247,6 +17886,7 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 									{
 										var img = document.createElement('img');
 										img.setAttribute('border', '0');
+										img.setAttribute('alt', entry.title || '');
 										img.style.maxWidth = '100%';
 										img.setAttribute('src', entry.image);
 										preview.appendChild(img);
@@ -16254,8 +17894,10 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 									else if (entry.desc == null)
 									{
 										preview.style.padding = '20px';
-										preview.style.color = 'rgb(179, 179, 179)';
-										mxUtils.write(preview, mxResources.get('noPreview'));
+										var hint = document.createElement('div');
+										hint.className = 'geDialogHint';
+										mxUtils.write(hint, mxResources.get('noPreview'));
+										preview.appendChild(hint);
 									}
 									
 									if (currentListItem != null)
@@ -16274,6 +17916,12 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 							};
 							
 							mxEvent.addListener(option, 'click', itemClicked);
+
+							// Shows the preview for the keyboard
+							mxEvent.addListener(checkbox, 'focus', function()
+							{
+								itemClicked();
+							});
 							mxEvent.addListener(option, 'dblclick', function(evt)
 							{
 								checkbox.checked = !checkbox.checked;
@@ -16324,6 +17972,24 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 		preview.style.bottom = '70px';
 		preview.style.overflow = 'auto';
 		preview.style.textAlign = 'center';
+
+		// The preview takes the focus so that the arrow keys scroll it, Shift+Arrow
+		// Right moves to it from the list and Shift+Arrow Left back to the library
+		preview.setAttribute('tabindex', '0');
+		preview.setAttribute('role', 'region');
+		preview.setAttribute('aria-label', mxResources.get('preview'));
+		preview.style.outlineOffset = '-2px';
+
+		mxEvent.addListener(preview, 'keydown', function(evt)
+		{
+			if (evt.keyCode == 37 /* Left */ && mxEvent.isShiftDown(evt) &&
+				!mxEvent.isAltDown(evt) && !mxEvent.isControlDown(evt) &&
+				!mxEvent.isMetaDown(evt) && currentListItem != null)
+			{
+				currentListItem.querySelector('input').focus();
+				mxEvent.consume(evt);
+			}
+		});
 
 		var currentListItem = null;
 		var applyFunctions = [];
@@ -16465,6 +18131,7 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 		{
 			var libCB = document.createElement('input');
 			libCB.type = 'checkbox';
+			libCB.setAttribute('aria-label', title);
 			libFS.appendChild(libCB);
 			
 			libCB.checked = editorUi.sidebar.isEntryVisible(key);
@@ -16541,6 +18208,7 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 		if (isLocalStorage)
 		{
 			cb.setAttribute('type', 'checkbox');
+			cb.setAttribute('aria-label', mxResources.get('rememberThisSetting'));
 			cb.checked = true;
 			cb.defaultChecked = true;
 			remember.appendChild(cb);
@@ -16583,7 +18251,7 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 		applyBtn.className = 'geBtn gePrimaryBtn';
 		
 		var buttons = document.createElement('div');
-		buttons.style.marginTop = '26px';
+		buttons.style.marginTop = '34px';
 		buttons.style.textAlign = 'right';
 		
 		if (editorUi.editor.cancelFirst)
@@ -16606,6 +18274,7 @@ var MoreShapesDialog = function(editorUi, expanded, entries)
 var PluginsDialog = function(editorUi, addFn, delFn, closeOnly)
 {
 	var div = document.createElement('div');
+	div.style.paddingBottom = '10px';
 
 	var hd = document.createElement('h3');
 	mxUtils.write(hd, mxResources.get('plugins'));
@@ -16866,7 +18535,7 @@ var PluginsDialog = function(editorUi, addFn, delFn, closeOnly)
 	applyBtn.className = 'geBtn gePrimaryBtn';
 
 	var buttons = document.createElement('div');
-	buttons.style.marginTop = '14px';
+	buttons.style.marginTop = '34px';
 	buttons.style.textAlign = 'right';
 
 	if (!editorUi.isOffline())
@@ -17364,7 +19033,7 @@ var CropImageDialog = function(editorUi, image, clipPath, fn)
 
 	var buttons = document.createElement('div');
 	buttons.style.flexShrink = '0';
-	buttons.style.marginTop = '10px';
+	buttons.style.marginTop = '14px';
 	buttons.style.whiteSpace = 'nowrap';
 	buttons.style.display = 'flex';
 	buttons.style.justifyContent = 'flex-end';
@@ -17526,7 +19195,7 @@ var EditGeometryDialog = function(editorUi, vertices)
 
 	var applyFn = function()
 	{
-		graph.getModel().beginUpdate();
+		var arrange = graph.beginArrange();
 		try
 		{
 			for (var i = 0; i < vertices.length; i++)
@@ -17597,7 +19266,7 @@ var EditGeometryDialog = function(editorUi, vertices)
 		}
 		finally
 		{
-			graph.getModel().endUpdate();
+			graph.endArrange(arrange);
 		}
 	};
 
@@ -17648,6 +19317,7 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 	}
 
 	var nameInput = document.createElement('input');
+	nameInput.setAttribute('aria-label', mxResources.get('filename'));
 	nameInput.setAttribute('type', 'text');
 	nameInput.setAttribute('value', nameValue);
 
@@ -17698,7 +19368,7 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 
 	// Content area for images
 	var div = document.createElement('div');
-	div.style.border = 'light-dark(1px solid rgba(0, 0, 0, 0.15), 1px solid rgba(255, 255, 255, 0.15))';
+	div.style.border = '1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.15))';
 	div.style.borderRadius = '8px';
 	div.style.marginTop = '10px';
 	div.style.overflow = 'auto';
@@ -17726,6 +19396,52 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 	var entries = {};
 	var ew = 100;
 	var eh = 100;
+
+	// Entries selected with Shift/Ctrl/Cmd+Click for deleting multiple entries
+	var selected = [];
+
+	function isMultiSelectEvent(evt)
+	{
+		return mxEvent.isShiftDown(evt) || mxEvent.isControlDown(evt) ||
+			mxEvent.isMetaDown(evt);
+	};
+
+	function setSelected(wrapper, value)
+	{
+		var idx = mxUtils.indexOf(selected, wrapper);
+
+		if (value && idx < 0)
+		{
+			selected.push(wrapper);
+		}
+		else if (!value && idx >= 0)
+		{
+			selected.splice(idx, 1);
+		}
+
+		wrapper.style.backgroundColor = (value) ?
+			'light-dark(rgba(41, 128, 255, 0.15), rgba(41, 128, 255, 0.3))' : '';
+		wrapper.querySelector('.geFocusLabel').setAttribute('aria-pressed', (value) ? 'true' : 'false');
+	};
+
+	function clearSelection()
+	{
+		while (selected.length > 0)
+		{
+			setSelected(selected[0], false);
+		}
+	};
+
+	function removeSelected()
+	{
+		var tmp = selected.slice();
+		clearSelection();
+
+		for (var i = 0; i < tmp.length; i++)
+		{
+			tmp[i].removeEntry();
+		}
+	};
 	
 	var dragSourceIndex = null;
 	var dropTargetIndex = null;
@@ -17870,8 +19586,9 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 					
 					(function(wrapperDiv, dataParam, imgParam)
 					{
-						mxEvent.addListener(rem, 'click', function(evt)
+						wrapperDiv.removeEntry = function()
 						{
+							setSelected(wrapperDiv, false);
 							entries[dataParam] = null;
 							
 							for (var i = 0; i < images.length; i++)
@@ -17885,14 +19602,44 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 								}
 							}
 							
-							wrapper.parentNode.removeChild(wrapperDiv);
+							if (wrapperDiv.parentNode != null)
+							{
+								wrapperDiv.parentNode.removeChild(wrapperDiv);
+							}
 							
 							if (images.length == 0)
 							{
 								div.style.backgroundImage = 'url(\'' + IMAGE_PATH + '/droptarget.png\')';
 								bg.style.display = '';
 							}
-							
+						};
+
+						// Deletes all selected entries if the entry is selected and moves
+						// the focus to the entry in the same place for the keyboard
+						wrapperDiv.removeEntries = function()
+						{
+							var focused = mxUtils.isAncestorNode(wrapperDiv, document.activeElement);
+							var index = mxUtils.indexOf(div.children, wrapperDiv);
+
+							if (selected.length > 1 && mxUtils.indexOf(selected, wrapperDiv) >= 0)
+							{
+								removeSelected();
+							}
+							else
+							{
+								wrapperDiv.removeEntry();
+							}
+
+							if (focused)
+							{
+								var next = div.children[Math.min(index, div.children.length - 1)];
+								((next != null) ? next.querySelector('.geFocusLabel') : div).focus();
+							}
+						};
+
+						mxEvent.addListener(rem, 'click', function(evt)
+						{
+							wrapperDiv.removeEntries();
 							mxEvent.consume(evt);
 						});
 						// Workaround for accidental select all
@@ -17901,7 +19648,8 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 							mxEvent.consume(evt);
 						});
 					})(wrapper, data, img);
-					
+
+					Editor.initKeyboardButton(rem);
 					wrapper.appendChild(rem);
 					wrapper.style.marginBottom = '30px';
 					
@@ -17945,10 +19693,12 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 						label.style.textOverflow = 'ellipsis';
 						mxUtils.write(label, (entry.title != null && entry.title.length > 0) ?
 							entry.title : mxResources.get('untitled'));
-						
+
 						if (entry.title == null || entry.title.length == 0)
 						{
-							label.style.color = '#d0d0d0';
+							// Placeholder uses the .geDialogHint palette
+							label.style.color = 'light-dark(var(--secondary-text-color), ' +
+								'var(--dark-secondary-text-color))';
 						}
 						else
 						{
@@ -17962,13 +19712,17 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 						{
 							stopEditing();
 							stopEditing = null;
-							
+
+							// Keeps the focus on the label, which is the entry for the keyboard
+							label.focus();
 							mxEvent.consume(evt);
 						}
 					});
 					
 					updateLabel();
-					wrapper.appendChild(label);
+
+					// Before the delete button in the order of Tab (both are absolute)
+					wrapper.insertBefore(label, rem);
 					
 					// Blocks dragging of label
 					mxEvent.addListener(label, 'mousedown', function(evt)
@@ -18005,7 +19759,14 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 								label.setAttribute('contentEditable', 'true');
 								mxUtils.setPrefixedStyle(label.style, 'user-select', 'text');
 								label.focus();
-								document.execCommand('selectAll', false, null);
+
+								// Selects the name with a range as selectAll selects the
+								// first field of the dialog if the label has a tabindex
+								var range = document.createRange();
+								range.selectNodeContents(label);
+								var selection = window.getSelection();
+								selection.removeAllRanges();
+								selection.addRange(range);
 								
 								stopEditing = function()
 								{
@@ -18036,8 +19797,58 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 						}
 					};
 					
-					mxEvent.addListener(label, 'click', startEditing);
+					mxEvent.addListener(label, 'click', function(evt)
+					{
+						// Multi-select clicks are handled in the wrapper
+						if (!isMultiSelectEvent(evt))
+						{
+							startEditing(evt);
+						}
+					});
+
 					mxEvent.addListener(wrapper, 'dblclick', startEditing);
+
+					// The label is the entry for the keyboard as the entry also contains
+					// its delete button: Enter renames the entry, Space toggles its
+					// selection and Delete and Backspace delete it like the button
+					label.setAttribute('role', 'button');
+					label.setAttribute('tabindex', '0');
+					label.setAttribute('aria-pressed', 'false');
+					Editor.addFocusRing(label, wrapper);
+
+					mxEvent.addListener(wrapper, 'keydown', function(evt)
+					{
+						if (mxEvent.getSource(evt) == label && label.getAttribute('contentEditable') != 'true' &&
+							!mxEvent.isAltDown(evt) &&
+							!mxEvent.isControlDown(evt) && !mxEvent.isMetaDown(evt))
+						{
+							if (evt.keyCode == 13 /* Enter */)
+							{
+								startEditing(evt);
+							}
+							else if (evt.keyCode == 32 /* Space */)
+							{
+								setSelected(wrapper, mxUtils.indexOf(selected, wrapper) < 0);
+								mxEvent.consume(evt);
+							}
+							else if (evt.keyCode == 46 /* Delete */ || evt.keyCode == 8 /* Backspace */)
+							{
+								wrapper.removeEntries();
+								mxEvent.consume(evt);
+							}
+						}
+					});
+
+					// Shift/Ctrl/Cmd+Click toggles the selection of the entry
+					mxEvent.addListener(wrapper, 'click', function(evt)
+					{
+						if (isMultiSelectEvent(evt) && stopEditing == null)
+						{
+							setSelected(wrapper, mxUtils.indexOf(selected, wrapper) < 0);
+							div.focus();
+							mxEvent.consume(evt);
+						}
+					});
 					
 					div.appendChild(wrapper);
 	
@@ -18055,7 +19866,7 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 						}
 						
 						// Workaround for no DnD on DIV in FF
-						if (mxClient.IS_FF && img.xml != null)
+						if (mxClient.IS_FF && img.xml != null && evt.dataTransfer != null)
 						{
 							evt.dataTransfer.setData('Text', img.xml);
 						}
@@ -18204,7 +20015,13 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 	
 	function dragOver(evt)
 	{
-		evt.dataTransfer.dropEffect = (dragSourceIndex != null) ? 'move' : 'copy';
+		// Drag events created by scripts may have no dataTransfer
+		if (evt.dataTransfer != null)
+		{
+			evt.dataTransfer.dropEffect = (dragSourceIndex != null) ? 'move' : 'copy';
+		}
+
+
 		evt.stopPropagation();
 		evt.preventDefault();
 	};
@@ -18266,11 +20083,11 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 				div.appendChild(div.children[dragSourceIndex]);
 			}
 		}
-		else if (evt.dataTransfer.files.length > 0)
+		else if (evt.dataTransfer != null && evt.dataTransfer.files.length > 0)
 		{
 			editorUi.importFiles(evt.dataTransfer.files, 0, 0, editorUi.maxImageSize, createImportHandler(evt));
 		}
-		else if (mxUtils.indexOf(evt.dataTransfer.types, 'text/uri-list') >= 0)
+		else if (evt.dataTransfer != null && mxUtils.indexOf(evt.dataTransfer.types, 'text/uri-list') >= 0)
 		{
 			var uri = decodeURIComponent(evt.dataTransfer.getData('text/uri-list'));
 			
@@ -18291,6 +20108,31 @@ var LibraryDialog = function(editorUi, name, library, initialImages, file, mode,
 	
 	mxEvent.addListener(div, 'dragover', dragOver);
 	mxEvent.addListener(div, 'drop', dropHandler);
+
+	// Clears the selection on click and deletes selected entries with
+	// Delete or Backspace (Shift/Ctrl/Cmd+Click is consumed in entries)
+	div.setAttribute('tabindex', '-1');
+	div.style.outline = 'none';
+
+	mxEvent.addListener(div, 'click', function(evt)
+	{
+		if (!isMultiSelectEvent(evt))
+		{
+			clearSelection();
+		}
+	});
+
+	mxEvent.addListener(div, 'keydown', function(evt)
+	{
+		var source = mxEvent.getSource(evt);
+
+		if ((evt.keyCode == 46 || evt.keyCode == 8) && selected.length > 0 &&
+			(source == null || source.getAttribute('contentEditable') != 'true'))
+		{
+			removeSelected();
+			mxEvent.consume(evt);
+		}
+	});
 	mxEvent.addListener(bg, 'dragover', dragOver);
 	mxEvent.addListener(bg, 'drop', dropHandler);
 
@@ -18509,18 +20351,17 @@ var EditShapeDialog = function(editorUi, cell, title)
 	div.style.top = '30px';
 	div.style.bottom = '30px';
 
-	var titleDiv = document.createElement('div');
-	titleDiv.style.position = 'absolute';
-	titleDiv.style.top = '0px';
-	mxUtils.write(titleDiv, title);
-	div.appendChild(titleDiv);
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, title);
+	div.appendChild(hd);
 
+	// Below the title and its 16px bottom margin
 	var contentDiv = document.createElement('div');
 	contentDiv.style.position = 'absolute';
 	contentDiv.style.width = '100%';
 	contentDiv.style.display = 'flex';
 	contentDiv.style.alignItems = 'stretch';
-	contentDiv.style.top = '24px';
+	contentDiv.style.top = '30px';
 	contentDiv.style.bottom = '50px';
 
 	var textarea = document.createElement('textarea');
@@ -18547,7 +20388,65 @@ var EditShapeDialog = function(editorUi, cell, title)
 
 	var clone = editorUi.editor.graph.cloneCell(cell);
 	graph.addCells([clone]);
-	
+
+	// Shows the connection points of the preview with their names as tooltips
+	var constraintShapes = [];
+
+	var updateConstraints = function()
+	{
+		for (var i = 0; i < constraintShapes.length; i++)
+		{
+			constraintShapes[i].destroy();
+		}
+
+		constraintShapes = [];
+		var s = graph.view.getState(clone);
+		var constraints = (s != null && s.shape != null) ?
+			graph.getAllConnectionConstraints(s, true) : null;
+
+		if (constraints != null)
+		{
+			var img = mxConstraintHandler.prototype.pointImage;
+
+			for (var i = 0; i < constraints.length; i++)
+			{
+				var pt = graph.getConnectionPoint(s, constraints[i]);
+
+				if (pt != null)
+				{
+					var shape = new mxImageShape(new mxRectangle(
+						Math.round(pt.x - img.width / 2),
+						Math.round(pt.y - img.height / 2),
+						img.width, img.height), img.src);
+					shape.dialect = mxConstants.DIALECT_SVG;
+					shape.preserveImageAspect = false;
+					shape.init(graph.view.getOverlayPane());
+					shape.redraw();
+
+					// Name is user data so it is only added as text content
+					var name = constraints[i].name;
+
+					if (name != null && name !== '' && shape.node != null)
+					{
+						var tooltip = shape.node.ownerDocument.createElementNS(
+							mxConstants.NS_SVG, 'title');
+						mxUtils.write(tooltip, name);
+						shape.node.appendChild(tooltip);
+						shape.node.style.cursor = 'help';
+					}
+
+					constraintShapes.push(shape);
+				}
+			}
+		}
+	};
+
+	graph.view.addListener(mxEvent.SCALE, updateConstraints);
+	graph.view.addListener(mxEvent.TRANSLATE, updateConstraints);
+	graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, updateConstraints);
+	graph.model.addListener(mxEvent.CHANGE, updateConstraints);
+	updateConstraints();
+
 	var state = graph.view.getState(clone);
 	var stencil = '';
 	
@@ -18578,6 +20477,7 @@ var EditShapeDialog = function(editorUi, cell, title)
 	{
 		editorUi.hideDialog();
 	});
+	cancelBtn.setAttribute('title', 'Escape');
 	cancelBtn.className = 'geBtn';
 	
 	if (editorUi.editor.cancelFirst)
@@ -18615,7 +20515,9 @@ var EditShapeDialog = function(editorUi, cell, title)
 				// Transform XML value to be used in cell style
 				newValue = Graph.compress(newValue);
 				
-				targetGraph.getModel().beginUpdate();
+				// Reports the new shape like an arrange action (see
+				// Graph.beginArrange), eg. for snapToPoint auto-routing
+				var arrange = targetGraph.beginArrange();
 				try
 				{
 					// Inserts cell if required
@@ -18636,7 +20538,7 @@ var EditShapeDialog = function(editorUi, cell, title)
 				finally
 				{
 					// Updates the display
-					targetGraph.getModel().endUpdate();
+					targetGraph.endArrange(arrange);
 				}
 				
 				// Updates selection after stencil was created for rendering
@@ -18663,8 +20565,17 @@ var EditShapeDialog = function(editorUi, cell, title)
 		updateShape(editorUi.editor.graph, cell, true);
 	});
 	
+	applyBtn.setAttribute('title', 'Ctrl+Enter');
 	applyBtn.className = 'geBtn gePrimaryBtn';	
 	btns.appendChild(applyBtn);
+
+	mxEvent.addListener(textarea, 'keydown', function(e)
+	{
+		if (e.keyCode == 13 && mxEvent.isControlDown(e))
+		{
+			applyBtn.click();
+		}
+	});
 	
 	if (!editorUi.editor.cancelFirst)
 	{
@@ -18806,6 +20717,2542 @@ var CustomDialog = function(editorUi, content, okFn, cancelFn, okButtonText, hel
 };
 
 /**
+ * Dialog for the rules of the current page (see Graph.getStyleRules). Rules
+ * are added, edited, deleted and reordered by dragging their handle, and OK
+ * writes them to the root cell in one undoable edit. Incomplete rules are
+ * dropped (see Graph.parseStyleRule).
+ */
+var StyleRulesDialog = function(editorUi)
+{
+	var graph = editorUi.editor.graph;
+	var root = graph.getModel().getRoot();
+	var json = graph.getStyleRulesJson(root.value);
+	var rules = StyleRulesDialog.parseRules(json);
+	var cells = StyleRulesDialog.getCells(graph);
+	var uid = StyleRulesDialog.counter = (StyleRulesDialog.counter || 0) + 1;
+	// Tags and values of the cells for counting the matches of the rules,
+	// which do not change while the dialog is open
+	var contexts = [];
+	var dragIndex = null;
+
+	var div = document.createElement('div');
+
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, mxResources.get('styleRules', null, 'Style Rules'));
+	div.appendChild(hd);
+
+	var hint = document.createElement('div');
+	hint.className = 'geDialogHint';
+	hint.style.marginBottom = '12px';
+	mxUtils.write(hint, mxResources.get('styleRulesHint', null, 'Rules change the ' +
+		'style of the shapes on this page whose data matches. The first rule ' +
+		'that sets a style wins.'));
+	div.appendChild(hint);
+
+	var propertyList = StyleRulesDialog.createDataList('geStyleRuleProperties' + uid,
+		StyleRulesDialog.getProperties(graph, cells));
+	div.appendChild(propertyList);
+
+	var list = document.createElement('div');
+	div.appendChild(list);
+
+	// Says how many rules after Graph.maxStyleRules are not shown
+	var limitHint = document.createElement('div');
+	limitHint.className = 'geDialogHint';
+	limitHint.style.margin = '0 0 12px 0';
+	div.appendChild(limitHint);
+
+	var createIconButton = StyleRulesDialog.createIconButton;
+
+	var createIcon = function(name, title)
+	{
+		var span = document.createElement('span');
+		span.style.cssText = 'flex:0 0 16px;display:inline-flex;justify-content:center;' +
+			'color:light-dark(var(--secondary-text-color), var(--dark-secondary-text-color));';
+		span.appendChild(CustomActionDialog.createIcon(name, 16));
+
+		if (title != null)
+		{
+			span.setAttribute('title', title);
+		}
+
+		return span;
+	};
+
+	var createInput = function(value, placeholder, listId, type)
+	{
+		var input = document.createElement('input');
+		input.setAttribute('type', type || 'text');
+
+		if (placeholder != null)
+		{
+			input.setAttribute('placeholder', placeholder);
+			input.setAttribute('title', placeholder);
+		}
+
+		input.value = (value != null) ? value : '';
+
+		if (listId != null)
+		{
+			input.setAttribute('list', listId);
+		}
+
+		return input;
+	};
+
+	var createColorButton = function(color, title, apply)
+	{
+		var btn = document.createElement('button');
+		btn.className = 'geColorBtn';
+		btn.setAttribute('title', title);
+		btn.style.cssText = 'flex:0 0 36px;width:36px;height:18px;cursor:pointer;margin:0;';
+
+		var update = function()
+		{
+			var cssColor = mxUtils.getLightDarkColor(color);
+			btn.style.background = '';
+			btn.style.backgroundColor = (color == mxConstants.NONE) ?
+				'transparent' : cssColor.cssText;
+		};
+
+		mxEvent.addListener(btn, 'click', function(evt)
+		{
+			editorUi.pickColor(color, function(newColor)
+			{
+				color = apply(newColor);
+				update();
+			}, null, null, true, title);
+
+			mxEvent.consume(evt);
+		});
+
+		update();
+
+		return btn;
+	};
+
+	// Rows wrap in narrow dialogs, the trailing buttons stay together at the
+	// right edge of the row
+	var createRow = function()
+	{
+		var row = document.createElement('div');
+		row.className = 'geDialogFormRow';
+		row.style.flexWrap = 'wrap';
+		row.style.rowGap = '6px';
+
+		return row;
+	};
+
+	var createGroup = function()
+	{
+		var group = document.createElement('span');
+		group.style.cssText = 'display:inline-flex;align-items:center;gap:6px;' +
+			'flex:0 0 auto;margin-left:auto;';
+
+		return group;
+	};
+
+	// Marks a required field that is still empty or invalid, as the rule
+	// does nothing without it
+	var mark = function(input, warn)
+	{
+		if (warn)
+		{
+			input.classList.add('geDialogFieldWarn');
+		}
+		else
+		{
+			input.classList.remove('geDialogFieldWarn');
+		}
+	};
+
+	// Number of shapes on the page that the given rule applies to
+	var getCount = function(rule)
+	{
+		var parsed = Graph.parseStyleRule(StyleRulesDialog.toObject(rule));
+		var count = 0;
+
+		if (parsed != null)
+		{
+			for (var i = 0; i < cells.length; i++)
+			{
+				contexts[i] = contexts[i] || {};
+
+				if (graph.isStyleRuleMatch(cells[i], parsed, contexts[i]))
+				{
+					count++;
+				}
+			}
+		}
+
+		return (parsed != null) ? mxResources.get('shapes') + ': ' + count : '';
+	};
+
+	// Control for the value of the given style entry of a rule
+	var createValueControl = function(entry, label)
+	{
+		var type = Graph.dataStyleKeys[entry.key];
+		var control = null;
+
+		if (type == 'color')
+		{
+			control = createColorButton(entry.value, label, function(color)
+			{
+				entry.value = (Graph.getDataStyleValue(entry.key, color) != null) ?
+					color : entry.value;
+
+				return entry.value;
+			});
+		}
+		else if (type == 'flag')
+		{
+			control = document.createElement('input');
+			control.setAttribute('type', 'checkbox');
+			control.setAttribute('title', label);
+			control.style.flex = '0 0 auto';
+			control.checked = entry.value == '1';
+
+			mxEvent.addListener(control, 'change', function()
+			{
+				entry.value = (control.checked) ? '1' : '0';
+			});
+		}
+		else if (type == 'url')
+		{
+			control = createInput(entry.value, label, null, 'url');
+			control.style.flex = '1 1 auto';
+
+			// Marks a URL that is not used (see Graph.getDataStyleValue)
+			var markUrl = function()
+			{
+				if (Graph.getDataStyleValue(entry.key, control.value) == null)
+				{
+					control.classList.add('geDialogFieldWarn');
+				}
+				else
+				{
+					control.classList.remove('geDialogFieldWarn');
+				}
+			};
+
+			mxEvent.addListener(control, 'input', function()
+			{
+				entry.value = control.value;
+				markUrl();
+			});
+
+			markUrl();
+		}
+		else if (entry.key == mxConstants.STYLE_FONTSTYLE)
+		{
+			control = document.createElement('div');
+			control.style.cssText = 'display:flex;align-items:center;gap:8px;flex:0 0 auto;';
+			var names = ['bold', 'italic', 'underline', 'strikethrough'];
+
+			for (var i = 0; i < names.length; i++)
+			{
+				(function(bit, name)
+				{
+					var lbl = document.createElement('label');
+					lbl.style.cssText = 'display:inline-flex;align-items:center;gap:4px;';
+					var cb = document.createElement('input');
+					cb.setAttribute('type', 'checkbox');
+					cb.checked = (parseInt(entry.value) & bit) == bit;
+					lbl.appendChild(cb);
+					mxUtils.write(lbl, mxResources.get(name));
+					control.appendChild(lbl);
+
+					mxEvent.addListener(cb, 'change', function()
+					{
+						var value = parseInt(entry.value) || 0;
+						entry.value = String((cb.checked) ? (value | bit) : (value & ~bit));
+					});
+				})(1 << i, names[i]);
+			}
+		}
+		else
+		{
+			control = createInput(entry.value, label, null, 'number');
+			control.setAttribute('min', type[0]);
+			control.setAttribute('max', type[1]);
+			control.setAttribute('step', (type[2]) ? '1' : 'any');
+			control.style.flex = '0 0 80px';
+
+			mxEvent.addListener(control, 'input', function()
+			{
+				entry.value = control.value;
+			});
+		}
+
+		return control;
+	};
+
+	// Select for the style keys of the given type (all if type is null),
+	// where the keys of the other entries of the rule are disabled
+	var createKeySelect = function(value, type, rule)
+	{
+		var select = document.createElement('select');
+		select.style.flex = '0 1 160px';
+		select.style.minWidth = '100px';
+
+		for (var key in Graph.dataStyleKeys)
+		{
+			if (type == null || Graph.dataStyleKeys[key] == type)
+			{
+				var option = document.createElement('option');
+				option.setAttribute('value', key);
+				mxUtils.write(option, StyleRulesDialog.getKeyLabel(key));
+
+				for (var i = 0; rule != null && i < rule.style.length; i++)
+				{
+					if (rule.style[i].key == key && key != value)
+					{
+						option.disabled = true;
+					}
+				}
+
+				select.appendChild(option);
+			}
+		}
+
+		select.value = value;
+
+		return select;
+	};
+
+	// Rows of the style entries of the given rule
+	var addStyleRows = function(card, rule)
+	{
+		for (var i = 0; i < rule.style.length; i++)
+		{
+			(function(entry, index)
+			{
+				var row = createRow();
+				row.appendChild(createIcon('arrow_right_alt'));
+
+				var key = createKeySelect(entry.key, null, rule);
+				row.appendChild(key);
+
+				var label = StyleRulesDialog.getKeyLabel(entry.key);
+				row.appendChild(createValueControl(entry, label));
+
+				var group = createGroup();
+				row.appendChild(group);
+
+				mxEvent.addListener(key, 'change', function()
+				{
+					entry.key = key.value;
+
+					if (Graph.getDataStyleValue(entry.key, entry.value) == null ||
+						entry.key == mxConstants.STYLE_FONTSTYLE)
+					{
+						entry.value = StyleRulesDialog.getDefaultValue(entry.key);
+					}
+
+					render();
+				});
+
+				if (rule.style.length > 1)
+				{
+					group.appendChild(createIconButton(Editor.crossImage,
+						mxResources.get('remove'), function()
+					{
+						rule.style.splice(index, 1);
+						render();
+					}));
+				}
+
+				if (index == rule.style.length - 1)
+				{
+					group.appendChild(createIconButton(Editor.plusImage,
+						mxResources.get('add'), function()
+					{
+						var key = StyleRulesDialog.getUnusedKey(rule);
+						rule.style.push({key: key,
+							value: StyleRulesDialog.getDefaultValue(key)});
+						render();
+					}));
+				}
+
+				card.appendChild(row);
+			})(rule.style[i], i);
+		}
+	};
+
+	// Row of the color scale of the given rule
+	var addScaleRow = function(card, rule, updateCount)
+	{
+		var row = createRow();
+		row.appendChild(createIcon('arrow_right_alt'));
+
+		var updateMarks = function()
+		{
+			mark(min, isNaN(Graph.parseDataNumber(min.value)));
+			mark(max, isNaN(Graph.parseDataNumber(max.value)));
+		};
+
+		var min = createInput(rule.min, null, null, 'number');
+		min.style.flex = '0 0 70px';
+		row.appendChild(min);
+
+		mxEvent.addListener(min, 'input', function()
+		{
+			rule.min = min.value;
+			updateMarks();
+			updateCount();
+		});
+
+		var title = mxResources.get('colorScale', null, 'Color Scale');
+		var stops = createGroup();
+		stops.style.marginLeft = '0';
+		row.appendChild(stops);
+
+		for (var i = 0; i < rule.colors.length; i++)
+		{
+			(function(index)
+			{
+				stops.appendChild(createColorButton(rule.colors[index], title, function(color)
+				{
+					var hex = StyleRulesDialog.toHex(color);
+					rule.colors[index] = (hex != null) ? hex : rule.colors[index];
+
+					return rule.colors[index];
+				}));
+			})(i);
+		}
+
+		if (rule.colors.length < 10)
+		{
+			stops.appendChild(createIconButton(Editor.plusImage, mxResources.get('add'), function()
+			{
+				rule.colors.push(rule.colors[rule.colors.length - 1]);
+				render();
+			}));
+		}
+
+		if (rule.colors.length > 2)
+		{
+			stops.appendChild(createIconButton(Editor.crossImage, mxResources.get('remove'), function()
+			{
+				rule.colors.pop();
+				render();
+			}));
+		}
+
+		var max = createInput(rule.max, null, null, 'number');
+		max.style.flex = '0 0 70px';
+		row.appendChild(max);
+
+		mxEvent.addListener(max, 'input', function()
+		{
+			rule.max = max.value;
+			updateMarks();
+			updateCount();
+		});
+
+		var target = createKeySelect(rule.target, 'color');
+		row.appendChild(target);
+
+		mxEvent.addListener(target, 'change', function()
+		{
+			rule.target = target.value;
+		});
+
+		updateMarks();
+		card.appendChild(row);
+	};
+
+	// Reordering by dragging the handle of a rule
+	var installDrag = function(card, handle, index)
+	{
+		var clear = function()
+		{
+			card.style.boxShadow = '';
+		};
+
+		mxEvent.addListener(handle, 'mousedown', function()
+		{
+			card.draggable = true;
+		});
+
+		mxEvent.addListener(handle, 'mouseup', function()
+		{
+			card.draggable = false;
+		});
+
+		mxEvent.addListener(card, 'dragstart', function(evt)
+		{
+			dragIndex = index;
+
+			if (evt.dataTransfer != null)
+			{
+				evt.dataTransfer.effectAllowed = 'move';
+				evt.dataTransfer.setData('text/plain', 'styleRule');
+			}
+
+			card.style.opacity = '0.4';
+		});
+
+		mxEvent.addListener(card, 'dragend', function()
+		{
+			card.draggable = false;
+			card.style.opacity = '';
+			dragIndex = null;
+			render();
+		});
+
+		mxEvent.addListener(card, 'dragover', function(evt)
+		{
+			if (dragIndex != null)
+			{
+				var rect = card.getBoundingClientRect();
+				var after = evt.clientY > rect.top + rect.height / 2;
+				var insertAt = (after) ? index + 1 : index;
+
+				if (insertAt != dragIndex && insertAt != dragIndex + 1)
+				{
+					evt.preventDefault();
+					card.dropIndex = insertAt;
+					card.style.boxShadow = ((after) ? '0 2px 0 0 ' : '0 -2px 0 0 ') +
+						'light-dark(var(--focus-color), var(--dark-focus-color))';
+				}
+				else
+				{
+					card.dropIndex = null;
+					clear();
+				}
+			}
+		});
+
+		mxEvent.addListener(card, 'dragleave', clear);
+
+		mxEvent.addListener(card, 'drop', function(evt)
+		{
+			if (dragIndex != null && card.dropIndex != null)
+			{
+				evt.preventDefault();
+				var insertAt = card.dropIndex;
+				var rule = rules.splice(dragIndex, 1)[0];
+				rules.splice((dragIndex < insertAt) ? insertAt - 1 : insertAt, 0, rule);
+				dragIndex = null;
+				render();
+			}
+		});
+	};
+
+	var createCard = function(rule, index)
+	{
+		var card = document.createElement('div');
+		card.className = 'geDialogSection';
+
+		var row = createRow();
+		card.appendChild(row);
+
+		var handle = createIcon('drag_indicator', mxResources.get('reorder'));
+		handle.style.cursor = 'grab';
+		row.appendChild(handle);
+		installDrag(card, handle, index);
+
+		var property = createInput(rule.property, mxResources.get('property'), propertyList.id);
+		property.style.flex = '1 1 0';
+		property.style.minWidth = '100px';
+		row.appendChild(property);
+
+		var op = document.createElement('select');
+		op.style.flex = '0 0 auto';
+
+		for (var i = 0; i < Graph.styleRuleOperators.length; i++)
+		{
+			var option = document.createElement('option');
+			option.setAttribute('value', Graph.styleRuleOperators[i]);
+			mxUtils.write(option, StyleRulesDialog.getOperatorLabel(Graph.styleRuleOperators[i]));
+			op.appendChild(option);
+		}
+
+		op.value = rule.op;
+		row.appendChild(op);
+
+		var valueList = StyleRulesDialog.createDataList('geStyleRuleValues' + uid + '_' + index,
+			StyleRulesDialog.getValues(graph, cells, rule.property));
+		card.appendChild(valueList);
+
+		var value = createInput(rule.value, mxResources.get('value'), valueList.id);
+		value.style.flex = '1 1 0';
+		value.style.minWidth = '80px';
+		value.style.display = (rule.op == 'empty' || rule.op == 'notEmpty' ||
+			rule.op == 'scale') ? 'none' : '';
+		row.appendChild(value);
+
+		var tags = createInput(rule.tags, mxResources.get('tags'));
+		tags.style.flex = '0 1 90px';
+		tags.style.minWidth = '60px';
+		row.appendChild(tags);
+
+		var group = createGroup();
+		row.appendChild(group);
+
+		var count = document.createElement('span');
+		count.className = 'geDialogHint';
+		count.style.whiteSpace = 'nowrap';
+		group.appendChild(count);
+
+		// Updates the number of matching shapes and marks the fields that the
+		// rule needs: the property and the value of comparisons
+		var updateCount = function()
+		{
+			count.textContent = getCount(rule);
+			mark(property, mxUtils.trim(property.value).length == 0);
+			mark(value, (rule.op == 'contains' && mxUtils.trim(value.value).length == 0) ||
+				(mxUtils.indexOf(['<', '<=', '>', '>='], rule.op) >= 0 &&
+				isNaN(Graph.parseDataNumber(value.value))));
+		};
+
+		group.appendChild(createIconButton(Editor.trashImage, mxResources.get('delete'), function()
+		{
+			rules.splice(index, 1);
+			render();
+		}));
+
+		mxEvent.addListener(property, 'input', function()
+		{
+			rule.property = property.value;
+			var next = StyleRulesDialog.createDataList(valueList.id,
+				StyleRulesDialog.getValues(graph, cells, rule.property));
+			valueList.parentNode.replaceChild(next, valueList);
+			valueList = next;
+			updateCount();
+		});
+
+		mxEvent.addListener(op, 'change', function()
+		{
+			rule.op = op.value;
+			render();
+		});
+
+		mxEvent.addListener(value, 'input', function()
+		{
+			rule.value = value.value;
+			updateCount();
+		});
+
+		mxEvent.addListener(tags, 'input', function()
+		{
+			rule.tags = tags.value;
+			updateCount();
+		});
+
+		if (rule.op == 'scale')
+		{
+			addScaleRow(card, rule, updateCount);
+		}
+		else
+		{
+			addStyleRows(card, rule);
+		}
+
+		updateCount();
+
+		return card;
+	};
+
+	// Number of rules with a card that are written (see toJson), which are
+	// the rules that the page uses (hidden rules are ignored by the page and
+	// do not count)
+	var shown = 0;
+
+	// Rules with a card in the order of the cards
+	var cardRules = [];
+
+	// Returns the rules with a card and the number of written rules among
+	// them: the rules up to Graph.maxStyleRules written rules, as the page
+	// ignores the rules after them. Incomplete rules, which are not written,
+	// have a card and are not counted, so that a cleared rule shows the rule
+	// that the page uses instead.
+	var getCardRules = function()
+	{
+		var result = {rules: [], indices: [], written: 0, skipped: 0};
+
+		for (var i = 0; i < rules.length; i++)
+		{
+			if (!rules[i].hidden)
+			{
+				if (result.written < Graph.maxStyleRules)
+				{
+					result.rules.push(rules[i]);
+					result.indices.push(i);
+
+					if (Graph.parseStyleRule(StyleRulesDialog.toObject(rules[i])) != null)
+					{
+						result.written++;
+					}
+				}
+				else
+				{
+					result.skipped++;
+				}
+			}
+		}
+
+		return result;
+	};
+
+	// Shows the rules with a card (see getCardRules). Each card counts the
+	// matching shapes. The other rules are kept as they are. The focused
+	// field and its selection are restored.
+	var render = function()
+	{
+		var focused = document.activeElement;
+		var focusRule = null;
+		var focusIndex = -1;
+		var start = null;
+		var end = null;
+
+		for (var i = 0; i < list.children.length && focusRule == null; i++)
+		{
+			if (list.children[i].contains(focused))
+			{
+				focusRule = cardRules[i];
+				focusIndex = mxUtils.indexOf(list.children[i].querySelectorAll(
+					'input, select, textarea'), focused);
+
+				try
+				{
+					start = focused.selectionStart;
+					end = focused.selectionEnd;
+				}
+				catch (e)
+				{
+					// No selection in select elements
+				}
+			}
+		}
+
+		var cards = getCardRules();
+		cardRules = cards.rules;
+		shown = cards.written;
+
+		while (list.firstChild != null)
+		{
+			list.removeChild(list.firstChild);
+		}
+
+		for (var i = 0; i < cardRules.length; i++)
+		{
+			list.appendChild(createCard(cardRules[i], cards.indices[i]));
+		}
+
+		var index = mxUtils.indexOf(cardRules, focusRule);
+
+		if (index >= 0 && focusIndex >= 0)
+		{
+			var field = list.children[index].querySelectorAll(
+				'input, select, textarea')[focusIndex];
+
+			if (field != null)
+			{
+				field.focus();
+
+				try
+				{
+					if (start != null && end != null)
+					{
+						field.setSelectionRange(start, end);
+					}
+				}
+				catch (e)
+				{
+					// No selection in select elements
+				}
+			}
+		}
+
+		limitHint.textContent = (cards.skipped > 0) ? mxResources.get('styleRulesLimit',
+			[Graph.maxStyleRules, cards.skipped], 'Only the first {1} rules are used. ' +
+			'The other {2} rules are not shown.') : '';
+		limitHint.style.display = (cards.skipped > 0) ? '' : 'none';
+		addBtn.disabled = shown >= Graph.maxStyleRules;
+	};
+
+	// Changes of a rule that make it complete or incomplete can change the
+	// rules that the page uses if it has more than Graph.maxStyleRules rules
+	var checkCards = function()
+	{
+		if (rules.length <= Graph.maxStyleRules)
+		{
+			return;
+		}
+
+		var next = getCardRules().rules;
+		var changed = next.length != cardRules.length;
+
+		for (var i = 0; i < next.length && !changed; i++)
+		{
+			changed = next[i] != cardRules[i];
+		}
+
+		if (changed)
+		{
+			render();
+		}
+	};
+
+	mxEvent.addListener(list, 'input', checkCards);
+	mxEvent.addListener(list, 'change', checkCards);
+
+	var addBtn = mxUtils.button(mxResources.get('addRule', null, 'Add Rule'), function()
+	{
+		if (shown < Graph.maxStyleRules)
+		{
+			rules.push(StyleRulesDialog.createRule());
+			render();
+
+			var inputs = list.lastChild.getElementsByTagName('input');
+
+			if (inputs.length > 0)
+			{
+				inputs[0].focus();
+			}
+		}
+	});
+
+	addBtn.className = 'geBtn';
+	addBtn.style.marginLeft = '0';
+	div.appendChild(addBtn);
+
+	// Returns an error if a rule with a property would not be written, eg. a
+	// rule whose only style is a URL that is not used, as it would be lost
+	var validate = function()
+	{
+		for (var i = 0; i < rules.length; i++)
+		{
+			if (!rules[i].hidden && mxUtils.trim(rules[i].property).length > 0 &&
+				Graph.parseStyleRule(StyleRulesDialog.toObject(rules[i])) == null)
+			{
+				return mxResources.get('invalidInput');
+			}
+		}
+
+		return null;
+	};
+
+	// Writes the rules like OK and inserts their legend in the same edit
+	var legendBtn = mxUtils.button(mxResources.get('insertLegend', null, 'Insert Legend'), function()
+	{
+		var error = validate();
+
+		if (error != null)
+		{
+			editorUi.showError(mxResources.get('error'), error);
+		}
+		else
+		{
+			var result = StyleRulesDialog.toJson(rules);
+			var legend = StyleRulesDialog.createLegend(graph, Graph.parseStyleRules(result));
+
+			if (legend != null)
+			{
+				editorUi.hideDialog();
+				var pt = graph.getFreeInsertPoint();
+				legend.geometry.x = pt.x;
+				legend.geometry.y = pt.y;
+
+				graph.getModel().beginUpdate();
+				try
+				{
+					if (result != initial)
+					{
+						graph.setAttributeForCell(root, Graph.styleRulesAttribute, result);
+					}
+
+					legend = graph.addCell(legend);
+				}
+				finally
+				{
+					graph.getModel().endUpdate();
+				}
+
+				graph.setSelectionCell(legend);
+				graph.scrollCellToVisible(legend);
+			}
+		}
+	});
+
+	legendBtn.className = 'geBtn';
+	div.appendChild(legendBtn);
+
+	render();
+
+	this.init = function()
+	{
+		var inputs = list.getElementsByTagName('input');
+
+		if (inputs.length > 0)
+		{
+			inputs[0].focus();
+		}
+		else
+		{
+			addBtn.focus();
+		}
+	};
+
+	// Rules that are changed, removed or added are written, other differences
+	// to the JSON in the file, eg. numbers in strings, are kept
+	var initial = StyleRulesDialog.toJson(rules);
+
+	var dlg = new CustomDialog(editorUi, div, function()
+	{
+		var error = validate();
+
+		if (error == null)
+		{
+			var result = StyleRulesDialog.toJson(rules);
+
+			if (result != initial)
+			{
+				graph.setAttributeForCell(root, Graph.styleRulesAttribute, result);
+			}
+		}
+
+		return error;
+	}, null, null, null, null, null, null, true);
+
+	// Fills the dialog, which can be resized, so that the rules scroll and the
+	// buttons stay at the bottom
+	dlg.container.style.height = '100%';
+
+	this.container = dlg.container;
+	this.okButton = dlg.okButton;
+};
+
+/**
+ * Returns a small button with the given icon and title that calls fn.
+ */
+StyleRulesDialog.createIconButton = function(src, title, fn)
+{
+	var btn = document.createElement('button');
+	btn.className = 'geBtn';
+	btn.setAttribute('title', title);
+	btn.style.cssText = 'flex:0 0 auto;margin:0;padding:0 4px;min-width:0;' +
+		'height:24px;display:inline-flex;align-items:center;justify-content:center;';
+
+	var img = document.createElement('img');
+	img.className = 'geAdaptiveAsset';
+	img.setAttribute('src', src);
+	img.setAttribute('alt', title);
+	img.style.width = '16px';
+	img.style.height = '16px';
+	btn.appendChild(img);
+
+	mxEvent.addListener(btn, 'click', function(evt)
+	{
+		fn();
+		mxEvent.consume(evt);
+	});
+
+	return btn;
+};
+
+/**
+ * Labels of the operators that are not resource keys.
+ */
+StyleRulesDialog.operatorLabels = {'=': '=', '!=': '≠', '<': '<', '<=': '≤',
+	'>': '>', '>=': '≥'};
+
+/**
+ * Resource keys of the labels of the other operators.
+ */
+StyleRulesDialog.operatorKeys = {contains: ['contains', 'contains'],
+	empty: ['isEmpty', 'is empty'], notEmpty: ['isNotEmpty', 'is not empty'],
+	scale: ['colorScale', 'Color Scale']};
+
+/**
+ * Returns the label of the given style key (see Format.getStyleRuleKeyLabel).
+ */
+StyleRulesDialog.getKeyLabel = function(key)
+{
+	return Format.getStyleRuleKeyLabel(key);
+};
+
+/**
+ * Returns the label of the given operator.
+ */
+StyleRulesDialog.getOperatorLabel = function(op)
+{
+	if (Object.prototype.hasOwnProperty.call(StyleRulesDialog.operatorLabels, op))
+	{
+		return StyleRulesDialog.operatorLabels[op];
+	}
+	else if (Object.prototype.hasOwnProperty.call(StyleRulesDialog.operatorKeys, op))
+	{
+		return mxResources.get(StyleRulesDialog.operatorKeys[op][0], null,
+			StyleRulesDialog.operatorKeys[op][1]);
+	}
+
+	return op;
+};
+
+/**
+ * Returns the default value for the given style key.
+ */
+StyleRulesDialog.getDefaultValue = function(key)
+{
+	var type = Graph.dataStyleKeys[key];
+
+	if (type == 'color')
+	{
+		return (key == mxConstants.STYLE_FILLCOLOR) ? '#F8CECC' : '#B85450';
+	}
+	else if (type == 'flag')
+	{
+		return '1';
+	}
+	else if (type == 'url')
+	{
+		return '';
+	}
+	else if (key == mxConstants.STYLE_FONTSTYLE)
+	{
+		return '1';
+	}
+	else
+	{
+		return String(Math.min(type[1], Math.max(type[0],
+			(key == mxConstants.STYLE_FONTSIZE) ? 14 :
+			((key == mxConstants.STYLE_STROKEWIDTH) ? 2 : 50))));
+	}
+};
+
+/**
+ * Returns the first style key that the given rule does not set.
+ */
+StyleRulesDialog.getUnusedKey = function(rule)
+{
+	for (var key in Graph.dataStyleKeys)
+	{
+		var used = false;
+
+		for (var i = 0; i < rule.style.length && !used; i++)
+		{
+			used = rule.style[i].key == key;
+		}
+
+		if (!used)
+		{
+			return key;
+		}
+	}
+
+	return mxConstants.STYLE_FILLCOLOR;
+};
+
+/**
+ * Returns a new rule for the dialog.
+ */
+StyleRulesDialog.createRule = function()
+{
+	return {property: '', op: '=', value: '', tags: '',
+		style: [{key: mxConstants.STYLE_FILLCOLOR, value: '#F8CECC'},
+			{key: mxConstants.STYLE_STROKECOLOR, value: '#B85450'}],
+		min: '0', max: '100', colors: ['#D5E8D4', '#F8CECC'],
+		target: mxConstants.STYLE_FILLCOLOR};
+};
+
+/**
+ * Returns the given color as #rrggbb or null if it is not a color.
+ */
+StyleRulesDialog.toHex = function(color)
+{
+	if (typeof color === 'string' && /^#[0-9a-f]{3}$/i.test(color))
+	{
+		return '#' + color.charAt(1) + color.charAt(1) + color.charAt(2) +
+			color.charAt(2) + color.charAt(3) + color.charAt(3);
+	}
+	else if (typeof color === 'string' && color != mxConstants.NONE &&
+		Graph.isSafeCssColor(color) && !mxUtils.isLightDarkColor(color))
+	{
+		var hex = mxUtils.rgba2hex(color);
+
+		if (typeof hex === 'string' && /^#[0-9a-f]{6}/i.test(hex))
+		{
+			return hex.substring(0, 7);
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Fields of a rule that the dialog edits (see Graph.parseStyleRule).
+ */
+StyleRulesDialog.ruleFields = ['property', 'op', 'value', 'tags', 'style',
+	'min', 'max', 'colors', 'target'];
+
+/**
+ * Returns true if the given key of a parsed JSON object can be copied to
+ * another object.
+ */
+StyleRulesDialog.isCopyableKey = function(obj, key)
+{
+	return Object.prototype.hasOwnProperty.call(obj, key) && key != '__proto__' &&
+		key != 'constructor' && key != 'prototype';
+};
+
+/**
+ * Returns the rules in the given JSON for the dialog. Rules that the rules
+ * of this version ignore, eg. from a newer version, are hidden and kept as
+ * they are, and the rules keep the fields and style keys that the dialog
+ * does not edit (see toObject).
+ */
+StyleRulesDialog.parseRules = function(json)
+{
+	var result = [];
+	var rules = null;
+
+	try
+	{
+		rules = (json != null) ? JSON.parse(json) : null;
+	}
+	catch (e)
+	{
+		// Starts with no rules
+	}
+
+	if (Array.isArray(rules))
+	{
+		for (var i = 0; i < rules.length; i++)
+		{
+			var obj = rules[i];
+
+			if (Graph.parseStyleRule(obj) == null)
+			{
+				result.push({raw: obj, hidden: true});
+			}
+			else
+			{
+				var get = function(name, defaultValue)
+				{
+					var value = (Object.prototype.hasOwnProperty.call(obj, name)) ? obj[name] : null;
+
+					return (typeof value === 'string') ? value : ((typeof value === 'number' &&
+						isFinite(value)) ? String(value) : defaultValue);
+				};
+
+				var rule = StyleRulesDialog.createRule();
+				rule.raw = obj;
+				rule.property = get('property', '');
+				rule.op = get('op', '=');
+				rule.value = get('value', '');
+				rule.tags = get('tags', '');
+
+				if (rule.op == 'scale')
+				{
+					rule.min = get('min', rule.min);
+					rule.max = get('max', rule.max);
+					rule.target = get('target', rule.target);
+					rule.colors = [];
+
+					for (var j = 0; j < obj.colors.length && j < 10; j++)
+					{
+						rule.colors.push(StyleRulesDialog.toHex(obj.colors[j]));
+					}
+				}
+				else
+				{
+					rule.style = [];
+
+					for (var key in obj.style)
+					{
+						var value = (Object.prototype.hasOwnProperty.call(obj.style, key)) ?
+							Graph.getDataStyleValue(key, obj.style[key]) : null;
+
+						if (value != null)
+						{
+							rule.style.push({key: key, value: value});
+						}
+					}
+				}
+
+				result.push(rule);
+			}
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Returns the given rule of the dialog as an object for the JSON of the
+ * rules (see Graph.parseStyleRule). The fields and the style keys that the
+ * dialog does not edit are copied from the rule that was loaded.
+ */
+StyleRulesDialog.toObject = function(rule)
+{
+	var raw = (rule.raw != null && typeof rule.raw === 'object') ? rule.raw : {};
+	var obj = {};
+
+	for (var key in raw)
+	{
+		if (StyleRulesDialog.isCopyableKey(raw, key) &&
+			mxUtils.indexOf(StyleRulesDialog.ruleFields, key) < 0)
+		{
+			obj[key] = raw[key];
+		}
+	}
+
+	obj.property = mxUtils.trim(rule.property);
+	obj.op = rule.op;
+
+	if (rule.op == 'scale')
+	{
+		obj.min = Graph.parseDataNumber(rule.min);
+		obj.max = Graph.parseDataNumber(rule.max);
+		obj.colors = rule.colors.slice();
+		obj.target = rule.target;
+	}
+	else
+	{
+		if (rule.op != 'empty' && rule.op != 'notEmpty')
+		{
+			obj.value = rule.value;
+		}
+
+		obj.style = {};
+		var style = (Object.prototype.hasOwnProperty.call(raw, 'style') &&
+			raw.style != null && typeof raw.style === 'object') ? raw.style : {};
+
+		for (var key in style)
+		{
+			if (StyleRulesDialog.isCopyableKey(style, key) &&
+				!Object.prototype.hasOwnProperty.call(Graph.dataStyleKeys, key))
+			{
+				obj.style[key] = style[key];
+			}
+		}
+
+		for (var i = 0; i < rule.style.length; i++)
+		{
+			obj.style[rule.style[i].key] = rule.style[i].value;
+		}
+	}
+
+	if (mxUtils.trim(rule.tags).length > 0)
+	{
+		obj.tags = mxUtils.trim(rule.tags);
+	}
+
+	return obj;
+};
+
+/**
+ * Returns the JSON of the given rules of the dialog without the incomplete
+ * rules or null if there are no rules. Hidden rules are kept as they are.
+ */
+StyleRulesDialog.toJson = function(rules)
+{
+	var result = [];
+
+	for (var i = 0; i < rules.length; i++)
+	{
+		if (rules[i].hidden)
+		{
+			result.push(rules[i].raw);
+		}
+		else
+		{
+			var obj = StyleRulesDialog.toObject(rules[i]);
+
+			if (Graph.parseStyleRule(obj) != null)
+			{
+				result.push(obj);
+			}
+		}
+	}
+
+	return (result.length > 0) ? JSON.stringify(result) : null;
+};
+
+/**
+ * Returns the vertices and edges of the current page that rules can change
+ * (see Graph.applyDataStyles).
+ */
+StyleRulesDialog.getCells = function(graph)
+{
+	var model = graph.getModel();
+
+	return model.filterDescendants(function(cell)
+	{
+		return (model.isVertex(cell) || model.isEdge(cell)) &&
+			graph.getCurrentCellStyle(cell)['styleRules'] != '0';
+	});
+};
+
+/**
+ * Returns a legend of the given rules (see Graph.parseStyleRules) as a
+ * container with a row for each rule: a shape with the style of the rule,
+ * or the colors of a scale, and the condition as plain text. The cells of
+ * the legend are not changed by the rules (styleRules=0). Returns null if
+ * there are no rules.
+ */
+StyleRulesDialog.createLegend = function(graph, rules)
+{
+	var legend = null;
+
+	if (rules.length > 0)
+	{
+		var title = mxResources.get('legend', null, 'Legend');
+		var titleHeight = 30;
+		var rowHeight = 24;
+		var spacing = 8;
+		var swatchWidth = 40;
+		var labels = [];
+		var labelWidth = mxUtils.getSizeForString(title, mxConstants.DEFAULT_FONTSIZE,
+			mxConstants.DEFAULT_FONTFAMILY).width + 2 * spacing - swatchWidth;
+
+		for (var i = 0; i < rules.length; i++)
+		{
+			var rule = rules[i];
+			var label = rule.property + ' ' + StyleRulesDialog.getOperatorLabel(rule.op);
+
+			if (rule.op == 'scale')
+			{
+				label = rule.property + ' ' + rule.min + ' – ' + rule.max;
+			}
+			else if (rule.op != 'empty' && rule.op != 'notEmpty')
+			{
+				label += ' ' + rule.value;
+			}
+
+			if (rule.tags != null)
+			{
+				label += ' (' + rule.tags.join(' ') + ')';
+			}
+
+			labels.push(label);
+			// Adds the spacing of the text and room for other fonts
+			labelWidth = Math.max(labelWidth, Math.min(400, mxUtils.getSizeForString(
+				mxUtils.htmlEntities(label, false), mxConstants.DEFAULT_FONTSIZE,
+				mxConstants.DEFAULT_FONTFAMILY).width * 1.1 + 12));
+		}
+
+		var width = Math.ceil(3 * spacing + swatchWidth + labelWidth);
+		legend = new mxCell(mxUtils.htmlEntities(title), new mxGeometry(0, 0, width,
+			titleHeight + rules.length * (rowHeight + spacing) + spacing),
+			'swimlane;startSize=' + titleHeight + ';html=1;whiteSpace=wrap;' +
+			'collapsible=0;styleRules=0;');
+		legend.vertex = true;
+
+		for (var i = 0; i < rules.length; i++)
+		{
+			var rule = rules[i];
+			var y = titleHeight + spacing + i * (rowHeight + spacing);
+
+			if (rule.op == 'scale')
+			{
+				for (var j = 0; j < rule.colors.length; j++)
+				{
+					var hex = '#';
+
+					for (var k = 0; k < 3; k++)
+					{
+						hex += ((rule.colors[j][k] < 16) ? '0' : '') + rule.colors[j][k].toString(16);
+					}
+
+					// Whole units so that there are no gaps between the stops
+					var x0 = Math.round(j * swatchWidth / rule.colors.length);
+					var x1 = Math.round((j + 1) * swatchWidth / rule.colors.length);
+					var stop = new mxCell('', new mxGeometry(spacing + x0, y,
+						x1 - x0, rowHeight), 'rounded=0;html=1;strokeColor=none;fillColor=' +
+						hex + ';styleRules=0;');
+					stop.vertex = true;
+					legend.insert(stop);
+				}
+			}
+			else
+			{
+				var style = 'rounded=0;whiteSpace=wrap;html=1;styleRules=0;';
+				var text = false;
+
+				for (var j = 0; j < rule.style.length; j++)
+				{
+					var key = rule.style[j].key;
+
+					// Font size and rotation are not shown in the small shape and
+					// line widths are limited
+					if (key == mxConstants.STYLE_STROKEWIDTH)
+					{
+						style += key + '=' + Math.min(4, parseFloat(rule.style[j].value)) + ';';
+					}
+					else if (key != mxConstants.STYLE_FONTSIZE && key != mxConstants.STYLE_ROTATION)
+					{
+						style += key + '=' + rule.style[j].value + ';';
+					}
+
+					text = text || key == mxConstants.STYLE_FONTCOLOR ||
+						key == mxConstants.STYLE_FONTSIZE ||
+						key == mxConstants.STYLE_FONTSTYLE ||
+						key == mxConstants.STYLE_LABEL_BACKGROUNDCOLOR ||
+						key == mxConstants.STYLE_LABEL_BORDERCOLOR ||
+						key == mxConstants.STYLE_TEXT_OPACITY;
+				}
+
+				var swatch = new mxCell((text) ? 'Aa' : '', new mxGeometry(spacing, y,
+					swatchWidth, rowHeight), style);
+				swatch.vertex = true;
+				legend.insert(swatch);
+			}
+
+			var label = new mxCell(labels[i], new mxGeometry(2 * spacing + swatchWidth, y,
+				labelWidth, rowHeight), 'text;html=0;align=left;verticalAlign=middle;' +
+				'whiteSpace=nowrap;overflow=hidden;styleRules=0;');
+			label.vertex = true;
+			legend.insert(label);
+		}
+	}
+
+	return legend;
+};
+
+/**
+ * Returns the sorted names of the data of the given cells and label.
+ */
+StyleRulesDialog.getProperties = function(graph, cells)
+{
+	var names = Object.create(null);
+	names.label = true;
+
+	for (var i = 0; i < cells.length; i++)
+	{
+		var value = cells[i].value;
+
+		if (value != null && typeof value === 'object' && value.attributes != null)
+		{
+			for (var j = 0; j < value.attributes.length; j++)
+			{
+				var name = value.attributes[j].name;
+
+				// Internal attributes of generated cells are not data
+				if (name != 'placeholders' && name != 'id' &&
+					!graph.isBuiltInPropertyPrefix(name))
+				{
+					names[name] = true;
+				}
+			}
+		}
+	}
+
+	return Object.keys(names).sort();
+};
+
+/**
+ * Returns the sorted distinct values of the given property of the given
+ * cells, at most 100.
+ */
+StyleRulesDialog.getValues = function(graph, cells, property)
+{
+	var values = Object.create(null);
+	var count = 0;
+
+	if (property != null && property.length > 0)
+	{
+		for (var i = 0; i < cells.length && count < 100; i++)
+		{
+			var value = graph.getStyleRuleValue(cells[i], property);
+
+			if (value != null && value.length > 0 && values[value] == null)
+			{
+				values[value] = true;
+				count++;
+			}
+		}
+	}
+
+	return Object.keys(values).sort();
+};
+
+/**
+ * Returns a datalist with the given ID and values.
+ */
+StyleRulesDialog.createDataList = function(id, values)
+{
+	var list = document.createElement('datalist');
+	list.id = id;
+
+	for (var i = 0; i < values.length; i++)
+	{
+		var option = document.createElement('option');
+		option.setAttribute('value', values[i]);
+		list.appendChild(option);
+	}
+
+	return list;
+};
+
+/**
+ * Dialog for the data sources of the current page (see Graph.getDataSources)
+ * with the linked shapes and the result of the last refresh of each source.
+ * Sources are refreshed, added, edited and deleted here, each change is an
+ * undoable edit. Call destroy when the dialog is closed.
+ */
+var DataSourcesDialog = function(editorUi)
+{
+	var graph = editorUi.editor.graph;
+	var createIconButton = StyleRulesDialog.createIconButton;
+
+	var div = document.createElement('div');
+
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, mxResources.get('dataSources', null, 'Data Sources'));
+	div.appendChild(hd);
+
+	var hint = document.createElement('div');
+	hint.className = 'geDialogHint';
+	hint.style.marginBottom = '12px';
+	mxUtils.write(hint, mxResources.get('dataSourcesHint', null, 'Values of the selected ' +
+		'columns are copied into the diagram, and anyone who can open the diagram can see them.'));
+	div.appendChild(hint);
+
+	var list = document.createElement('div');
+	div.appendChild(list);
+
+	var refresh = function(ids)
+	{
+		editorUi.refreshDataSources(ids);
+	};
+
+	var showSourceDialog = function(source)
+	{
+		var dlg = new DataSourceDialog(editorUi, source, function()
+		{
+			render();
+		});
+
+		editorUi.showDialog(dlg.container, 600, null, true, true);
+		dlg.init();
+	};
+
+	var createCard = function(source, linked)
+	{
+		var card = document.createElement('div');
+		card.className = 'geDialogSection';
+
+		var row = document.createElement('div');
+		row.className = 'geDialogFormRow';
+		card.appendChild(row);
+
+		var name = document.createElement('span');
+		name.className = 'geDialogFormLabel';
+		name.style.cssText = 'min-width:0;max-width:160px;overflow:hidden;' +
+			'text-overflow:ellipsis;white-space:nowrap;line-height:normal;';
+		name.setAttribute('title', source.id);
+		mxUtils.write(name, source.id);
+		row.appendChild(name);
+
+		var url = document.createElement('span');
+		url.className = 'geDialogHint';
+		url.style.cssText = 'flex:1 1 auto;min-width:0;overflow:hidden;' +
+			'text-overflow:ellipsis;white-space:nowrap;line-height:normal;';
+		url.setAttribute('title', source.url);
+		mxUtils.write(url, source.url);
+		row.appendChild(url);
+
+		row.appendChild(createIconButton(Editor.refreshImage, mxResources.get('refresh'), function()
+		{
+			refresh([source.id]);
+		}));
+
+		row.appendChild(createIconButton(Editor.editImage, mxResources.get('edit'), function()
+		{
+			showSourceDialog(source);
+		}));
+
+		row.appendChild(createIconButton(Editor.trashImage, mxResources.get('delete'), function()
+		{
+			graph.removeDataSource(source.id);
+			render();
+		}));
+
+		var info = document.createElement('div');
+		info.className = 'geDialogHint';
+		info.style.marginTop = '6px';
+		mxUtils.write(info, mxResources.get('keyColumn', null, 'Key Column') + ': ' + source.key +
+			' · ' + mxResources.get('columns', null, 'Columns') + ': ' + source.columns.join(', ') +
+			' · ' + mxResources.get('shapes') + ': ' + ((linked != null) ? linked.length : 0));
+		card.appendChild(info);
+
+		var status = editorUi.getDataSourceStatus(source.id);
+
+		if (status != null)
+		{
+			var line = document.createElement('div');
+			line.className = 'geDialogHint';
+			line.style.marginTop = '4px';
+
+			if (status.loading)
+			{
+				mxUtils.write(line, mxResources.get('loading') + '...');
+			}
+			else if (status.error != null)
+			{
+				line.style.color = 'light-dark(var(--error-color), var(--dark-error-color))';
+				mxUtils.write(line, status.error);
+			}
+			else
+			{
+				mxUtils.write(line, mxResources.get('refreshedAt',
+					[status.time.toLocaleTimeString()], 'Refreshed at {1}'));
+			}
+
+			card.appendChild(line);
+		}
+
+		return card;
+	};
+
+	var render = function()
+	{
+		while (list.firstChild != null)
+		{
+			list.removeChild(list.firstChild);
+		}
+
+		var sources = graph.getDataSources();
+		var linked = (sources.length > 0) ? graph.getDataSourceCells() : null;
+
+		for (var i = 0; i < sources.length; i++)
+		{
+			list.appendChild(createCard(sources[i], linked[sources[i].id]));
+		}
+
+		DataSourcesDialog.fit(div);
+	};
+
+	var addBtn = mxUtils.button(mxResources.get('addSource', null, 'Add Source'), function()
+	{
+		showSourceDialog(null);
+	});
+
+	addBtn.className = 'geBtn';
+	addBtn.style.marginLeft = '0';
+	div.appendChild(addBtn);
+
+	var refreshBtn = mxUtils.button(mxResources.get('refreshAll', null, 'Refresh All'), function()
+	{
+		refresh(null);
+	});
+
+	refreshBtn.className = 'geBtn';
+	div.appendChild(refreshBtn);
+
+	render();
+
+	// Renders once for the events of all sources of a refresh
+	var renderThread = null;
+
+	var statusListener = function()
+	{
+		if (renderThread == null)
+		{
+			renderThread = window.setTimeout(function()
+			{
+				renderThread = null;
+				render();
+			}, 0);
+		}
+	};
+
+	editorUi.addListener('dataSourceStatusChanged', statusListener);
+
+	this.init = function()
+	{
+		addBtn.focus();
+	};
+
+	this.destroy = function()
+	{
+		editorUi.removeListener(statusListener);
+		window.clearTimeout(renderThread);
+	};
+
+	var dlg = new CustomDialog(editorUi, div, null, null, mxResources.get('close'), null, null, true);
+	this.container = dlg.container;
+};
+
+/**
+ * Fits the height of the dialog with the given content to the content, as
+ * the height is measured once when the dialog is shown. The CSS of the
+ * dialog keeps it in the window.
+ */
+DataSourcesDialog.fit = function(content)
+{
+	var dlg = content.closest('.geDialog');
+
+	if (dlg != null && dlg.firstElementChild != null)
+	{
+		dlg.style.height = '';
+		dlg.style.height = (dlg.firstElementChild.scrollHeight + 48) + 'px';
+	}
+};
+
+/**
+ * Dialog for adding the given data source of the current page, or a new one
+ * if source is null (see Graph.parseDataSource): the name and the URL of the
+ * CSV, which is loaded for the preview, the key column, the columns that are
+ * written to the shapes, the mode for missing rows and whether shapes whose
+ * label or other data is a key are linked to the source. OK writes the
+ * source, links the shapes and writes the data in one undoable edit and
+ * calls done.
+ */
+var DataSourceDialog = function(editorUi, source, done)
+{
+	var graph = editorUi.editor.graph;
+	var model = graph.getModel();
+	var preview = null;
+
+	var div = document.createElement('div');
+
+	var hd = document.createElement('h3');
+	mxUtils.write(hd, (source != null) ? mxResources.get('edit') :
+		mxResources.get('addSource', null, 'Add Source'));
+	div.appendChild(hd);
+
+	var createRow = function(parent, label, className)
+	{
+		var row = document.createElement('div');
+		row.className = className || 'geDialogFormRow';
+
+		var lbl = document.createElement('span');
+		lbl.className = 'geDialogFormLabel';
+		mxUtils.write(lbl, label + ':');
+		row.appendChild(lbl);
+		parent.appendChild(row);
+
+		return row;
+	};
+
+	var section = document.createElement('div');
+	section.className = 'geDialogSection';
+	div.appendChild(section);
+
+	var nameInput = document.createElement('input');
+	nameInput.setAttribute('type', 'text');
+	nameInput.value = (source != null) ? source.id : '';
+	nameInput.disabled = source != null;
+	createRow(section, mxResources.get('name')).appendChild(nameInput);
+
+	var urlRow = createRow(section, mxResources.get('url'));
+	var urlInput = document.createElement('input');
+	urlInput.setAttribute('type', 'text');
+	urlInput.value = (source != null) ? source.url : '';
+	urlRow.appendChild(urlInput);
+
+	var previewBtn = mxUtils.button(mxResources.get('preview'), function()
+	{
+		load();
+	});
+
+	previewBtn.className = 'geBtn';
+	previewBtn.style.flex = '0 0 auto';
+	urlRow.appendChild(previewBtn);
+
+	var urlHint = document.createElement('div');
+	urlHint.className = 'geDialogHint';
+	urlHint.style.marginTop = '4px';
+	mxUtils.write(urlHint, mxResources.get('dataSourceUrlHint', null, 'Paste the link of a ' +
+		'Google Sheet that anyone with the link can view, or the URL of a CSV file.'));
+	section.appendChild(urlHint);
+
+	var status = document.createElement('div');
+	status.className = 'geDialogHint';
+	status.style.marginTop = '6px';
+	section.appendChild(status);
+
+	var options = document.createElement('div');
+	options.className = 'geDialogSection';
+	options.style.display = 'none';
+	div.appendChild(options);
+
+	var keySelect = document.createElement('select');
+	createRow(options, mxResources.get('keyColumn', null, 'Key Column')).appendChild(keySelect);
+
+	var columnsDiv = document.createElement('div');
+	columnsDiv.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 14px;flex:1;min-width:0;';
+	createRow(options, mxResources.get('columns', null, 'Columns'),
+		'geDialogFormRow geDialogFormRowTop').appendChild(columnsDiv);
+
+	var missingSelect = document.createElement('select');
+	var missingModes = [['delete', 'deleteShapes', 'Delete Shapes'],
+		['fade', 'fadeShapes', 'Fade Shapes'], ['keep', 'keepShapes', 'Keep Shapes']];
+
+	for (var i = 0; i < missingModes.length; i++)
+	{
+		var option = document.createElement('option');
+		option.setAttribute('value', missingModes[i][0]);
+		mxUtils.write(option, mxResources.get(missingModes[i][1], null, missingModes[i][2]));
+		missingSelect.appendChild(option);
+	}
+
+	missingSelect.value = (source != null) ? source.missing : 'delete';
+	createRow(options, mxResources.get('missingRows', null, 'Missing Rows')).appendChild(missingSelect);
+
+	// Shapes of the rows: linked by a property, generated or none
+	var shapesRow = createRow(options, mxResources.get('shapes'));
+	var shapesSelect = document.createElement('select');
+	shapesSelect.style.flex = '0 1 auto';
+	var shapesModes = [['link', 'linkShapes', 'Link Shapes'],
+		['generate', 'generateShapes', 'Generate Shapes'], ['none', 'none', 'None']];
+
+	for (var i = 0; i < shapesModes.length; i++)
+	{
+		var option = document.createElement('option');
+		option.setAttribute('value', shapesModes[i][0]);
+		mxUtils.write(option, mxResources.get(shapesModes[i][1], null, shapesModes[i][2]));
+		shapesSelect.appendChild(option);
+	}
+
+	shapesSelect.value = (source == null) ? 'link' : ((source.generate != null) ? 'generate' : 'none');
+	shapesRow.appendChild(shapesSelect);
+
+	var propertySelect = document.createElement('select');
+	propertySelect.setAttribute('title', mxResources.get('property'));
+	shapesRow.appendChild(propertySelect);
+
+	var linkCount = document.createElement('span');
+	linkCount.className = 'geDialogHint';
+	linkCount.style.cssText = 'flex:0 0 auto;white-space:nowrap;margin-left:auto;';
+	shapesRow.appendChild(linkCount);
+
+	// CSV import directives of generated shapes
+	var templateRow = createRow(options, mxResources.get('template'), 'geDialogFormRow geDialogFormRowTop');
+	var templateDiv = document.createElement('div');
+	templateDiv.style.cssText = 'flex:1;min-width:0;';
+	templateRow.appendChild(templateDiv);
+
+	var templateInput = document.createElement('textarea');
+	templateInput.setAttribute('rows', '6');
+	templateInput.setAttribute('spellcheck', 'false');
+	templateInput.style.cssText = 'width:100%;box-sizing:border-box;resize:vertical;' +
+		'font-family:monospace;font-size:12px;white-space:pre-wrap;';
+	templateInput.value = (source != null && source.generate != null) ? source.generate : '';
+	templateDiv.appendChild(templateInput);
+
+	var templateHint = document.createElement('div');
+	templateHint.className = 'geDialogHint';
+	templateHint.style.marginTop = '4px';
+	mxUtils.write(templateHint, mxResources.get('generateShapesHint', null, 'Lines that start ' +
+		'with # define the shapes like in the CSV import and can use the selected columns.'));
+	templateDiv.appendChild(templateHint);
+
+	// The template follows the key column until it is changed
+	var templateChanged = source != null && source.generate != null;
+
+	// Applies the template to the generated shapes (selected when the
+	// template changes until the box is changed)
+	var generated = (templateChanged) ? (graph.getDataSourceCells()[source.id] ||
+		[]).filter(function(cell) { return model.isVertex(cell); }).length : 0;
+	var applyLabel = null;
+	var applyCheckbox = null;
+	var applyChanged = false;
+
+	if (generated > 0)
+	{
+		applyLabel = document.createElement('label');
+		applyLabel.className = 'geDialogHint';
+		applyLabel.style.cssText = 'display:none;align-items:center;gap:6px;margin-top:6px;';
+		applyCheckbox = document.createElement('input');
+		applyCheckbox.setAttribute('type', 'checkbox');
+		applyLabel.appendChild(applyCheckbox);
+		mxUtils.write(applyLabel, mxResources.get('applyTemplateToShapes', [generated],
+			'Apply the template to the {1} existing shapes'));
+		templateDiv.appendChild(applyLabel);
+
+		mxEvent.addListener(applyCheckbox, 'change', function()
+		{
+			applyChanged = true;
+		});
+	}
+
+	var isTemplateApplied = function()
+	{
+		return applyCheckbox != null && shapesSelect.value == 'generate' &&
+			applyCheckbox.checked;
+	};
+
+	var updateApply = function()
+	{
+		if (applyLabel != null)
+		{
+			var visible = shapesSelect.value == 'generate';
+
+			if (!applyChanged)
+			{
+				applyCheckbox.checked = templateInput.value != source.generate;
+			}
+
+			if (visible != (applyLabel.style.display != 'none'))
+			{
+				applyLabel.style.display = (visible) ? 'flex' : 'none';
+				DataSourcesDialog.fit(div);
+			}
+		}
+	};
+
+	mxEvent.addListener(templateInput, 'input', function()
+	{
+		templateChanged = true;
+		updateApply();
+		loadOrgChart();
+	});
+
+	// Loads the org chart layout for a template that needs it before OK
+	// generates the shapes (see EditorUi.isOrgChartCsv)
+	var loadOrgChart = function()
+	{
+		if (EditorUi.isOrgChartCsv(templateInput.value))
+		{
+			EditorUi.loadOrgChartScripts(function() {});
+		}
+	};
+
+	loadOrgChart();
+
+	var table = document.createElement('table');
+	table.style.cssText = 'border-collapse:collapse;white-space:nowrap;';
+	var tableDiv = document.createElement('div');
+	tableDiv.style.cssText = 'max-height:140px;overflow:auto;margin-top:8px;';
+	tableDiv.appendChild(table);
+	options.appendChild(tableDiv);
+
+	var consent = document.createElement('div');
+	consent.className = 'geDialogHint';
+	mxUtils.write(consent, mxResources.get('dataSourcesHint', null, 'Values of the selected ' +
+		'columns are copied into the diagram, and anyone who can open the diagram can see them.'));
+	div.appendChild(consent);
+
+	// Shapes that are not linked to a source
+	var candidates = model.filterDescendants(function(cell)
+	{
+		return (model.isVertex(cell) || model.isEdge(cell)) && (cell.value == null ||
+			typeof cell.value !== 'object' || !cell.value.hasAttribute(Graph.dataSourceAttribute));
+	});
+
+	var properties = StyleRulesDialog.getProperties(graph, candidates);
+
+	for (var i = 0; i < properties.length; i++)
+	{
+		var option = document.createElement('option');
+		option.setAttribute('value', properties[i]);
+		mxUtils.write(option, properties[i]);
+		propertySelect.appendChild(option);
+	}
+
+	propertySelect.value = 'label';
+
+	var parser = new DOMParser();
+
+	// Returns the value of the given cell for linking: the text of the label or
+	// the value of the property
+	var getLinkValue = function(cell, property)
+	{
+		var value = null;
+
+		if (property == 'label')
+		{
+			value = graph.getLabel(cell);
+
+			if (value != null && /[<&]/.test(value) && graph.isHtmlLabelShown(cell))
+			{
+				// Parses into an inert document, which runs no scripts and loads
+				// nothing, as sanitizing each label is slow
+				var doc = parser.parseFromString(String(value), 'text/html');
+				var hidden = doc.body.querySelectorAll('script, style, template');
+
+				for (var i = 0; i < hidden.length; i++)
+				{
+					hidden[i].parentNode.removeChild(hidden[i]);
+				}
+
+				value = mxUtils.extractTextWithWhitespace(doc.body.childNodes);
+			}
+		}
+		else
+		{
+			value = graph.getStyleRuleValue(cell, property);
+		}
+
+		return (value != null) ? mxUtils.trim(String(value)) : null;
+	};
+
+	// Values of the candidates for each property, which do not change while
+	// the dialog is open
+	var linkValues = Object.create(null);
+
+	// Returns the keys of the preview for the selected key column
+	var getKeys = function()
+	{
+		var keys = Object.create(null);
+		var index = mxUtils.indexOf(preview.names, keySelect.value);
+
+		for (var i = 0; i < preview.rows.length && index >= 0; i++)
+		{
+			var key = Graph.zapGremlins(mxUtils.trim(preview.rows[i][index] || ''));
+
+			if (key.length > 0)
+			{
+				keys[key] = true;
+			}
+		}
+
+		return keys;
+	};
+
+	// Returns the shapes that are linked if the dialog is applied
+	var getLinkCells = function()
+	{
+		var keys = getKeys();
+		var property = propertySelect.value;
+		var values = linkValues[property];
+		var result = [];
+
+		if (values == null)
+		{
+			values = [];
+
+			for (var i = 0; i < candidates.length; i++)
+			{
+				values.push(getLinkValue(candidates[i], property));
+			}
+
+			linkValues[property] = values;
+		}
+
+		for (var i = 0; i < candidates.length; i++)
+		{
+			if (values[i] != null && keys[values[i]])
+			{
+				result.push({cell: candidates[i], key: values[i]});
+			}
+		}
+
+		return result;
+	};
+
+	// Number of shapes that are linked or generated
+	var updateLinks = function()
+	{
+		linkCount.textContent = mxResources.get('shapes') + ': ' +
+			((shapesSelect.value == 'generate') ? Object.keys(getKeys()).length :
+			getLinkCells().length);
+	};
+
+	// Returns the directives of the shapes of a new source with the key column
+	var getTemplate = function()
+	{
+		var key = (graph.isDataSourceColumn(keySelect.value)) ? keySelect.value :
+			Graph.dataKeyAttribute;
+
+		return '# label: %' + key + '%\n' +
+			'# style: rounded=1;whiteSpace=wrap;html=1;\n' +
+			'# layout: auto';
+	};
+
+	var renderColumns = function()
+	{
+		var checked = Object.create(null);
+		var inputs = columnsDiv.getElementsByTagName('input');
+
+		for (var i = 0; i < inputs.length; i++)
+		{
+			checked[inputs[i].value] = inputs[i].checked;
+		}
+
+		while (columnsDiv.firstChild != null)
+		{
+			columnsDiv.removeChild(columnsDiv.firstChild);
+		}
+
+		for (var i = 0; i < preview.used.length; i++)
+		{
+			var name = preview.used[i];
+			var writable = name != keySelect.value && graph.isDataSourceColumn(name);
+			var lbl = document.createElement('label');
+			lbl.style.cssText = 'display:inline-flex;align-items:center;gap:4px;';
+			lbl.style.opacity = (writable) ? '' : '0.5';
+			var cb = document.createElement('input');
+			cb.setAttribute('type', 'checkbox');
+			cb.value = name;
+			cb.disabled = !writable;
+			cb.checked = writable && ((checked[name] != null) ? checked[name] :
+				source != null && mxUtils.indexOf(source.columns, name) >= 0);
+			lbl.appendChild(cb);
+			mxUtils.write(lbl, name);
+			columnsDiv.appendChild(lbl);
+		}
+	};
+
+	var renderTable = function()
+	{
+		while (table.firstChild != null)
+		{
+			table.removeChild(table.firstChild);
+		}
+
+		var addRow = function(values, header)
+		{
+			var tr = document.createElement('tr');
+
+			for (var i = 0; i < preview.names.length; i++)
+			{
+				var td = document.createElement((header) ? 'th' : 'td');
+				td.style.cssText = 'padding:2px 8px;text-align:left;border-bottom:1px solid ' +
+					'light-dark(var(--field-border-color), var(--dark-field-border-color));';
+				mxUtils.write(td, values[i] || '');
+				tr.appendChild(td);
+			}
+
+			table.appendChild(tr);
+		};
+
+		addRow(preview.names, true);
+
+		for (var i = 0; i < preview.rows.length && i < 5; i++)
+		{
+			addRow(preview.rows[i], false);
+		}
+	};
+
+	// Marks the name and the URL if they are empty or invalid
+	var updateMarks = function()
+	{
+		var mark = function(input, warn)
+		{
+			if (warn)
+			{
+				input.classList.add('geDialogFieldWarn');
+			}
+			else
+			{
+				input.classList.remove('geDialogFieldWarn');
+			}
+		};
+
+		var url = mxUtils.trim(urlInput.value);
+		mark(nameInput, mxUtils.trim(nameInput.value).length == 0);
+		mark(urlInput, !/^https?:\/\/[^\s]+$/i.test(url) || editorUi.getDataSourceUrlError(url) != null);
+	};
+
+	mxEvent.addListener(nameInput, 'input', updateMarks);
+	mxEvent.addListener(urlInput, 'input', updateMarks);
+	updateMarks();
+
+	// Shows the property for linking, the count and the template of the mode
+	var updateLinkControls = function()
+	{
+		var mode = shapesSelect.value;
+		propertySelect.style.display = (mode == 'link') ? '' : 'none';
+		linkCount.style.display = (mode != 'none') ? '' : 'none';
+		templateRow.style.display = (mode == 'generate') ? '' : 'none';
+		updateApply();
+
+		if (mode == 'generate' && !templateChanged && preview != null)
+		{
+			templateInput.value = getTemplate();
+		}
+
+		if (preview != null)
+		{
+			updateLinks();
+		}
+
+		DataSourcesDialog.fit(div);
+	};
+
+	mxEvent.addListener(shapesSelect, 'change', updateLinkControls);
+	updateLinkControls();
+
+	// Shows the given text below the URL, errors in the error color
+	var setStatus = function(text, error)
+	{
+		status.textContent = text;
+		status.style.color = (error) ? 'light-dark(var(--error-color), var(--dark-error-color))' : '';
+		DataSourcesDialog.fit(div);
+	};
+
+	// Shows the error of a URL that cannot be loaded here while it is typed
+	var urlError = null;
+
+	var checkUrl = function()
+	{
+		var url = mxUtils.trim(urlInput.value);
+		var error = (/^https?:\/\/[^\s]+$/i.test(url)) ? editorUi.getDataSourceUrlError(url) : null;
+
+		if (error != null)
+		{
+			setStatus(error, true);
+		}
+		else if (urlError != null && status.textContent == urlError)
+		{
+			setStatus('');
+		}
+
+		urlError = error;
+	};
+
+	mxEvent.addListener(urlInput, 'input', checkUrl);
+
+	// A changed URL needs a new preview, as OK writes the rows of the preview
+	mxEvent.addListener(urlInput, 'input', function()
+	{
+		if (preview != null && mxUtils.trim(urlInput.value) != preview.url)
+		{
+			preview = null;
+			options.style.display = 'none';
+			DataSourcesDialog.fit(div);
+		}
+	});
+
+	var load = function()
+	{
+		var url = mxUtils.trim(urlInput.value);
+		preview = null;
+		options.style.display = 'none';
+
+		if (!/^https?:\/\/[^\s]+$/i.test(url))
+		{
+			setStatus(mxResources.get('invalidInput'), true);
+		}
+		else
+		{
+			setStatus(mxResources.get('loading') + '...');
+			previewBtn.disabled = true;
+
+			editorUi.loadDataSource({url: url}, function(text)
+			{
+				previewBtn.disabled = false;
+				var error = null;
+
+				try
+				{
+					preview = DataSourceDialog.parsePreview(text);
+				}
+				catch (e)
+				{
+					// Files with too many rows or columns
+					error = e.message;
+				}
+
+				// A URL that was changed while it was loaded needs a new preview
+				if (mxUtils.trim(urlInput.value) != url)
+				{
+					preview = null;
+					setStatus('');
+				}
+				else if (preview == null)
+				{
+					setStatus((error != null) ? error : mxResources.get('invalidOrMissingFile'), true);
+				}
+				else
+				{
+					preview.url = url;
+
+					if (mxUtils.trim(nameInput.value).length == 0)
+					{
+						nameInput.value = DataSourceDialog.suggestName(graph, url);
+						updateMarks();
+					}
+
+					while (keySelect.firstChild != null)
+					{
+						keySelect.removeChild(keySelect.firstChild);
+					}
+
+					for (var i = 0; i < preview.used.length; i++)
+					{
+						var option = document.createElement('option');
+						option.setAttribute('value', preview.used[i]);
+						mxUtils.write(option, preview.used[i]);
+						keySelect.appendChild(option);
+					}
+
+					keySelect.value = (source != null && mxUtils.indexOf(preview.used,
+						source.key) >= 0) ? source.key : preview.used[0];
+					renderColumns();
+					renderTable();
+					options.style.display = '';
+					updateLinkControls();
+					setStatus('');
+				}
+			}, function(e)
+			{
+				previewBtn.disabled = false;
+				setStatus((e != null && e.message != null) ? e.message : String(e), true);
+			});
+		}
+	};
+
+	mxEvent.addListener(keySelect, 'change', function()
+	{
+		renderColumns();
+		updateLinkControls();
+	});
+
+	mxEvent.addListener(propertySelect, 'change', updateLinks);
+
+	this.init = function()
+	{
+		checkUrl();
+
+		if (source != null)
+		{
+			urlInput.focus();
+			load();
+		}
+		else
+		{
+			nameInput.focus();
+		}
+	};
+
+	var dlg = new CustomDialog(editorUi, div, function()
+	{
+		var id = mxUtils.trim(nameInput.value);
+		var columns = [];
+		var inputs = columnsDiv.getElementsByTagName('input');
+
+		for (var i = 0; i < inputs.length; i++)
+		{
+			if (inputs[i].checked)
+			{
+				columns.push(inputs[i].value);
+			}
+		}
+
+		var mode = shapesSelect.value;
+		var obj = {id: id, type: 'csv', url: mxUtils.trim(urlInput.value),
+			key: keySelect.value, columns: columns, missing: missingSelect.value,
+			generate: (mode == 'generate') ? templateInput.value : null};
+		var parsed = graph.parseDataSource(obj);
+
+		if (!graph.isEnabled())
+		{
+			return mxResources.get('readOnly');
+		}
+		else if (preview == null)
+		{
+			return mxResources.get('invalidOrMissingFile');
+		}
+		else if (parsed == null || (source == null && graph.getDataSource(id) != null))
+		{
+			return mxResources.get('invalidName');
+		}
+		else if (mode == 'generate' && parsed.generate == null)
+		{
+			return mxResources.get('invalidInput');
+		}
+
+		var rows = null;
+		var keys = [];
+
+		try
+		{
+			rows = editorUi.parseDataSourceRows(preview.text, parsed, keys);
+		}
+		catch (e)
+		{
+			return e.message;
+		}
+
+		var links = (mode == 'link') ? getLinkCells() : [];
+		var error = null;
+
+		// Writes the rows like a refresh, which lays out containers of any size
+		// (see Graph.isLiveLayoutLimited)
+		graph.executeWithoutLayoutLimits(function()
+		{
+			model.beginUpdate();
+			try
+			{
+				// A changed key column links the shapes of the rows again with their
+				// keys in this column, so that they are not missing rows
+				var start = model.currentEdit.changes.length;
+
+				if (source != null && source.key != parsed.key)
+				{
+					DataSourceDialog.changeKeys(graph, id, preview, source.key, parsed.key);
+				}
+
+				var rekeyed = model.currentEdit.changes.slice(start);
+
+				// The source is only written if its shapes can be generated
+				if (mode == 'generate')
+				{
+					// A changed template that is not applied keeps the styles and
+					// labels of the existing shapes and connections
+					editorUi.generateDataSourceCells(parsed, rows, keys, function(e)
+					{
+						error = e;
+					}, (isTemplateApplied()) ? source.generate : null, !isTemplateApplied() &&
+						source != null && source.generate != parsed.generate);
+				}
+
+				if (error == null)
+				{
+					graph.setDataSource(id, obj);
+
+					for (var i = 0; i < links.length; i++)
+					{
+						graph.setAttributeForCell(links[i].cell, Graph.dataSourceAttribute, id);
+						graph.setAttributeForCell(links[i].cell, Graph.dataKeyAttribute, links[i].key);
+					}
+
+					graph.updateDataSourceCells([parsed], [rows]);
+				}
+				else
+				{
+					editorUi.revertChanges(graph, rekeyed);
+				}
+			}
+			finally
+			{
+				model.endUpdate();
+			}
+		});
+
+		if (error != null)
+		{
+			return (error.message != null) ? error.message : String(error);
+		}
+
+		editorUi.setDataSourceStatus(id, {time: new Date(), error: null});
+
+		if (done != null)
+		{
+			done();
+		}
+	}, null, null, null, null, null, null, true);
+
+	this.container = dlg.container;
+};
+
+/**
+ * Changes the keys of the shapes that are linked to the data source with the
+ * given ID from the values in the given old key column to the values in the
+ * given new key column of the same rows of the given preview (see
+ * parsePreview), where the first row of a key wins as in
+ * EditorUi.parseDataSourceRows. Shapes whose key has no row keep it.
+ */
+DataSourceDialog.changeKeys = function(graph, id, preview, oldKey, newKey)
+{
+	var oldIndex = mxUtils.indexOf(preview.names, oldKey);
+	var newIndex = mxUtils.indexOf(preview.names, newKey);
+	var keys = Object.create(null);
+
+	for (var i = 0; oldIndex >= 0 && newIndex >= 0 && i < preview.rows.length; i++)
+	{
+		var oldValue = Graph.zapGremlins(mxUtils.trim(preview.rows[i][oldIndex] || ''));
+		var newValue = Graph.zapGremlins(mxUtils.trim(preview.rows[i][newIndex] || ''));
+
+		if (oldValue.length > 0 && newValue.length > 0 && keys[oldValue] == null)
+		{
+			keys[oldValue] = newValue;
+		}
+	}
+
+	var cells = graph.getDataSourceCells()[id] || [];
+
+	for (var i = 0; i < cells.length; i++)
+	{
+		var key = cells[i].getAttribute(Graph.dataKeyAttribute);
+
+		if (key != null && keys[key] != null && keys[key] != key)
+		{
+			graph.setAttributeForCell(cells[i], Graph.dataKeyAttribute, keys[key]);
+		}
+	}
+};
+
+/**
+ * Returns the names of the columns up to the last name of the header (see
+ * Graph.toDataName) and the rows of the given CSV for the preview of a data
+ * source as {text, names, rows} or null if the CSV has no header. Empty
+ * lines and lines before the header that start with # are ignored, and
+ * files with too many rows or columns throw an error (see
+ * EditorUi.getDataSourceRecords).
+ */
+DataSourceDialog.parsePreview = function(text)
+{
+	var records = EditorUi.getDataSourceRecords(text);
+	var names = null;
+	var rows = [];
+
+	for (var i = 0; i < records.length; i++)
+	{
+		var values = Editor.prototype.csvToArray(records[i]);
+
+		if (names == null)
+		{
+			names = EditorUi.getDataSourceNames(values);
+		}
+		else
+		{
+			rows.push(values);
+		}
+	}
+
+	// The empty columns at the end, eg. of spreadsheets, are not counted for
+	// the limit (see getDataSourceRecords) and are not shown in the table
+	while (names != null && names.length > 0 && names[names.length - 1].length == 0)
+	{
+		names.pop();
+	}
+
+	// Columns without a name cannot be used
+	var used = [];
+	var added = Object.create(null);
+
+	for (var i = 0; names != null && i < names.length; i++)
+	{
+		if (names[i].length > 0 && added[names[i]] == null)
+		{
+			added[names[i]] = true;
+			used.push(names[i]);
+		}
+	}
+
+	return (used.length > 0) ? {text: text, names: names, used: used, rows: rows} : null;
+};
+
+/**
+ * Returns a name for a new data source with the given URL that no source of
+ * the current page has: the name of the file without the extension, or sheet
+ * for a Google Sheet, whose links have no name.
+ */
+DataSourceDialog.suggestName = function(graph, url)
+{
+	var file = (EditorUi.getGoogleSheetCsvUrl(url) != null) ? 'sheet' :
+		url.split(/[?#]/)[0].split('/').pop().replace(/\.[^.]*$/, '');
+
+	try
+	{
+		file = decodeURIComponent(file);
+	}
+	catch (e)
+	{
+		// Keeps a name with an invalid escape as it is
+	}
+
+	var name = Graph.toDataName(file.substring(0, 50)) || 'source';
+	var result = name;
+
+	for (var i = 2; graph.getDataSource(result) != null; i++)
+	{
+		result = name + '_' + i;
+	}
+
+	return result;
+};
+
+/**
  * Constructs a new popup opener button dialog.
  */
 var BtnDialog = function(editorUi, peer, btnLbl, fn)
@@ -18820,51 +23267,15 @@ var BtnDialog = function(editorUi, peer, btnLbl, fn)
 	hd.style.color = 'gray';
 	
 	mxUtils.write(hd, mxResources.get('done'));
-	
-	var service = 'Unknown';
-	
-	var img = document.createElement('img');
-	img.setAttribute('border', '0');
-	img.setAttribute('align', 'absmiddle');
-	img.style.marginRight = '10px';
 
-	if (peer == editorUi.drive)
-	{
-		service = mxResources.get('googleDrive');
-		img.src = IMAGE_PATH + '/google-drive-logo-white.svg';
-	}
-	else if (peer == editorUi.dropbox)
-	{
-		service = mxResources.get('dropbox');
-		img.src = IMAGE_PATH + '/dropbox-logo-white.svg';
-	}
-	else if (peer == editorUi.oneDrive)
-	{
-		service = mxResources.get('oneDrive');
-		img.src = IMAGE_PATH + '/onedrive-logo-white.svg';
-	}
-	else if (peer == editorUi.gitHub)
-	{
-		service = mxResources.get('github');
-		img.src = IMAGE_PATH + '/github-logo-white.svg';
-	}
-	else if (peer == editorUi.gitLab)
-	{
-		service = mxResources.get('gitlab');
-		img.src = IMAGE_PATH + '/gitlab-logo.svg';
-	}
-	else if (peer == editorUi.trello)
-	{
-		service = mxResources.get('trello');
-		img.src = IMAGE_PATH + '/trello-logo-white.svg';
-	}
-	
+	var service = AuthDialog.getServiceInfo(editorUi, peer);
+
 	var p = document.createElement('p');
-	mxUtils.write(p, mxResources.get('authorizedIn', [service], 'You are now authorized in {1}'));
+	mxUtils.write(p, mxResources.get('authorizedIn', [service.name], 'You are now authorized in {1}'));
 
 	var button = mxUtils.button(btnLbl, fn);
 
-	button.insertBefore(img, button.firstChild);
+	button.insertBefore(service.img, button.firstChild);
 	button.style.marginTop = '6px';
 	button.className = 'geBigButton';
 	button.style.fontSize = '18px';
@@ -19023,16 +23434,21 @@ var FontDialog = function(editorUi, curFontname, curUrl, curType, fn)
 	this.init = function()
 	{
 		var input = sysFontInput;
+		var radio = sysFontRadio;
 
 		if (curType == 'g')
 		{
 			input = googleFontInput;
+			radio = googleFontRadio;
 		}
 		else if (curType == 'w' && Editor.enableWebFonts)
 		{
 			input = webFontInput;
+			radio = webFontRadio;
 		}
 
+		radio.setAttribute('checked', 'checked');
+		radio.checked = true;
 		input.focus();
 
 		if (mxClient.IS_GC || mxClient.IS_FF || document.documentMode >= 5)
@@ -19133,29 +23549,10 @@ var FontDialog = function(editorUi, curFontname, curUrl, curType, fn)
 	mxEvent.addListener(webFontInput, 'keypress', enterSubmit);
 	mxEvent.addListener(webFontUrlInput, 'keypress', enterSubmit);
 
-	mxEvent.addListener(sysFontInput, 'focus', function()
-	{
-		sysFontRadio.setAttribute('checked', 'checked');
-		sysFontRadio.checked = true;
-	});
-
-	mxEvent.addListener(googleFontInput, 'focus', function()
-	{
-		googleFontRadio.setAttribute('checked', 'checked');
-		googleFontRadio.checked = true;
-	});
-
-	mxEvent.addListener(webFontInput, 'focus', function()
-	{
-		webFontRadio.setAttribute('checked', 'checked');
-		webFontRadio.checked = true;
-	});
-
-	mxEvent.addListener(webFontUrlInput, 'focus', function()
-	{
-		webFontRadio.setAttribute('checked', 'checked');
-		webFontRadio.checked = true;
-	});
+	Dialog.checkRadioOnInput(sysFontInput, sysFontRadio);
+	Dialog.checkRadioOnInput(googleFontInput, googleFontRadio);
+	Dialog.checkRadioOnInput(webFontInput, webFontRadio);
+	Dialog.checkRadioOnInput(webFontUrlInput, webFontRadio);
 
 	if (editorUi.editor.cancelFirst)
 	{
@@ -19205,7 +23602,7 @@ function AspectDialog(editorUi, pageId, layerIds, okFn, cancelFn)
 	
 	var btns = document.createElement('div');
 	btns.style.marginTop = '16px';
-	btns.style.textAlign = 'center';
+	btns.style.textAlign = 'right';
 	
 	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
 	{
@@ -19922,12 +24319,40 @@ var ConnectionPointsDialog = function(editorUi, cell)
 			return editingGraph.addCell(cPoint);
 		};
 	
-		// Add cell and current connection points on it
+		// Add cell and current connection points on it. The cell is shown
+		// unrotated and unflipped because connection points are stored in the
+		// unrotated and unflipped shape and points moved in a rotated or
+		// flipped preview are saved in the wrong (eg. mirrored) place, so they
+		// seem to revert after the dialog is reopened. For the same reason the
+		// cell is shown without its direction (with width and height swapped
+		// for north and south) as points are turned with the direction, unless
+		// anchorPointDirection=0 where points are stored in the bounds turned
+		// by 90 degrees for north and south (see mxGraph.getConnectionPoint)
 		var geo = cell.geometry;
-		var mainCell = new mxCell(cell.value, new mxGeometry(0, 0, geo.width, geo.height),
-			cell.style + ';rotatable=0;resizable=0;connectable=0;editable=0;movable=0;opacity=50;');
+		var cellStyle = editorUi.editor.graph.getCurrentCellStyle(cell);
+		var direction = mxUtils.getValue(cellStyle, mxConstants.STYLE_DIRECTION,
+			mxConstants.DIRECTION_EAST);
+		var vertical = direction == mxConstants.DIRECTION_NORTH ||
+			direction == mxConstants.DIRECTION_SOUTH;
+		var anchorDirection = mxUtils.getValue(cellStyle,
+			mxConstants.STYLE_ANCHOR_POINT_DIRECTION, 1) == 1;
+		var swap = vertical && anchorDirection;
+		var mainCell = new mxCell(cell.value, new mxGeometry(0, 0,
+			(swap) ? geo.height : geo.width, (swap) ? geo.width : geo.height),
+			cell.style + ';rotation=0;flipH=0;flipV=0;stencilFlipH=0;stencilFlipV=0;' +
+			((anchorDirection && direction != mxConstants.DIRECTION_EAST) ? 'direction=east;' : '') +
+			'rotatable=0;resizable=0;connectable=0;editable=0;movable=0;opacity=50;');
 		mainCell.vertex = true;
 		editingGraph.addCell(mainCell);
+
+		// Bounds that connection point fractions are relative to
+		var frame = new mxRectangle(mainCell.geometry.x, mainCell.geometry.y,
+			mainCell.geometry.width, mainCell.geometry.height);
+
+		if (vertical && !anchorDirection)
+		{
+			frame.rotate90();
+		}
 
 		// Adding a point via double click
 		editingGraph.dblClick = function(evt, cell)
@@ -19942,10 +24367,38 @@ var ConnectionPointsDialog = function(editorUi, cell)
 				mxEvent.consume(evt);
 				var scale = editingGraph.view.scale;
 				var tr = editingGraph.view.translate;
-				editingGraph.setSelectionCell(createCPoint((pt.x - CP_HLF_SIZE * scale) / scale - tr.x,
-					(pt.y - CP_HLF_SIZE * scale) / scale - tr.y));
+
+				// Snaps the center of the new point to the grid
+				editingGraph.setSelectionCell(createCPoint(
+					editingGraph.snap(pt.x / scale - tr.x) - CP_HLF_SIZE,
+					editingGraph.snap(pt.y / scale - tr.y) - CP_HLF_SIZE));
 			}
 		}
+
+		// Snaps the center of moved points to the grid and guides instead
+		// of the top, left corner of their handle
+		var graphHandlerGetStateBounds = editingGraph.graphHandler.getStateBounds;
+
+		editingGraph.graphHandler.getStateBounds = function(cells)
+		{
+			var bounds = graphHandlerGetStateBounds.apply(this, arguments);
+			var points = bounds != null && cells != null && cells.length > 0;
+
+			for (var i = 0; points && i < cells.length; i++)
+			{
+				points = cells[i].cp == true;
+			}
+
+			if (points)
+			{
+				var d = CP_HLF_SIZE * editingGraph.view.scale;
+				bounds = new mxRectangle(bounds.x + d, bounds.y + d,
+					Math.max(0, bounds.width - 2 * d),
+					Math.max(0, bounds.height - 2 * d));
+			}
+
+			return bounds;
+		};
 
 		keyHandler = new mxKeyHandler(editingGraph);
 		
@@ -20102,7 +24555,6 @@ var ConnectionPointsDialog = function(editorUi, cell)
 			count = isNaN(count)? 1 : (count < 1? 1 : (count > 100? 100 : count));
 			pCount.value = count;
 			var side = sideSelect.value;
-			var geo = mainCell.geometry;
 			var horizontal = side == 'top' || side == 'bottom';
 
 			// New points go into the gaps between the existing points on the
@@ -20178,8 +24630,8 @@ var ConnectionPointsDialog = function(editorUi, cell)
 					var fx = horizontal? f : (side == 'left'? 0 : 1);
 					var fy = horizontal? (side == 'top'? 0 : 1) : f;
 
-					cells.push(createCPoint(geo.x + fx * geo.width - CP_HLF_SIZE,
-						geo.y + fy * geo.height - CP_HLF_SIZE,
+					cells.push(createCPoint(frame.x + fx * frame.width - CP_HLF_SIZE,
+						frame.y + fy * frame.height - CP_HLF_SIZE,
 						new mxConnectionConstraint(new mxPoint(fx, fy), false)));
 				}
 			}
@@ -20187,6 +24639,7 @@ var ConnectionPointsDialog = function(editorUi, cell)
 			editingGraph.setSelectionCells(cells);
 		});
 
+		addBtn.className = 'geBtn';
 		addBtn.style.marginLeft = 'auto';
 		zoomBtns.appendChild(addBtn);
 		zoomBtns.appendChild(pCount);
@@ -20288,33 +24741,33 @@ var ConnectionPointsDialog = function(editorUi, cell)
 
 			// Two decimal places (mxUtils.format) are not enough precision as
 			// points drift off the grid on shapes larger than 100pt
-			var dx = 0, dy = 0, mGeo = mainCell.geometry;
-			var x = parseFloat(((cp.geometry.x + CP_HLF_SIZE - mGeo.x) / mGeo.width).toFixed(6));
-			var y = parseFloat(((cp.geometry.y + CP_HLF_SIZE - mGeo.y) / mGeo.height).toFixed(6));
+			var dx = 0, dy = 0;
+			var x = parseFloat(((cp.geometry.x + CP_HLF_SIZE - frame.x) / frame.width).toFixed(6));
+			var y = parseFloat(((cp.geometry.y + CP_HLF_SIZE - frame.y) / frame.height).toFixed(6));
 
 			if (x < 0)
 			{
-				dx = x * mGeo.width;
+				dx = x * frame.width;
 				x = 0;
 			}
 			else if (x > 1)
 			{
-				dx = (x - 1) * mGeo.width;
+				dx = (x - 1) * frame.width;
 				x = 1;
 			}
 
 			if (y < 0)
 			{
-				dy = y * mGeo.height;
+				dy = y * frame.height;
 				y = 0;
 			}
 			else if (y > 1)
 			{
-				dy = (y - 1) * mGeo.height;
+				dy = (y - 1) * frame.height;
 				y = 1;
 			}
 
-			return {x: x, y: y, perimeter: false, dx: parseInt(dx), dy: parseInt(dy)};
+			return {x: x, y: y, perimeter: false, dx: Math.round(dx), dy: Math.round(dy)};
 		};
 
 		function fillCPointProp(evt)
@@ -20417,11 +24870,12 @@ var ConnectionPointsDialog = function(editorUi, cell)
 
 			// Sorts by x, y, dx, dy and perimeter so identical points are
 			// adjacent with the perimeter point first
+			// (style points can have missing or other values than numbers)
 			constraints.sort(function(a, b)
 			{
-				return (a.x != b.x) ? a.x - b.x : ((a.y != b.y) ? a.y - b.y :
-					((a.dx != b.dx) ? a.dx - b.dx : ((a.dy != b.dy) ? a.dy - b.dy :
-					(b.perimeter ? 1 : 0) - (a.perimeter ? 1 : 0))));
+				return mxUtils.compareNumbers(a.x, b.x) || mxUtils.compareNumbers(a.y, b.y) ||
+					mxUtils.compareNumbers(a.dx, b.dx) || mxUtils.compareNumbers(a.dy, b.dy) ||
+					((b.perimeter ? 1 : 0) - (a.perimeter ? 1 : 0));
 			});
 
 			for (var i = 0; i < constraints.length; i++)
@@ -20443,8 +24897,10 @@ var ConnectionPointsDialog = function(editorUi, cell)
 					',' + c.dx + ',' + c.dy + ']');
 			}
 
+			// Reports the new points like an arrange action (see
+			// Graph.beginArrange), eg. for snapToPoint auto-routing
 			var editorGraph = editorUi.editor.graph;
-			editorGraph.getModel().beginUpdate();
+			var arrange = editorGraph.beginArrange();
 			try
 			{
 				editorGraph.setCellStyles('points', '[' + points.join(',') + ']', [cell]);
@@ -20452,7 +24908,7 @@ var ConnectionPointsDialog = function(editorUi, cell)
 			}
 			finally
 			{
-				editorGraph.getModel().endUpdate();
+				editorGraph.endArrange(arrange);
 			}
 
 			destroy();
@@ -20464,7 +24920,7 @@ var ConnectionPointsDialog = function(editorUi, cell)
 		var resetBtn = mxUtils.button(mxResources.get('reset'), function()
 		{
 			var editorGraph = editorUi.editor.graph;
-			editorGraph.getModel().beginUpdate();
+			var arrange = editorGraph.beginArrange();
 			try
 			{
 				editorGraph.setCellStyles('points', null, [cell]);
@@ -20472,7 +24928,7 @@ var ConnectionPointsDialog = function(editorUi, cell)
 			}
 			finally
 			{
-				editorGraph.getModel().endUpdate();
+				editorGraph.endArrange(arrange);
 			}
 
 			destroy();
@@ -20662,8 +25118,9 @@ var PolygonDialog = function(editorUi, cell, insertFn)
 	var gridPath = document.createElementNS(svgNS, 'path');
 	gridPath.setAttribute('d', 'M ' + SNAP_SIZE + ' 0 L 0 0 0 ' + SNAP_SIZE);
 	gridPath.setAttribute('fill', 'none');
-	gridPath.setAttribute('stroke', '#e0e0e0');
 	gridPath.setAttribute('stroke-width', '0.5');
+	// CSS property since presentation attributes do not support var()
+	gridPath.style.stroke = 'light-dark(var(--border-color), var(--dark-strong-border-color))';
 	pattern.appendChild(gridPath);
 	defs.appendChild(pattern);
 	svg.appendChild(defs);
@@ -21394,8 +25851,14 @@ var PolygonDialog = function(editorUi, cell, insertFn)
 				{
 					listDragSource = idx;
 					row.style.opacity = '0.4';
-					e.dataTransfer.effectAllowed = 'move';
-					e.dataTransfer.setData('text/plain', '' + idx);
+
+					// Drag events created by scripts may have no dataTransfer
+					if (e.dataTransfer != null)
+					{
+						e.dataTransfer.effectAllowed = 'move';
+						e.dataTransfer.setData('text/plain', '' + idx);
+					}
+
 					e.stopPropagation();
 				});
 
@@ -21403,7 +25866,12 @@ var PolygonDialog = function(editorUi, cell, insertFn)
 				{
 					e.preventDefault();
 					e.stopPropagation();
-					e.dataTransfer.dropEffect = 'move';
+
+					if (e.dataTransfer != null)
+					{
+						e.dataTransfer.dropEffect = 'move';
+					}
+
 					var targetIdx = parseInt(row.getAttribute('data-idx'));
 
 					if (listDragSource !== null && targetIdx !== listDragSource)
@@ -22038,4 +26506,1257 @@ var PolygonDialog = function(editorUi, cell, insertFn)
 	};
 
 	this.container = div;
+};
+
+/**
+ * Draws polygons on the canvas like the freeform tool of PowerPoint (the
+ * Polygon mode of the freehand window, see FreehandWindow). A click adds a
+ * corner, a press and drag draws a freehand stretch (simplified with
+ * Ramer-Douglas-Peucker and a tolerance in screen pixels), a click on the
+ * first point (or a stretch that ends there) closes the shape and a double
+ * click or Enter finishes an open shape. Backspace removes the last point,
+ * Escape discards the shape or stops drawing if there is no point. Shift
+ * constrains the next segment to 45 degree steps and corners snap to the
+ * grid unless Alt is pressed. The result is a mxgraph.basic.polygon cell
+ * with the style of PolygonDialog (polyCoords normalized to its bounds) and
+ * the stroke color of the freehand tool, which is passed to insertCell.
+ * Drawing continues with a new shape until the tool is stopped. Changes of
+ * the drawing state fire a polygonStateChanged event on the graph.
+ *
+ * The points are kept in model units and the preview is painted in screen
+ * units in the overlay pane, which model coordinates (fastRendering) do not
+ * transform, so it follows zoom and scrolling in both renderings. The mouse
+ * events of the drawing are consumed before the handlers of the graph see
+ * them, except for panning gestures (space, right or middle button, pinch).
+ */
+var PolygonTool = function(editorUi)
+{
+	this.editorUi = editorUi;
+	this.graph = editorUi.editor.graph;
+	this.init();
+};
+
+/**
+ * Distance in screen pixels from the first point for closing the shape.
+ */
+PolygonTool.prototype.closeTolerance = 8;
+
+/**
+ * Tolerance in screen pixels for simplifying freehand stretches.
+ */
+PolygonTool.prototype.simplifyTolerance = 1.5;
+
+/**
+ * Time in milliseconds after closing a shape with a click in which the
+ * second click of a double click on the first point does not start a new
+ * shape (see isIgnoredClick).
+ */
+PolygonTool.prototype.dblClickDelay = 500;
+
+/**
+ * Specifies if the tool is drawing.
+ */
+PolygonTool.prototype.active = false;
+
+/**
+ * Installs the listeners of the tool, which do nothing while it is not
+ * drawing.
+ */
+PolygonTool.prototype.init = function()
+{
+	var graph = this.graph;
+	var tool = this;
+
+	this.points = [];
+	this.ignoreDblClickUntil = 0;
+
+	// Consumes the mouse events of the drawing before the other handlers
+	// (selection, rubberband, connections, panning) process them
+	graph.addListener(mxEvent.FIRE_MOUSE_EVENT, mxUtils.bind(this, function(sender, evt)
+	{
+		if (this.active)
+		{
+			var me = evt.getProperty('event');
+
+			if (evt.getProperty('eventName') == mxEvent.MOUSE_DOWN)
+			{
+				this.panning = this.isPanningEvent(me);
+
+				// A panning gesture discards a stretch in progress (eg. a
+				// second finger for a pinch)
+				if (this.panning)
+				{
+					this.down = null;
+					this.stroke = null;
+				}
+			}
+
+			if (!this.panning)
+			{
+				me.consume();
+			}
+		}
+	}));
+
+	graph.addMouseListener(
+	{
+		mouseDown: mxUtils.bind(this, function(sender, me)
+		{
+			if (this.active && !this.panning)
+			{
+				this.mouseDown(me);
+			}
+		}),
+		mouseMove: mxUtils.bind(this, function(sender, me)
+		{
+			if (this.active && !this.panning)
+			{
+				this.mouseMove(me);
+			}
+		}),
+		mouseUp: mxUtils.bind(this, function(sender, me)
+		{
+			if (this.active && !this.panning)
+			{
+				this.mouseUp(me);
+			}
+
+			this.panning = false;
+		})
+	});
+
+	// Double clicks finish an open shape and are ignored right after a click
+	// closed a shape. Wraps the double click handler as it inserts text or
+	// shows the shape picker before firing the double click event.
+	var graphDblClick = graph.dblClick;
+
+	graph.dblClick = function(evt, cell)
+	{
+		if (tool.active)
+		{
+			mxEvent.consume(evt);
+			tool.finish(false);
+		}
+		else if (Date.now() < tool.ignoreDblClickUntil)
+		{
+			mxEvent.consume(evt);
+		}
+		else
+		{
+			graphDblClick.apply(this, arguments);
+		}
+	};
+
+	graph.addListener(mxEvent.ESCAPE, mxUtils.bind(this, function()
+	{
+		this.cancel();
+	}));
+
+	// Stops when the freehand tool starts or the page changes
+	graph.addListener('freehandStateChanged', mxUtils.bind(this, function()
+	{
+		if (graph.freehand != null && graph.freehand.isDrawing())
+		{
+			this.cancel();
+		}
+	}));
+
+	graph.getModel().addListener(mxEvent.CHANGE, mxUtils.bind(this, function(sender, evt)
+	{
+		var changes = (this.active) ? evt.getProperty('edit').changes : [];
+
+		for (var i = 0; i < changes.length; i++)
+		{
+			if (changes[i] instanceof mxRootChange)
+			{
+				this.cancel();
+				break;
+			}
+		}
+	}));
+
+	// Hides the hover icons while drawing
+	var hoverIcons = this.editorUi.hoverIcons;
+
+	if (hoverIcons != null)
+	{
+		var hoverIconsIsResetEvent = hoverIcons.isResetEvent;
+
+		hoverIcons.isResetEvent = function()
+		{
+			return tool.active || hoverIconsIsResetEvent.apply(this, arguments);
+		};
+	}
+
+	this.keyHandler = mxUtils.bind(this, function(evt)
+	{
+		this.keyChanged(evt);
+	});
+
+	this.repaintHandler = mxUtils.bind(this, function()
+	{
+		this.updatePreview();
+	});
+};
+
+/**
+ * Returns true if the tool is drawing.
+ */
+PolygonTool.prototype.isActive = function()
+{
+	return this.active;
+};
+
+/**
+ * Returns true if the graph allows inserting a shape.
+ */
+PolygonTool.prototype.isEnabled = function()
+{
+	return this.graph.isEnabled() && !this.graph.isCellLocked(this.graph.getDefaultParent());
+};
+
+/**
+ * Returns true if the given mouse event starts a panning gesture, which is
+ * not handled by the tool.
+ */
+PolygonTool.prototype.isPanningEvent = function(me)
+{
+	var evt = me.getEvent();
+	var handler = this.graph.panningHandler;
+
+	return mxEvent.isPopupTrigger(evt) || mxEvent.isMultiTouchEvent(evt) ||
+		(handler != null && (handler.isActive() || handler.isForcePanningEvent(me)));
+};
+
+/**
+ * Starts drawing and stops the freehand tool.
+ */
+PolygonTool.prototype.start = function()
+{
+	if (!this.active && this.isEnabled())
+	{
+		var graph = this.graph;
+
+		if (graph.freehand != null && graph.freehand.isDrawing())
+		{
+			graph.freehand.stopDrawing();
+		}
+
+		graph.stopEditing(false);
+		graph.clearSelection();
+
+		if (this.editorUi.hoverIcons != null)
+		{
+			this.editorUi.hoverIcons.reset();
+		}
+
+		this.reset();
+		this.last = null;
+		this.closedAt = null;
+		this.panning = false;
+		this.active = true;
+
+		graph.container.classList.add('gePolygonMode');
+		window.addEventListener('keydown', this.keyHandler, true);
+		window.addEventListener('keyup', this.keyHandler, true);
+		graph.view.addListener(mxEvent.SCALE, this.repaintHandler);
+		graph.view.addListener(mxEvent.TRANSLATE, this.repaintHandler);
+		graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, this.repaintHandler);
+		graph.fireEvent(new mxEventObject('polygonStateChanged'));
+	}
+};
+
+/**
+ * Discards the points of the current shape and keeps drawing.
+ */
+PolygonTool.prototype.reset = function()
+{
+	this.points = [];
+	this.stroke = null;
+	this.down = null;
+	this.current = null;
+	this.closable = false;
+	this.updatePreview();
+};
+
+/**
+ * Stops drawing and discards the current shape.
+ */
+PolygonTool.prototype.cancel = function()
+{
+	if (this.active)
+	{
+		this.stop();
+	}
+};
+
+/**
+ * Removes the preview and the listeners of the drawing.
+ */
+PolygonTool.prototype.stop = function()
+{
+	var graph = this.graph;
+
+	this.active = false;
+	this.points = [];
+	this.stroke = null;
+	this.down = null;
+	this.current = null;
+	this.last = null;
+	this.closable = false;
+
+	if (this.node != null)
+	{
+		if (this.node.parentNode != null)
+		{
+			this.node.parentNode.removeChild(this.node);
+		}
+
+		this.node = null;
+	}
+
+	if (graph.container != null)
+	{
+		graph.container.classList.remove('gePolygonMode');
+	}
+
+	window.removeEventListener('keydown', this.keyHandler, true);
+	window.removeEventListener('keyup', this.keyHandler, true);
+
+	if (graph.view != null)
+	{
+		graph.view.removeListener(this.repaintHandler);
+	}
+
+	graph.fireEvent(new mxEventObject('polygonStateChanged'));
+};
+
+/**
+ * Stops drawing when the editor is destroyed.
+ */
+PolygonTool.prototype.destroy = function()
+{
+	this.cancel();
+};
+
+/**
+ * Handles Escape (discard the shape or stop drawing if there is no point),
+ * Enter (finish an open shape) and Backspace (remove the last point) and
+ * updates the preview for Shift and Alt. Runs in the capture phase so that
+ * the shortcuts of these keys do not run.
+ */
+PolygonTool.prototype.keyChanged = function(evt)
+{
+	var keyHandler = this.editorUi.keyHandler;
+
+	if (!this.active || this.graph.container == null)
+	{
+		this.cancel();
+	}
+	else if (!this.graph.isEditing() && (keyHandler == null || keyHandler.isGraphEvent(evt)))
+	{
+		var modified = mxEvent.isControlDown(evt) || mxEvent.isMetaDown(evt) || mxEvent.isAltDown(evt);
+		var handled = false;
+
+		if (evt.type == 'keydown')
+		{
+			if (evt.keyCode == 27)
+			{
+				if (this.points.length > 0 || this.down != null)
+				{
+					this.reset();
+				}
+				else
+				{
+					this.cancel();
+				}
+
+				handled = true;
+			}
+			else if (evt.keyCode == 13 && !modified)
+			{
+				this.finish(false);
+				handled = true;
+			}
+			else if (evt.keyCode == 8 && !modified)
+			{
+				this.removeLastPoint();
+				handled = true;
+			}
+		}
+
+		if (handled)
+		{
+			mxEvent.consume(evt);
+		}
+		else if ((evt.keyCode == 16 || evt.keyCode == 18) && this.last != null)
+		{
+			this.last.shift = mxEvent.isShiftDown(evt);
+			this.last.alt = mxEvent.isAltDown(evt);
+			this.updateCurrent();
+			this.updatePreview();
+		}
+	}
+};
+
+/**
+ * Returns the distance between the given points.
+ */
+PolygonTool.prototype.getDistance = function(p1, p2)
+{
+	var dx = p2.x - p1.x;
+	var dy = p2.y - p1.y;
+
+	return Math.sqrt(dx * dx + dy * dy);
+};
+
+/**
+ * Returns the given point in graph coordinates in model units.
+ */
+PolygonTool.prototype.getModelPoint = function(x, y)
+{
+	var s = this.graph.view.scale;
+	var tr = this.graph.view.translate;
+
+	return new mxPoint(Math.round((x / s - tr.x) * 100) / 100,
+		Math.round((y / s - tr.y) * 100) / 100);
+};
+
+/**
+ * Returns the given point in model units in graph coordinates.
+ */
+PolygonTool.prototype.getScreenPoint = function(pt)
+{
+	var s = this.graph.view.scale;
+	var tr = this.graph.view.translate;
+
+	return new mxPoint((pt.x + tr.x) * s, (pt.y + tr.y) * s);
+};
+
+/**
+ * Returns the corner for the given point in graph coordinates: snapped to
+ * the grid unless alt is true and constrained to 45 degree steps from the
+ * last point if shift is true.
+ */
+PolygonTool.prototype.getPoint = function(x, y, shift, alt)
+{
+	var graph = this.graph;
+	var pt = this.getModelPoint(x, y);
+	var last = (this.points.length > 0) ? this.points[this.points.length - 1] : null;
+	var snap = function(value)
+	{
+		return (alt) ? value : graph.snap(value);
+	};
+
+	if (shift && last != null)
+	{
+		var dx = pt.x - last.x;
+		var dy = pt.y - last.y;
+		var a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4;
+		var ux = Math.round(Math.cos(a));
+		var uy = Math.round(Math.sin(a));
+
+		// Length along the axis or both axes of the diagonal
+		var d = snap((dx * ux + dy * uy) / (ux * ux + uy * uy));
+
+		return new mxPoint(last.x + ux * d, last.y + uy * d);
+	}
+	else
+	{
+		return new mxPoint(snap(pt.x), snap(pt.y));
+	}
+};
+
+/**
+ * Returns true if a click at the given point in graph coordinates closes
+ * the shape.
+ */
+PolygonTool.prototype.isClosing = function(x, y)
+{
+	if (this.points.length >= 3)
+	{
+		var first = this.getScreenPoint(this.points[0]);
+
+		return this.getDistance(first, new mxPoint(x, y)) <= this.closeTolerance;
+	}
+
+	return false;
+};
+
+/**
+ * Updates the end of the segment to the mouse.
+ */
+PolygonTool.prototype.updateCurrent = function()
+{
+	if (this.last != null && this.down == null)
+	{
+		this.closable = this.isClosing(this.last.x, this.last.y);
+		this.current = (this.closable) ? this.points[0] : this.getPoint(
+			this.last.x, this.last.y, this.last.shift, this.last.alt);
+	}
+};
+
+/**
+ * Adds the given corner unless it is within the tolerance of the last
+ * point (eg. the second click of a double click).
+ */
+PolygonTool.prototype.addPoint = function(pt)
+{
+	var last = (this.points.length > 0) ? this.points[this.points.length - 1] : null;
+
+	if (last == null || this.getDistance(this.getScreenPoint(last),
+		this.getScreenPoint(pt)) > this.graph.tolerance)
+	{
+		this.points.push(pt);
+	}
+};
+
+/**
+ * Removes the last point.
+ */
+PolygonTool.prototype.removeLastPoint = function()
+{
+	if (this.down == null && this.points.length > 0)
+	{
+		this.points.pop();
+		this.updateCurrent();
+		this.updatePreview();
+	}
+};
+
+/**
+ * Handles a mouse down of the drawing.
+ */
+PolygonTool.prototype.mouseDown = function(me)
+{
+	if (!this.isEnabled())
+	{
+		this.cancel();
+	}
+	else
+	{
+		var evt = me.getEvent();
+		var x = me.getGraphX();
+		var y = me.getGraphY();
+
+		this.last = {x: x, y: y, shift: mxEvent.isShiftDown(evt), alt: mxEvent.isAltDown(evt)};
+		this.down = {x: x, y: y, closing: this.isClosing(x, y),
+			point: this.getPoint(x, y, this.last.shift, this.last.alt)};
+		this.stroke = null;
+		this.updatePreview();
+	}
+};
+
+/**
+ * Handles a mouse move of the drawing. Moving the mouse further than the
+ * tolerance with the button pressed starts a freehand stretch at the
+ * corner of the mouse down.
+ */
+PolygonTool.prototype.mouseMove = function(me)
+{
+	var graph = this.graph;
+	var evt = me.getEvent();
+	var x = me.getGraphX();
+	var y = me.getGraphY();
+
+	if (graph.tooltipHandler != null)
+	{
+		graph.tooltipHandler.hide();
+	}
+
+	this.last = {x: x, y: y, shift: mxEvent.isShiftDown(evt), alt: mxEvent.isAltDown(evt)};
+
+	if (this.down != null)
+	{
+		if (this.stroke == null && this.getDistance(new mxPoint(this.down.x, this.down.y),
+			new mxPoint(x, y)) > graph.tolerance)
+		{
+			this.stroke = [this.down.point];
+		}
+
+		if (this.stroke != null)
+		{
+			var pt = this.getModelPoint(x, y);
+			var prev = this.getScreenPoint(this.stroke[this.stroke.length - 1]);
+
+			// Skips points closer than a pixel
+			if (this.getDistance(prev, new mxPoint(x, y)) >= 1)
+			{
+				this.stroke.push(pt);
+			}
+		}
+	}
+	else
+	{
+		this.updateCurrent();
+	}
+
+	this.updatePreview();
+};
+
+/**
+ * Handles a mouse up of the drawing: adds the corner of a click or the
+ * simplified freehand stretch and closes the shape if it ends at the first
+ * point.
+ */
+PolygonTool.prototype.mouseUp = function(me)
+{
+	if (this.down != null)
+	{
+		var down = this.down;
+		var stroke = this.stroke;
+		this.down = null;
+		this.stroke = null;
+
+		if (stroke != null)
+		{
+			stroke = this.simplify(stroke, this.simplifyTolerance / this.graph.view.scale);
+			this.addPoint(stroke[0]);
+
+			for (var i = 1; i < stroke.length; i++)
+			{
+				this.points.push(stroke[i]);
+			}
+
+			// A stretch that ends at the first point closes the shape
+			var end = this.getScreenPoint(this.points[this.points.length - 1]);
+
+			if (this.points.length > 3 && this.getDistance(end,
+				this.getScreenPoint(this.points[0])) <= this.closeTolerance)
+			{
+				this.points.pop();
+
+				if (this.finish(true))
+				{
+					return;
+				}
+			}
+		}
+		else if (down.closing)
+		{
+			if (this.finish(true))
+			{
+				return;
+			}
+		}
+		else if (!this.isIgnoredClick(down))
+		{
+			this.addPoint(down.point);
+		}
+	}
+
+	this.updateCurrent();
+	this.updatePreview();
+};
+
+/**
+ * Returns true if the given mouse down is the second click of a double
+ * click on the first point of the shape that was just closed.
+ */
+PolygonTool.prototype.isIgnoredClick = function(down)
+{
+	return this.points.length == 0 && this.closedAt != null &&
+		Date.now() < this.ignoreDblClickUntil && this.getDistance(
+		this.getScreenPoint(this.closedAt), new mxPoint(down.x, down.y)) <=
+		this.closeTolerance;
+};
+
+/**
+ * Returns the given points simplified with the Ramer-Douglas-Peucker
+ * algorithm for the given tolerance (iterative, as freehand stretches can
+ * have many points).
+ */
+PolygonTool.prototype.simplify = function(pts, tolerance)
+{
+	if (pts.length < 3)
+	{
+		return pts.slice();
+	}
+
+	var keep = [];
+	var stack = [[0, pts.length - 1]];
+	var tol2 = tolerance * tolerance;
+	keep[0] = true;
+	keep[pts.length - 1] = true;
+
+	while (stack.length > 0)
+	{
+		var range = stack.pop();
+		var a = pts[range[0]];
+		var b = pts[range[1]];
+		var max = 0;
+		var index = -1;
+
+		for (var i = range[0] + 1; i < range[1]; i++)
+		{
+			var d = mxUtils.ptSegDistSq(a.x, a.y, b.x, b.y, pts[i].x, pts[i].y);
+
+			if (d > max)
+			{
+				max = d;
+				index = i;
+			}
+		}
+
+		if (index >= 0 && max > tol2)
+		{
+			keep[index] = true;
+			stack.push([range[0], index]);
+			stack.push([index, range[1]]);
+		}
+	}
+
+	var result = [];
+
+	for (var i = 0; i < pts.length; i++)
+	{
+		if (keep[i])
+		{
+			result.push(pts[i]);
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Inserts the shape and starts a new one. Returns false and keeps the shape
+ * if there are not enough points (3 for a closed shape, 2 for an open
+ * shape).
+ */
+PolygonTool.prototype.finish = function(closed)
+{
+	var pts = [];
+
+	for (var i = 0; i < this.points.length; i++)
+	{
+		var p = this.points[i];
+
+		if (pts.length == 0 || p.x != pts[pts.length - 1].x || p.y != pts[pts.length - 1].y)
+		{
+			pts.push(p);
+		}
+	}
+
+	if (closed && pts.length > 1 && pts[0].x == pts[pts.length - 1].x &&
+		pts[0].y == pts[pts.length - 1].y)
+	{
+		pts.pop();
+	}
+
+	this.down = null;
+	this.stroke = null;
+
+	if (pts.length < ((closed) ? 3 : 2))
+	{
+		this.updateCurrent();
+		this.updatePreview();
+
+		return false;
+	}
+	else
+	{
+		var cell = this.createCell(pts, closed);
+		this.closedAt = (closed) ? pts[0] : null;
+		this.reset();
+
+		if (closed)
+		{
+			this.ignoreDblClickUntil = Date.now() + this.dblClickDelay;
+		}
+
+		if (this.isEnabled())
+		{
+			this.insertCell(cell);
+		}
+
+		return true;
+	}
+};
+
+/**
+ * Inserts the given shape in one undoable edit. The current style is
+ * applied via cellsInserted as for freehand shapes, which are also not
+ * selected.
+ */
+PolygonTool.prototype.insertCell = function(cell)
+{
+	var graph = this.graph;
+
+	graph.model.beginUpdate();
+	try
+	{
+		cell = graph.addCell(cell);
+		graph.fireEvent(new mxEventObject('cellsInserted', 'cells', [cell]));
+	}
+	finally
+	{
+		graph.model.endUpdate();
+	}
+};
+
+/**
+ * Returns a new polygon for the given points in model units with the style
+ * of PolygonDialog and the stroke color for new shapes: the coordinates are
+ * normalized to the bounds of the points, which are the geometry relative
+ * to the default parent.
+ */
+PolygonTool.prototype.createCell = function(pts, closed)
+{
+	var minX = pts[0].x;
+	var minY = pts[0].y;
+	var maxX = minX;
+	var maxY = minY;
+
+	for (var i = 1; i < pts.length; i++)
+	{
+		minX = Math.min(minX, pts[i].x);
+		minY = Math.min(minY, pts[i].y);
+		maxX = Math.max(maxX, pts[i].x);
+		maxY = Math.max(maxY, pts[i].y);
+	}
+
+	var w = maxX - minX;
+	var h = maxY - minY;
+
+	var normalize = function(value, min, range)
+	{
+		return (range > 0) ? Math.round(((value - min) / range) * 100000) / 100000 : 0.5;
+	};
+
+	var coords = [];
+	var curves = [];
+
+	for (var i = 0; i < pts.length; i++)
+	{
+		coords.push([normalize(pts[i].x, minX, w), normalize(pts[i].y, minY, h)]);
+
+		if (i > 0)
+		{
+			curves.push([]);
+		}
+	}
+
+	// Straight lines get a size of 1 with the line in the middle
+	var geo = new mxGeometry(minX - ((w > 0) ? 0 : 0.5), minY - ((h > 0) ? 0 : 0.5),
+		Math.max(w, 1), Math.max(h, 1));
+	var state = this.graph.view.getState(this.graph.getDefaultParent());
+
+	if (state != null && state.origin != null)
+	{
+		geo.x -= state.origin.x;
+		geo.y -= state.origin.y;
+	}
+
+	var style = 'shape=mxgraph.basic.polygon;polyCoords=' + JSON.stringify(coords) +
+		';polyCurves=' + JSON.stringify(curves) + ';polyline=' +
+		((closed) ? '0' : '1') + ';whiteSpace=wrap;html=1;';
+	var color = this.getShapeStrokeColor();
+
+	// Ignores values that would change other keys of the style
+	if (color != null && /^[^;=]+$/.test(color))
+	{
+		style += 'strokeColor=' + color + ';';
+	}
+
+	var cell = new mxCell('', geo, style);
+	cell.vertex = true;
+
+	return cell;
+};
+
+/**
+ * Returns the stroke color for new shapes, which may be default, or null
+ * for the stroke color of the current style. This implementation returns
+ * the color of the freehand tool (see FreehandWindow).
+ */
+PolygonTool.prototype.getShapeStrokeColor = function()
+{
+	return (this.graph.freehand != null) ?
+		this.graph.freehand.getStrokeColor(true) : null;
+};
+
+/**
+ * Returns the stroke color of the preview: the stroke color for new shapes
+ * or of the current style, or the foreground color of the shapes.
+ */
+PolygonTool.prototype.getStrokeColor = function()
+{
+	var color = this.getShapeStrokeColor();
+
+	if (color == null)
+	{
+		color = mxUtils.getValue(this.graph.currentVertexStyle,
+			mxConstants.STYLE_STROKECOLOR, 'default');
+	}
+
+	return (color == 'default' || color == 'none' || color == 'inherit') ?
+		this.graph.shapeForegroundColor : color;
+};
+
+/**
+ * Paints the points, the stretch in progress and the segment to the mouse
+ * in screen units in the overlay pane.
+ */
+PolygonTool.prototype.updatePreview = function()
+{
+	var graph = this.graph;
+
+	if (this.active)
+	{
+		if (this.node == null)
+		{
+			this.node = document.createElementNS(mxConstants.NS_SVG, 'g');
+			this.node.setAttribute('pointer-events', 'none');
+			this.path = document.createElementNS(mxConstants.NS_SVG, 'path');
+			this.path.setAttribute('fill', 'none');
+			this.path.setAttribute('stroke-linejoin', 'round');
+			this.path.setAttribute('stroke-linecap', 'round');
+			this.node.appendChild(this.path);
+			this.marker = document.createElementNS(mxConstants.NS_SVG, 'circle');
+			this.marker.setAttribute('fill', mxConstants.HANDLE_FILLCOLOR);
+			this.marker.setAttribute('stroke', mxConstants.HANDLE_STROKECOLOR);
+			this.node.appendChild(this.marker);
+		}
+
+		if (this.node.parentNode != graph.view.getOverlayPane())
+		{
+			graph.view.getOverlayPane().appendChild(this.node);
+		}
+
+		var pts = this.points.slice();
+
+		if (this.stroke != null)
+		{
+			pts = pts.concat(this.stroke);
+		}
+		else if (this.down != null)
+		{
+			pts.push((this.down.closing) ? this.points[0] : this.down.point);
+		}
+		else if (this.current != null)
+		{
+			pts.push(this.current);
+		}
+
+		var d = [];
+
+		for (var i = 0; i < pts.length; i++)
+		{
+			var pt = this.getScreenPoint(pts[i]);
+			d.push(((i == 0) ? 'M ' : 'L ') + Math.round(pt.x * 100) / 100 +
+				' ' + Math.round(pt.y * 100) / 100);
+		}
+
+		var sw = parseFloat(mxUtils.getValue(graph.currentVertexStyle,
+			mxConstants.STYLE_STROKEWIDTH, 1));
+
+		this.path.setAttribute('d', (d.length > 1) ? d.join(' ') : 'M 0 0');
+		this.path.setAttribute('visibility', (d.length > 1) ? 'visible' : 'hidden');
+		this.path.style.stroke = this.getStrokeColor();
+		this.path.setAttribute('stroke-width', Math.min(20, Math.max(1,
+			((isNaN(sw)) ? 1 : sw) * graph.view.scale)));
+
+		if (this.points.length > 0)
+		{
+			var first = this.getScreenPoint(this.points[0]);
+			var closing = this.closable || (this.down != null && this.down.closing);
+			this.marker.setAttribute('cx', Math.round(first.x * 100) / 100);
+			this.marker.setAttribute('cy', Math.round(first.y * 100) / 100);
+			this.marker.setAttribute('r', (closing) ? 6 : 4);
+			this.marker.setAttribute('visibility', 'visible');
+		}
+		else
+		{
+			this.marker.setAttribute('visibility', 'hidden');
+		}
+	}
+};
+
+/**
+ * Tie mode of the freehand window (see FreehandWindow). Dragging a line
+ * across connectors ties them where the line crosses them (see
+ * Graph.bundleEdgesAcross) and selects the new tie. The tool keeps drawing
+ * until it is stopped. Changes of the drawing state fire a
+ * tieToolStateChanged event on the graph.
+ *
+ * The line is painted in screen units in the overlay pane. The mouse events
+ * of the drawing are consumed before the handlers of the graph see them,
+ * except for panning gestures (space, right or middle button, pinch).
+ */
+var TieTool = function(editorUi)
+{
+	this.editorUi = editorUi;
+	this.graph = editorUi.editor.graph;
+	this.init();
+};
+
+/**
+ * Specifies if the tool is drawing.
+ */
+TieTool.prototype.active = false;
+
+/**
+ * Color of the line and of the highlights of the connectors it crosses.
+ */
+TieTool.prototype.color = '#e0443e';
+
+/**
+ * Installs the listeners of the tool, which do nothing while it is not
+ * drawing.
+ */
+TieTool.prototype.init = function()
+{
+	var graph = this.graph;
+	var tool = this;
+
+	graph.addListener(mxEvent.FIRE_MOUSE_EVENT, mxUtils.bind(this, function(sender, evt)
+	{
+		if (this.active)
+		{
+			var me = evt.getProperty('event');
+
+			if (evt.getProperty('eventName') == mxEvent.MOUSE_DOWN)
+			{
+				this.panning = this.isPanningEvent(me);
+
+				if (this.panning)
+				{
+					this.reset();
+				}
+			}
+
+			if (!this.panning)
+			{
+				me.consume();
+			}
+		}
+	}));
+
+	graph.addMouseListener(
+	{
+		mouseDown: mxUtils.bind(this, function(sender, me)
+		{
+			if (this.active && !this.panning)
+			{
+				this.first = new mxPoint(me.getGraphX(), me.getGraphY());
+				this.current = this.first;
+				this.updatePreview();
+			}
+		}),
+		mouseMove: mxUtils.bind(this, function(sender, me)
+		{
+			if (this.active && !this.panning && this.first != null)
+			{
+				this.current = new mxPoint(me.getGraphX(), me.getGraphY());
+				this.updatePreview();
+			}
+		}),
+		mouseUp: mxUtils.bind(this, function(sender, me)
+		{
+			if (this.active && !this.panning && this.first != null)
+			{
+				var p0 = this.first;
+				var p1 = new mxPoint(me.getGraphX(), me.getGraphY());
+				this.reset();
+
+				if (graph.isEnabled() && !graph.isCellLocked(graph.getDefaultParent()))
+				{
+					var tie = graph.bundleEdgesAcross(p0, p1);
+
+					if (tie != null)
+					{
+						graph.setSelectionCell(tie);
+					}
+				}
+			}
+
+			this.panning = false;
+		})
+	});
+
+	// Double clicks are ignored while drawing. Wraps the double click handler
+	// as it inserts text or shows the shape picker before firing the double
+	// click event.
+	var graphDblClick = graph.dblClick;
+
+	graph.dblClick = function(evt, cell)
+	{
+		if (tool.active)
+		{
+			mxEvent.consume(evt);
+		}
+		else
+		{
+			graphDblClick.apply(this, arguments);
+		}
+	};
+
+	graph.addListener(mxEvent.ESCAPE, mxUtils.bind(this, function()
+	{
+		this.cancel();
+	}));
+
+	graph.addListener('freehandStateChanged', mxUtils.bind(this, function()
+	{
+		if (graph.freehand != null && graph.freehand.isDrawing())
+		{
+			this.cancel();
+		}
+	}));
+
+	graph.getModel().addListener(mxEvent.CHANGE, mxUtils.bind(this, function(sender, evt)
+	{
+		var changes = (this.active) ? evt.getProperty('edit').changes : [];
+
+		for (var i = 0; i < changes.length; i++)
+		{
+			if (changes[i] instanceof mxRootChange)
+			{
+				this.cancel();
+				break;
+			}
+		}
+	}));
+
+	// Hides the hover icons while drawing
+	var hoverIcons = this.editorUi.hoverIcons;
+
+	if (hoverIcons != null)
+	{
+		var hoverIconsIsResetEvent = hoverIcons.isResetEvent;
+
+		hoverIcons.isResetEvent = function()
+		{
+			return tool.active || hoverIconsIsResetEvent.apply(this, arguments);
+		};
+	}
+};
+
+/**
+ * Returns true if the tool is drawing.
+ */
+TieTool.prototype.isActive = function()
+{
+	return this.active;
+};
+
+/**
+ * Returns true if the given mouse event starts a panning gesture.
+ */
+TieTool.prototype.isPanningEvent = PolygonTool.prototype.isPanningEvent;
+
+/**
+ * Starts drawing and stops the freehand and the polygon tool.
+ */
+TieTool.prototype.start = function()
+{
+	var graph = this.graph;
+
+	if (!this.active && graph.isEnabled())
+	{
+		if (graph.freehand != null && graph.freehand.isDrawing())
+		{
+			graph.freehand.stopDrawing();
+		}
+
+		if (this.editorUi.polygonTool != null)
+		{
+			this.editorUi.polygonTool.cancel();
+		}
+
+		graph.stopEditing(false);
+		graph.clearSelection();
+
+		if (this.editorUi.hoverIcons != null)
+		{
+			this.editorUi.hoverIcons.reset();
+		}
+
+		this.panning = false;
+		this.active = true;
+		graph.container.classList.add('geFreehandMode');
+		graph.fireEvent(new mxEventObject('tieToolStateChanged'));
+	}
+};
+
+/**
+ * Removes the line of the current drawing.
+ */
+TieTool.prototype.reset = function()
+{
+	this.first = null;
+	this.current = null;
+	this.updatePreview();
+};
+
+/**
+ * Stops drawing.
+ */
+TieTool.prototype.cancel = function()
+{
+	if (this.active)
+	{
+		this.active = false;
+		this.reset();
+
+		if (this.graph.container != null)
+		{
+			this.graph.container.classList.remove('geFreehandMode');
+		}
+
+		this.graph.fireEvent(new mxEventObject('tieToolStateChanged'));
+	}
+};
+
+/**
+ * Stops drawing when the editor is destroyed.
+ */
+TieTool.prototype.destroy = function()
+{
+	this.cancel();
+};
+
+/**
+ * Paints the line from the first to the current point and highlights the
+ * connectors that it crosses.
+ */
+TieTool.prototype.updatePreview = function()
+{
+	var graph = this.graph;
+
+	this.highlights = graph.updateTieHighlights(this.highlights,
+		this.first, this.current, this.color);
+
+	if (this.first != null && this.current != null)
+	{
+		if (this.node == null)
+		{
+			this.node = document.createElementNS(mxConstants.NS_SVG, 'path');
+			this.node.setAttribute('fill', 'none');
+			this.node.setAttribute('stroke', this.color);
+			this.node.setAttribute('stroke-width', '2');
+			this.node.setAttribute('stroke-dasharray', '6 4');
+			this.node.setAttribute('stroke-linecap', 'round');
+			this.node.setAttribute('pointer-events', 'none');
+		}
+
+		if (this.node.parentNode != graph.view.getOverlayPane())
+		{
+			graph.view.getOverlayPane().appendChild(this.node);
+		}
+
+		this.node.setAttribute('d', 'M ' + Math.round(this.first.x * 100) / 100 + ' ' +
+			Math.round(this.first.y * 100) / 100 + ' L ' + Math.round(this.current.x * 100) / 100 +
+			' ' + Math.round(this.current.y * 100) / 100);
+	}
+	else if (this.node != null)
+	{
+		if (this.node.parentNode != null)
+		{
+			this.node.parentNode.removeChild(this.node);
+		}
+
+		this.node = null;
+	}
 };

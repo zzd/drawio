@@ -74,18 +74,16 @@ mxGraphView.prototype.EMPTY_POINT = new mxPoint();
 /**
  * Variable: doneResource
  * 
- * Specifies the resource key for the status message after a long operation.
- * If the resource for this key does not exist then the value is used as
- * the status message. Default is 'done'.
+ * Not used. Was the resource key for the status bar text (window.status)
+ * after a long operation. Default is 'done'.
  */
 mxGraphView.prototype.doneResource = (mxClient.language != 'none') ? 'done' : '';
 
 /**
  * Function: updatingDocumentResource
  *
- * Specifies the resource key for the status message while the document is
- * being updated. If the resource for this key does not exist then the
- * value is used as the status message. Default is 'updatingDocument'.
+ * Not used. Was the resource key for the status bar text (window.status)
+ * while the document is being updated. Default is 'updatingDocument'.
  */
 mxGraphView.prototype.updatingDocumentResource = (mxClient.language != 'none') ? 'updatingDocument' : '';
 
@@ -108,12 +106,217 @@ mxGraphView.prototype.allowEval = false;
 mxGraphView.prototype.captureDocumentGesture = true;
 
 /**
+ * Variable: labelBoundingBoxDelay
+ *
+ * Delay in milliseconds for measuring the labels again after fonts or
+ * images in labels have loaded. See <scheduleLabelBoundingBoxUpdate>.
+ * Default is 100.
+ */
+mxGraphView.prototype.labelBoundingBoxDelay = 100;
+
+/**
  * Variable: rendering
  * 
  * Specifies if shapes should be created, updated and destroyed using the
  * methods of <mxCellRenderer> in <graph>. Default is true.
  */
 mxGraphView.prototype.rendering = true;
+
+/**
+ * Variable: checkCachedBounds
+ *
+ * Specifies if the fields of the cell states in model units should be
+ * checked for debugging. If this is true then differences between the
+ * screen fields and the fields in model units after <validate>, and
+ * changes of the fields in model units in <revalidate> are written to
+ * the console. Default is false.
+ */
+mxGraphView.prototype.checkCachedBounds = false;
+
+/**
+ * Variable: modelCoordinates
+ *
+ * Specifies if the cells are painted in model units in the <drawPane> with
+ * a single transform for the scale and translate, so that changes of the
+ * scale and translate update the screen fields of the cell states from
+ * their fields in model units without repainting the cells. This must be
+ * set before the first validation. Default is false.
+ */
+mxGraphView.prototype.modelCoordinates = false;
+
+/**
+ * Variable: stateScale
+ *
+ * Scale of the screen fields of the cell states if <modelCoordinates> is
+ * true.
+ */
+mxGraphView.prototype.stateScale = null;
+
+/**
+ * Variable: stateTranslate
+ *
+ * Translate of the screen fields of the cell states if <modelCoordinates>
+ * is true.
+ */
+mxGraphView.prototype.stateTranslate = null;
+
+/**
+ * Variable: modelGraphBounds
+ *
+ * <graphBounds> in model units, updated in <setGraphBounds>. This is reused
+ * in <validate> if <modelCoordinates> is true and no cells were updated.
+ */
+mxGraphView.prototype.modelGraphBounds = null;
+
+/**
+ * Variable: graphBoundsInvalid
+ *
+ * Specifies if <modelGraphBounds> must be updated in the next validation.
+ */
+mxGraphView.prototype.graphBoundsInvalid = true;
+
+/**
+ * Variable: incrementalValidation
+ *
+ * Specifies if <validate> only validates the cells that were invalidated
+ * or whose states were created since the last validation instead of
+ * walking all cells (see <validateInvalidCells>). Default is true.
+ */
+mxGraphView.prototype.incrementalValidation = true;
+
+/**
+ * Variable: maxInvalidCells
+ *
+ * Maximum number of invalid cells for <validateInvalidCells>. If more
+ * cells are invalid then <validate> walks all cells. Default is 1000.
+ */
+mxGraphView.prototype.maxInvalidCells = 1000;
+
+/**
+ * Variable: maxDependencyDepth
+ *
+ * Maximum number of nested validations of parents and terminals in
+ * <validateCellState>. Deeper dependencies, eg. long chains of edges that
+ * are connected to edges, are validated with a stack in
+ * <validateDependencies> as the recursion would otherwise overflow the
+ * call stack. Default is 100.
+ */
+mxGraphView.prototype.maxDependencyDepth = 100;
+
+/**
+ * Variable: dependencyDepth
+ *
+ * Number of nested validations of parents and terminals in progress.
+ */
+mxGraphView.prototype.dependencyDepth = 0;
+
+/**
+ * Variable: removedDependencies
+ *
+ * Holds the cell whose dependencies are validated and the states of its
+ * dependencies that were removed in their validation in
+ * <validateDependencies>. See <validateDependency>.
+ */
+mxGraphView.prototype.removedDependencies = null;
+
+/**
+ * Variable: invalidCells
+ *
+ * Holds the cells that were invalidated (see <invalidate>) or whose states
+ * were created outside of <validate> since the last validation, or null if
+ * the next validation must walk all cells. See <addInvalidCell>.
+ */
+mxGraphView.prototype.invalidCells = null;
+
+/**
+ * Variable: invalidCellsRoot
+ *
+ * Holds the root of the validation for which <invalidCells> are collected.
+ */
+mxGraphView.prototype.invalidCellsRoot = null;
+
+/**
+ * Variable: invalidatedCells
+ *
+ * Maps the cells that <invalidate> has walked to the walks that visited
+ * them while the changes of the model are processed (see
+ * <mxGraph.graphModelChanged>), so that the cells that an earlier walk with
+ * the same flags or with all of them has visited and their descendants and
+ * connected edges are not walked again. Each combination of the flags is a
+ * bit, as two walks with different flags do not cover a walk with both.
+ * Otherwise each call walks the cells again, which is
+ * quadratic for chains of edges that are connected to edges. This is null
+ * if each call walks all cells and during <validate>, which makes states
+ * valid that later calls must invalidate again.
+ */
+mxGraphView.prototype.invalidatedCells = null;
+
+/**
+ * Variable: createdCells
+ *
+ * Holds the cells whose states were created in <validateInvalidCells>.
+ */
+mxGraphView.prototype.createdCells = null;
+
+/**
+ * Variable: validatingAllCells
+ *
+ * Specifies if <validate> is walking all cells.
+ */
+mxGraphView.prototype.validatingAllCells = false;
+
+/**
+ * Variable: walkStopped
+ *
+ * Specifies if <validateCell> removed the state of a cell that is no longer
+ * visible without walking its descendants since <validateInvalidCells>
+ * reset it. Default is false.
+ */
+mxGraphView.prototype.walkStopped = false;
+
+/**
+ * Variable: fullValidationRequired
+ *
+ * Specifies if <validate> must walk all cells because the validation of a
+ * state depends on the states before it in the walk (eg. line jumps). This
+ * is set while validating states and reset before walking all cells.
+ * Default is false.
+ */
+mxGraphView.prototype.fullValidationRequired = false;
+
+/**
+ * Variable: invalidBoundingBoxes
+ *
+ * Holds the states whose shapes or labels were repainted since the graph
+ * bounds were computed in <validate>, or null if the next validation must
+ * add the bounding boxes of all states. See <invalidateBoundingBox>.
+ */
+mxGraphView.prototype.invalidBoundingBoxes = null;
+
+/**
+ * Variable: removedBoundingBoxes
+ *
+ * Holds the bounding boxes of the states that were removed since the graph
+ * bounds were computed in <validate>. See <invalidBoundingBoxes>.
+ */
+mxGraphView.prototype.removedBoundingBoxes = null;
+
+/**
+ * Variable: addedGraphBounds
+ *
+ * Holds the graph bounds that were computed from the bounding boxes of the
+ * states in the last <validate> with the scale and translate they were
+ * computed for, or null. See <getChangedGraphBounds>.
+ */
+mxGraphView.prototype.addedGraphBounds = null;
+
+/**
+ * Variable: stateFieldNames
+ *
+ * Names of the fields returned by <getStateFields> for debugging.
+ */
+mxGraphView.prototype.stateFieldNames = ['bounds', 'points', 'offset',
+	'segments', 'length', 'terminalDistance'];
 
 /**
  * Variable: graph
@@ -206,13 +409,37 @@ mxGraphView.prototype.getGraphBounds = function()
 };
 
 /**
+ * Function: getModelGraphBounds
+ *
+ * Returns <graphBounds> in model units, that is, without the scale and
+ * translate of the view.
+ */
+mxGraphView.prototype.getModelGraphBounds = function()
+{
+	var b = this.getGraphBounds();
+	var s = this.scale;
+	var t = this.translate;
+
+	return new mxRectangle(mxUtils.unscale(b.x, s, t.x),
+		mxUtils.unscale(b.y, s, t.y), mxUtils.unscale(b.width, s),
+		mxUtils.unscale(b.height, s));
+};
+
+/**
  * Function: setGraphBounds
  *
- * Sets <graphBounds>.
+ * Sets <graphBounds> and updates <modelGraphBounds>, so that bounds that are
+ * set outside of <validate>, eg. after labels changed their size, are kept
+ * if the scale or translate changes.
  */
 mxGraphView.prototype.setGraphBounds = function(value)
 {
 	this.graphBounds = value;
+	this.modelGraphBounds = (value != null) ? new mxRectangle(
+		mxUtils.unscale(value.x, this.scale, this.translate.x),
+		mxUtils.unscale(value.y, this.scale, this.translate.y),
+		mxUtils.unscale(value.width, this.scale),
+		mxUtils.unscale(value.height, this.scale)) : null;
 };
 
 /**
@@ -402,8 +629,162 @@ mxGraphView.prototype.setTranslate = function(dx, dy)
  */
 mxGraphView.prototype.viewStateChanged = function()
 {
-	this.revalidate();
-	this.graph.sizeDidChange();
+	if (this.modelCoordinates)
+	{
+		// Reads the size of the container before the validation changes the
+		// transform, which would otherwise force a layout of all cells when
+		// sizeDidChange reads it (see mxGraph.updateContainerMetrics)
+		this.graph.updateContainerMetrics(mxUtils.bind(this, function()
+		{
+			this.validate();
+			this.graph.sizeDidChange();
+		}));
+	}
+	else
+	{
+		this.revalidate();
+		this.graph.sizeDidChange();
+	}
+};
+
+/**
+ * Function: updateScreenStates
+ *
+ * Updates the screen fields of all cell states and their shapes if the
+ * scale or translate changed since the last call. This is used if
+ * <modelCoordinates> is true.
+ */
+mxGraphView.prototype.updateScreenStates = function()
+{
+	var s = this.stateScale;
+	var tr = this.stateTranslate;
+
+	if (s != null && (s != this.scale || tr.x != this.translate.x ||
+		tr.y != this.translate.y))
+	{
+		var states = this.states.getValues();
+
+		for (var i = 0; i < states.length; i++)
+		{
+			states[i].updateScreenBounds();
+			this.graph.cellRenderer.updateScreenBounds(states[i], s, tr);
+		}
+	}
+
+	this.stateScale = this.scale;
+	this.stateTranslate = this.translate.clone();
+};
+
+/**
+ * Function: updateDrawPaneTransform
+ *
+ * Applies the scale and translate to the <drawPane> if <modelCoordinates>
+ * is true.
+ */
+mxGraphView.prototype.updateDrawPaneTransform = function()
+{
+	if (this.drawPane != null)
+	{
+		var s = this.scale;
+		var tr = this.translate;
+		this.drawPane.setAttribute('transform', 'translate(' + (tr.x * s) + ',' +
+			(tr.y * s) + ') scale(' + s + ')');
+
+		// Updates the scale for the width of the transparent paths for strokes
+		var name = mxSvgCanvas2D.prototype.toleranceScaleVariable;
+
+		if (name != null)
+		{
+			if (this.drawPane.style.getPropertyValue(name) == '')
+			{
+				this.updateToleranceScale();
+			}
+			else
+			{
+				this.scheduleToleranceScaleUpdate();
+			}
+		}
+	}
+};
+
+/**
+ * Variable: toleranceScaleDelay
+ *
+ * Delay in milliseconds after the last change of the scale for updating the
+ * CSS variable with the scale for the width of the transparent paths for
+ * strokes (see <mxSvgCanvas2D.toleranceScaleVariable>), which restyles all
+ * cells, so that zooming does not wait for it. Default is 250.
+ */
+mxGraphView.prototype.toleranceScaleDelay = 250;
+
+/**
+ * Variable: toleranceScaleThread
+ *
+ * Holds the timeout of <scheduleToleranceScaleUpdate>.
+ */
+mxGraphView.prototype.toleranceScaleThread = null;
+
+/**
+ * Function: scheduleToleranceScaleUpdate
+ *
+ * Calls <updateToleranceScale> after <toleranceScaleDelay>.
+ */
+mxGraphView.prototype.scheduleToleranceScaleUpdate = function()
+{
+	window.clearTimeout(this.toleranceScaleThread);
+	this.toleranceScaleThread = window.setTimeout(mxUtils.bind(this, function()
+	{
+		this.toleranceScaleThread = null;
+		this.updateToleranceScale();
+	}), this.toleranceScaleDelay);
+};
+
+/**
+ * Function: updateToleranceScale
+ *
+ * Sets the CSS variable with the scale for the width of the transparent
+ * paths for strokes in the <drawPane> to <getToleranceScale>.
+ */
+mxGraphView.prototype.updateToleranceScale = function()
+{
+	var name = mxSvgCanvas2D.prototype.toleranceScaleVariable;
+
+	if (this.drawPane != null && name != null)
+	{
+		var ts = String(this.getToleranceScale());
+
+		if (this.drawPane.style.getPropertyValue(name) != ts)
+		{
+			this.drawPane.style.setProperty(name, ts);
+		}
+	}
+};
+
+/**
+ * Function: getPixelSize
+ *
+ * Returns the length of a screen pixel for paint and routing rules that
+ * use pixel constants, such as perimeters that keep a pixel away from a
+ * line. This returns 1, or the scale in model coordinates, where the
+ * result of the rules is kept in model units for all scales, so that it
+ * is linear in the scale and the same as at 100% on the old path.
+ */
+mxGraphView.prototype.getPixelSize = function()
+{
+	return (this.modelCoordinates) ? this.scale : 1;
+};
+
+/**
+ * Function: getToleranceScale
+ *
+ * Returns the scale of the drawing on the screen, which the width of the
+ * transparent paths for strokes is divided by (see
+ * <mxSvgCanvas2D.toleranceScaleVariable>). This implementation returns
+ * <scale>.
+ */
+mxGraphView.prototype.getToleranceScale = function()
+{
+	return this.scale;
 };
 
 /**
@@ -428,8 +809,174 @@ mxGraphView.prototype.refresh = function()
  */
 mxGraphView.prototype.revalidate = function()
 {
+	var cached = (this.checkCachedBounds) ? this.getCachedBounds() : null;
+
 	this.invalidate();
 	this.validate();
+
+	if (cached != null)
+	{
+		this.compareCachedBounds(cached);
+	}
+};
+
+/**
+ * Function: getStateFields
+ *
+ * Returns an array with the bounds, points, offset, segments, length and
+ * terminal distance of the given state in model units if cached is true
+ * or in screen units otherwise. See <stateFieldNames>.
+ */
+mxGraphView.prototype.getStateFields = function(state, cached)
+{
+	return (cached) ? [state.cellBounds, state.cellPoints, state.cellOffset,
+		state.cellSegments, state.cellLength, state.cellTerminalDistance] :
+		[new mxRectangle(state.x, state.y, state.width, state.height),
+		state.absolutePoints, state.absoluteOffset, state.segments,
+		state.length, state.terminalDistance];
+};
+
+/**
+ * Function: getCachedBounds
+ *
+ * Returns an <mxDictionary> that maps from cells to the fields of their
+ * states in model units. See <getStateFields>.
+ */
+mxGraphView.prototype.getCachedBounds = function()
+{
+	var result = new mxDictionary();
+	var states = this.states.getValues();
+
+	for (var i = 0; i < states.length; i++)
+	{
+		result.put(states[i].cell, this.getStateFields(states[i], true));
+	}
+
+	return result;
+};
+
+/**
+ * Function: compareCachedBounds
+ *
+ * Writes the fields in model units that differ from the given result of
+ * <getCachedBounds> to the console.
+ */
+mxGraphView.prototype.compareCachedBounds = function(previous)
+{
+	var states = this.states.getValues();
+	var diffs = [];
+
+	for (var i = 0; i < states.length; i++)
+	{
+		var fields = previous.get(states[i].cell);
+
+		if (fields != null)
+		{
+			this.addFieldDifferences(diffs, states[i], fields,
+				this.getStateFields(states[i], true), 1e-5);
+		}
+	}
+
+	this.writeFieldDifferences('Revalidation changed fields in model units', diffs);
+};
+
+/**
+ * Function: compareScreenBounds
+ *
+ * Writes the screen fields of the given states that differ from the fields
+ * in model units to the console. See <mxCellState.updateScreenBounds>.
+ */
+mxGraphView.prototype.compareScreenBounds = function(states)
+{
+	var tol = 1e-4 * Math.max(1, this.scale);
+	var diffs = [];
+
+	for (var i = 0; i < states.length; i++)
+	{
+		var state = states[i];
+		var tmp = new mxCellState(this, state.cell, state.style);
+		tmp.cellBounds = state.cellBounds;
+		tmp.cellPoints = state.cellPoints;
+		tmp.cellOffset = state.cellOffset;
+		tmp.cellSegments = state.cellSegments;
+		tmp.cellLength = state.cellLength;
+		tmp.cellTerminalDistance = state.cellTerminalDistance;
+		tmp.updateScreenBounds();
+
+		this.addFieldDifferences(diffs, state, this.getStateFields(state),
+			this.getStateFields(tmp), tol);
+	}
+
+	this.writeFieldDifferences('Screen fields differ from fields in model units', diffs);
+};
+
+/**
+ * Function: addFieldDifferences
+ *
+ * Adds the names and values of the fields that differ between the given
+ * results of <getStateFields> to the given array.
+ */
+mxGraphView.prototype.addFieldDifferences = function(diffs, state, fields, other, tolerance)
+{
+	for (var i = 0; i < fields.length; i++)
+	{
+		if (!this.equalsWithTolerance(fields[i], other[i], tolerance))
+		{
+			diffs.push({id: state.cell.id, field: this.stateFieldNames[i],
+				value: JSON.stringify(fields[i]), expected: JSON.stringify(other[i])});
+		}
+	}
+};
+
+/**
+ * Function: equalsWithTolerance
+ *
+ * Returns true if the given numbers, points, rectangles or arrays thereof
+ * are equal within the given tolerance.
+ */
+mxGraphView.prototype.equalsWithTolerance = function(a, b, tolerance)
+{
+	var result = a == b;
+
+	if (!result && a != null && b != null)
+	{
+		if (typeof a === 'number')
+		{
+			result = Math.abs(a - b) <= tolerance;
+		}
+		else if (a.length != null)
+		{
+			result = a.length == b.length;
+
+			for (var i = 0; i < a.length && result; i++)
+			{
+				result = this.equalsWithTolerance(a[i], b[i], tolerance);
+			}
+		}
+		else
+		{
+			result = this.equalsWithTolerance(a.x, b.x, tolerance) &&
+				this.equalsWithTolerance(a.y, b.y, tolerance) &&
+				this.equalsWithTolerance(a.width, b.width, tolerance) &&
+				this.equalsWithTolerance(a.height, b.height, tolerance);
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Function: writeFieldDifferences
+ *
+ * Writes the given message and the first differences to the console.
+ */
+mxGraphView.prototype.writeFieldDifferences = function(message, diffs)
+{
+	if (diffs.length > 0 && window.console != null)
+	{
+		console.warn('mxGraphView: ' + message + ' (' + diffs.length + '): ' +
+			JSON.stringify(diffs.slice(0, 10)));
+	}
 };
 
 /**
@@ -452,6 +999,8 @@ mxGraphView.prototype.clear = function(cell, force, recurse)
 	force = (force != null) ? force : false;
 	recurse = (recurse != null) ? recurse : true;
 	
+	// Creates the removed states in the next validation
+	this.addInvalidCell(cell);
 	this.removeState(cell);
 	
 	if (recurse && (force || cell != this.currentRoot))
@@ -490,42 +1039,63 @@ mxGraphView.prototype.invalidate = function(cell, recurse, includeEdges)
 		recurse = (recurse != null) ? recurse : true;
 		includeEdges = (includeEdges != null) ? includeEdges : true;
 		
-		var state = this.getState(cell);
-		
-		if (state != null)
+		// Walks the descendants and the connected edges in the order of a
+		// recursion and visits each cell once. A recursion would overflow
+		// the call stack for long chains of edges that are connected to
+		// edges and visit cells that are reachable on several paths, eg.
+		// edges between edges, exponentially often. Cells that a walk with
+		// the same flags or with all of them visited for an earlier change
+		// are skipped (see invalidatedCells).
+		var visited = (this.invalidatedCells != null) ?
+			this.invalidatedCells : new mxDictionary();
+		var walk = ((recurse) ? 1 : 0) | ((includeEdges) ? 2 : 0);
+		var covers = 0;
+
+		for (var i = 0; i < 4; i++)
 		{
-			state.invalid = true;
+			if ((i & walk) == walk)
+			{
+				covers |= 1 << i;
+			}
 		}
-		
-		// Avoids infinite loops for invalid graphs
-		if (!cell.invalidating)
+
+		var stack = [cell];
+
+		while (stack.length > 0)
 		{
-			cell.invalidating = true;
-			
-			// Recursively invalidates all descendants
-			if (recurse)
+			var tmp = stack.pop();
+			var walked = visited.get(tmp) || 0;
+
+			if ((walked & covers) == 0)
 			{
-				var childCount = model.getChildCount(cell);
-				
-				for (var i = 0; i < childCount; i++)
+				visited.put(tmp, walked | (1 << walk));
+				var state = this.getState(tmp);
+
+				if (state != null)
 				{
-					var child = model.getChildAt(cell, i);
-					this.invalidate(child, recurse, includeEdges);
+					state.invalid = true;
+				}
+
+				this.addInvalidCell(tmp);
+
+				// Propagates invalidation to all connected edges
+				if (includeEdges)
+				{
+					for (var i = model.getEdgeCount(tmp) - 1; i >= 0; i--)
+					{
+						stack.push(model.getEdgeAt(tmp, i));
+					}
+				}
+
+				// Invalidates all descendants before the edges
+				if (recurse)
+				{
+					for (var i = model.getChildCount(tmp) - 1; i >= 0; i--)
+					{
+						stack.push(model.getChildAt(tmp, i));
+					}
 				}
 			}
-			
-			// Propagates invalidation to all connected edges
-			if (includeEdges)
-			{
-				var edgeCount = model.getEdgeCount(cell);
-				
-				for (var i = 0; i < edgeCount; i++)
-				{
-					this.invalidate(model.getEdgeAt(cell, i), recurse, includeEdges);
-				}
-			}
-			
-			delete cell.invalidating;
 		}
 	}
 };
@@ -544,25 +1114,738 @@ mxGraphView.prototype.invalidate = function(cell, recurse, includeEdges)
  */
 mxGraphView.prototype.validate = function(cell)
 {
-	var t0 = mxLog.enter('mxGraphView.validate');
-	window.status = mxResources.get(this.updatingDocumentResource) ||
-		this.updatingDocumentResource;
-	
-	this.resetValidationState();
+	// Measures the texts of the plain text labels with backgrounds at once
+	// (see mxSvgCanvas2D.textBackgrounds)
+	var backgrounds = mxSvgCanvas2D.textBackgrounds;
+	var invalidated = this.invalidatedCells;
+	this.invalidatedCells = null;
 
-	var cell = (cell != null) ? cell : ((this.currentRoot != null) ?
-		this.currentRoot : this.graph.getModel().getRoot());
-	var state = this.validateCellState(this.validateCell(cell));
-	var graphBounds = this.getBoundingBox(state, true, true);
+	if (backgrounds == null)
+	{
+		mxSvgCanvas2D.textBackgrounds = [];
+	}
+
+	// Removes the listeners of the handlers that changed shapes destroy
+	// in one pass (see mxSelectionCellsHandler.updateHandler)
+	var sources = [this.graph, this, this.graph.getModel()];
+
+	for (var i = 0; i < sources.length; i++)
+	{
+		sources[i].beginRemoveListeners();
+	}
+
+	try
+	{
+		this.validateCells(cell);
+	}
+	finally
+	{
+		for (var i = 0; i < sources.length; i++)
+		{
+			sources[i].endRemoveListeners();
+		}
+
+		// Later changes walk the cells again, as their states are valid now
+		this.invalidatedCells = (invalidated != null) ? new mxDictionary() : null;
+
+		if (backgrounds == null)
+		{
+			try
+			{
+				mxSvgCanvas2D.measureTextBackgrounds();
+			}
+			finally
+			{
+				mxSvgCanvas2D.textBackgrounds = null;
+			}
+		}
+	}
+};
+
+/**
+ * Function: validateCells
+ *
+ * Implements <validate> for the given cell or the root.
+ *
+ * Parameters:
+ *
+ * cell - Optional <mxCell> to be used as the root of the validation.
+ */
+mxGraphView.prototype.validateCells = function(cell)
+{
+	var t0 = mxLog.enter('mxGraphView.validate');
+	this.resetValidationState();
+	this.validatedStates = (this.checkCachedBounds) ? [] : null;
+
+	if (this.modelCoordinates)
+	{
+		this.updateScreenStates();
+	}
+
+	var root = (this.currentRoot != null) ? this.currentRoot :
+		this.graph.getModel().getRoot();
+	var cell = (cell != null) ? cell : root;
+	var state = null;
+
+	// Validates only the invalidated cells if possible
+	if (cell == root && this.validateInvalidCells(root))
+	{
+		state = this.getState(root);
+	}
+	else
+	{
+		// Collects the cells that are invalidated from now on
+		if (cell == root)
+		{
+			// Discards the state of an incremental validation that found that
+			// all cells must be walked (eg. counters of enumerated cells)
+			this.resetValidationState();
+			this.invalidCells = [];
+			this.invalidCellsRoot = root;
+			this.fullValidationRequired = false;
+		}
+
+		this.validatingAllCells = true;
+
+		try
+		{
+			state = this.validateCellState(this.validateCell(cell));
+		}
+		finally
+		{
+			this.validatingAllCells = false;
+		}
+	}
+
+	var b = this.modelGraphBounds;
+
+	// Previous graph bounds for the current scale and translate, which may
+	// have changed since the last validation (eg. in sizeDidChange)
+	var prev = (b != null) ? new mxRectangle((b.x + this.translate.x) * this.scale,
+		(b.y + this.translate.y) * this.scale, b.width * this.scale,
+		b.height * this.scale) : null;
+	var graphBounds = null;
+
+	// Reuses the graph bounds in model units if no cells were updated
+	if (this.modelCoordinates && !this.graphBoundsInvalid && prev != null)
+	{
+		graphBounds = prev;
+	}
+	else
+	{
+		// Adds the changed bounding boxes to the graph bounds if possible
+		graphBounds = (cell == root) ? this.getChangedGraphBounds() : null;
+
+		if (graphBounds == null)
+		{
+			graphBounds = this.getBoundingBox(state, true, true);
+		}
+
+		// Validating a part of the graph adds its bounds to the graph bounds,
+		// which are computed again in the next validation of the graph
+		if (cell != root)
+		{
+			if (prev != null && (prev.width > 0 || prev.height > 0))
+			{
+				prev.add(graphBounds);
+				graphBounds = prev;
+			}
+
+			this.addedGraphBounds = null;
+		}
+		else
+		{
+			this.setAddedGraphBounds(graphBounds);
+		}
+
+		this.graphBoundsInvalid = cell != root;
+	}
+
 	this.setGraphBounds((graphBounds != null) ?
 		graphBounds : this.getEmptyBounds());
 	this.validateBackground();
 
+	if (this.modelCoordinates)
+	{
+		this.updateDrawPaneTransform();
+	}
+
+	if (this.validatedStates != null)
+	{
+		this.compareScreenBounds(this.validatedStates);
+		this.validatedStates = null;
+	}
+
 	this.resetValidationState();
-	
-	window.status = mxResources.get(this.doneResource) ||
-		this.doneResource;
 	mxLog.leave('mxGraphView.validate', t0);
+};
+
+/**
+ * Function: addInvalidCell
+ *
+ * Adds the given cell to <invalidCells> for the next validation. If the
+ * cell is the root of the model or if there are more than <maxInvalidCells>
+ * invalid cells then the next validation walks all cells. Cells without a
+ * parent were removed from the model and are ignored.
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> that was invalidated or whose state was created.
+ */
+mxGraphView.prototype.addInvalidCell = function(cell)
+{
+	if (this.invalidCells != null)
+	{
+		var model = this.graph.getModel();
+
+		if (cell == model.getRoot() ||
+			this.invalidCells.length >= this.maxInvalidCells)
+		{
+			this.invalidCells = null;
+		}
+		else if (model.getParent(cell) != null)
+		{
+			this.invalidCells.push(cell);
+		}
+	}
+};
+
+/**
+ * Function: isIncrementalValidation
+ *
+ * Returns true if <validate> can validate the cells in <invalidCells>
+ * instead of walking all cells under the given root. This returns false if
+ * the root changed or lost its state (eg. after the root of the model was
+ * replaced) and if the order of the DOM nodes depends on more than one
+ * sequence of nodes (keepEdgesInForeground, keepEdgesInBackground and HTML
+ * labels without foreignObjects).
+ *
+ * Parameters:
+ *
+ * root - <mxCell> that is the root of the validation.
+ */
+mxGraphView.prototype.isIncrementalValidation = function(root)
+{
+	return this.incrementalValidation && this.invalidCells != null &&
+		!this.fullValidationRequired && this.invalidCellsRoot == root &&
+		this.getState(root) != null && !mxClient.NO_FO &&
+		!this.graph.keepEdgesInForeground && !this.graph.keepEdgesInBackground;
+};
+
+/**
+ * Function: validateInvalidCells
+ *
+ * Validates the cells in <invalidCells> and the cells whose states are
+ * created while doing so with the same results as walking all cells under
+ * the given root in <validate>: the states are created, removed and
+ * validated and the DOM nodes are ordered as in <validateCell> and
+ * <validateCellState>. Returns false if all cells must be walked instead
+ * (see <isIncrementalValidation> and <fullValidationRequired>).
+ *
+ * Parameters:
+ *
+ * root - <mxCell> that is the root of the validation.
+ */
+mxGraphView.prototype.validateInvalidCells = function(root)
+{
+	if (!this.isIncrementalValidation(root))
+	{
+		return false;
+	}
+
+	var cells = this.invalidCells;
+	var visited = new mxDictionary();
+	var visibility = new mxDictionary();
+	var reached = new mxDictionary();
+	var valid = new mxDictionary();
+	var flags = [];
+	var list = [];
+	var i;
+
+	this.invalidCells = [];
+	this.createdCells = [];
+
+	try
+	{
+		for (i = 0; i < cells.length; i++)
+		{
+			if (!visited.get(cells[i]))
+			{
+				visited.put(cells[i], true);
+				var visible = this.getValidationVisibility(cells[i], root, visibility);
+
+				if (visible != null)
+				{
+					list.push(cells[i]);
+					flags.push(visible);
+				}
+			}
+		}
+
+		// Creates and removes the states of the invalid cells and their
+		// descendants as in the walk over all cells. Cells under another
+		// invalid cell are left to the walk of that cell, which reaches them
+		// with the same visible argument unless it stops above them (see
+		// below), so that nested invalid cells walk their descendants once
+		// instead of once for each invalid ancestor.
+		var nested = [];
+		this.walkStopped = false;
+
+		for (i = 0; i < list.length; i++)
+		{
+			if (this.hasInvalidAncestor(list[i], root, visited, reached))
+			{
+				nested.push(i);
+			}
+			else
+			{
+				this.validateCell(list[i], flags[i]);
+			}
+		}
+
+		// A walk that removed the state of a cell that is no longer visible
+		// did not walk the descendants of that cell (see <validateCell>), eg.
+		// if tags hide a container and a cell inside of it in one edit. The
+		// nested cells are then walked as well, which gives the same states
+		// as a walk for each invalid cell. Otherwise these walks would only
+		// visit the same cells again with the same results.
+		if (this.walkStopped)
+		{
+			for (i = 0; i < nested.length; i++)
+			{
+				this.validateCell(list[nested[i]], flags[nested[i]]);
+			}
+		}
+
+		for (i = 0; i < this.createdCells.length; i++)
+		{
+			if (!visited.get(this.createdCells[i]))
+			{
+				visited.put(this.createdCells[i], true);
+				list.push(this.createdCells[i]);
+			}
+		}
+	}
+	finally
+	{
+		this.createdCells = null;
+	}
+
+	// Validates the states in the order of the walk over all cells
+	mxUtils.sortCells(list, true);
+	var states = [];
+
+	for (i = 0; i < list.length; i++)
+	{
+		var state = this.validateInvalidCell(list[i], root, valid);
+
+		if (state != null)
+		{
+			states.push(state);
+		}
+	}
+
+	return !this.fullValidationRequired &&
+		this.updateStateOrder(states, root) &&
+		!this.fullValidationRequired;
+};
+
+/**
+ * Function: getValidationVisibility
+ *
+ * Returns the visible argument that <validateCell> gets for the given cell
+ * in the walk over all cells under the given root, or null if the cell is
+ * not in that walk.
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> whose visible argument should be returned.
+ * root - <mxCell> that is the root of the validation.
+ * cache - Optional <mxDictionary> for the results of the ancestors, which
+ * are shared by the cells, so that checking all ancestors of many cells is
+ * not quadratic in the depth of the hierarchy.
+ */
+mxGraphView.prototype.getValidationVisibility = function(cell, root, cache)
+{
+	if (cell == root)
+	{
+		return true;
+	}
+
+	var model = this.graph.getModel();
+	var ancestors = [];
+	var parent = model.getParent(cell);
+	var visible = (cache != null) ? cache.get(parent) : undefined;
+
+	while (visible === undefined && parent != null && parent != root)
+	{
+		ancestors.push(parent);
+		parent = model.getParent(parent);
+		visible = (cache != null) ? cache.get(parent) : undefined;
+	}
+
+	if (visible === undefined)
+	{
+		if (parent == null)
+		{
+			visible = null;
+		}
+		else
+		{
+			ancestors.push(root);
+			visible = true;
+		}
+	}
+
+	for (var i = ancestors.length - 1; i >= 0; i--)
+	{
+		if (visible != null)
+		{
+			visible = visible && this.graph.isCellVisible(ancestors[i]) &&
+				(!this.isCellCollapsed(ancestors[i]) ||
+				ancestors[i] == this.currentRoot);
+		}
+
+		if (cache != null)
+		{
+			cache.put(ancestors[i], visible);
+		}
+	}
+
+	return visible;
+};
+
+/**
+ * Function: hasInvalidAncestor
+ *
+ * Returns true if an ancestor of the given cell up to the given root is in
+ * the given invalid cells. The <validateCell> walk of that ancestor in
+ * <validateInvalidCells> then reaches the cell with the visible argument
+ * that <getValidationVisibility> returns, unless it removes the state of a
+ * cell above it (see <walkStopped>).
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> whose ancestors should be checked.
+ * root - <mxCell> that is the root of the validation.
+ * invalid - <mxDictionary> that contains the invalid cells.
+ * cache - <mxDictionary> for the results of the ancestors, which are shared
+ * by the cells, so that checking all ancestors of many cells is not
+ * quadratic in the depth of the hierarchy.
+ */
+mxGraphView.prototype.hasInvalidAncestor = function(cell, root, invalid, cache)
+{
+	var model = this.graph.getModel();
+	var ancestors = [];
+	var parent = (cell != root) ? model.getParent(cell) : null;
+	var result = false;
+
+	while (parent != null)
+	{
+		var tmp = cache.get(parent);
+
+		if (tmp != null)
+		{
+			result = tmp;
+			break;
+		}
+
+		ancestors.push(parent);
+
+		if (invalid.get(parent))
+		{
+			result = true;
+			break;
+		}
+
+		parent = (parent != root) ? model.getParent(parent) : null;
+	}
+
+	for (var i = 0; i < ancestors.length; i++)
+	{
+		cache.put(ancestors[i], result);
+	}
+
+	return result;
+};
+
+/**
+ * Function: validateInvalidCell
+ *
+ * Validates the state of the given cell and its ancestors and returns the
+ * state if the walk over all cells reaches it, that is, if the states of
+ * all its ancestors up to the given root are valid, or null otherwise.
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> whose state should be validated.
+ * root - <mxCell> that is the root of the validation.
+ * cache - Optional <mxDictionary> for the ancestors whose states and the
+ * states of their ancestors up to the root are valid, which are shared by
+ * the cells in <validateInvalidCells>, so that checking all ancestors of
+ * many cells is not quadratic in the depth of the hierarchy. These states
+ * stay valid as the cells are validated in the order of the walk.
+ */
+mxGraphView.prototype.validateInvalidCell = function(cell, root, cache)
+{
+	var model = this.graph.getModel();
+	var state = this.getState(cell);
+
+	if (state != null && cell != root)
+	{
+		var parent = model.getParent(cell);
+		this.validateCellState(parent, false);
+		var ancestors = [];
+
+		for (var p = parent; p != null && state != null &&
+			(cache == null || !cache.get(p));
+			p = (p != root) ? model.getParent(p) : null)
+		{
+			var tmp = this.getState(p);
+
+			if (tmp == null || tmp.invalid)
+			{
+				state = null;
+			}
+			else if (cache != null)
+			{
+				ancestors.push(p);
+			}
+		}
+
+		for (var i = 0; state != null && i < ancestors.length; i++)
+		{
+			cache.put(ancestors[i], true);
+		}
+	}
+
+	if (state != null)
+	{
+		state = this.validateCellState(cell, false);
+	}
+
+	return (state != null && !state.invalid) ? state : null;
+};
+
+/**
+ * Function: updateStateOrder
+ *
+ * Inserts the DOM nodes of the given states, which are in the order of the
+ * walk over all cells, after the nodes of the states before them in that
+ * walk as <stateValidated> does in the walk. Returns false if a node is not
+ * in the <drawPane> or <overlayPane>, which <validate> then handles by
+ * walking all cells.
+ *
+ * Parameters:
+ *
+ * states - Array of <mxCellStates> whose DOM nodes should be ordered.
+ * root - <mxCell> that is the root of the validation.
+ */
+mxGraphView.prototype.updateStateOrder = function(states, root)
+{
+	for (var i = 0; i < states.length; i++)
+	{
+		var state = states[i];
+
+		if (state.shape != null)
+		{
+			var shapes = this.graph.cellRenderer.getShapesForState(state);
+
+			for (var j = 0; j < shapes.length; j++)
+			{
+				if (shapes[j] != null && shapes[j].node != null &&
+					!this.isPaneNode(shapes[j].node))
+				{
+					return false;
+				}
+			}
+
+			this.lastNode = this.getPreviousNode(state.cell, root);
+			this.lastHtmlNode = null;
+			this.stateValidated(state);
+		}
+	}
+
+	return true;
+};
+
+/**
+ * Function: isPaneNode
+ *
+ * Returns true if the given DOM node of a shape is in the <drawPane> or
+ * <overlayPane>, which <mxCellRenderer.insertStateAfter> orders as one
+ * sequence of nodes.
+ *
+ * Parameters:
+ *
+ * node - DOM node of a shape.
+ */
+mxGraphView.prototype.isPaneNode = function(node)
+{
+	return node.parentNode == this.getDrawPane() ||
+		node.parentNode == this.getOverlayPane();
+};
+
+/**
+ * Function: getPreviousNode
+ *
+ * Returns the last DOM node of the states before the given cell in the walk
+ * over all cells under the given root, which is the node after which
+ * <stateValidated> inserts the nodes of the state of the cell in that walk,
+ * or null if there is no such node.
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> whose previous node should be returned.
+ * root - <mxCell> that is the root of the validation.
+ */
+mxGraphView.prototype.getPreviousNode = function(cell, root)
+{
+	if (cell == root)
+	{
+		return null;
+	}
+
+	// Walks the cells in the order of getPreviousCell with the indices of the
+	// children in pairs of a cell and the index of the child before which the
+	// walk continues, as getPreviousCell looks up the index of each cell and
+	// made a run of cells without nodes quadratic (40,000 cells: 1.7 s)
+	var model = this.graph.getModel();
+	var parent = model.getParent(cell);
+	var stack = (parent != null) ? [parent, parent.getIndex(cell)] : [];
+
+	while (stack.length > 0)
+	{
+		var index = stack.pop();
+		var tmp = stack.pop();
+		var child = null;
+
+		for (var i = index - 1; i >= 0 && child == null; i--)
+		{
+			if (this.isValidState(model.getChildAt(tmp, i)))
+			{
+				child = model.getChildAt(tmp, i);
+				stack.push(tmp, i, child, model.getChildCount(child));
+			}
+		}
+
+		if (child == null)
+		{
+			var state = this.getState(tmp);
+
+			if (state != null && state.shape != null)
+			{
+				var shapes = this.graph.cellRenderer.getShapesForState(state);
+
+				for (var i = shapes.length - 1; i >= 0; i--)
+				{
+					if (shapes[i] != null && shapes[i].node != null &&
+						this.isPaneNode(shapes[i].node))
+					{
+						return shapes[i].node;
+					}
+				}
+			}
+
+			// Continues before the ancestors of the cell
+			if (stack.length == 0 && tmp != root)
+			{
+				parent = model.getParent(tmp);
+
+				if (parent != null)
+				{
+					stack.push(parent, parent.getIndex(tmp));
+				}
+			}
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Function: getPreviousCell
+ *
+ * Returns the cell before the given cell in the walk over all cells under
+ * the given root, or null if the cell is the root. The walk visits a cell
+ * before its children and only visits cells with valid states.
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> whose previous cell should be returned.
+ * root - <mxCell> that is the root of the validation.
+ */
+mxGraphView.prototype.getPreviousCell = function(cell, root)
+{
+	if (cell == root)
+	{
+		return null;
+	}
+
+	var model = this.graph.getModel();
+	var parent = model.getParent(cell);
+
+	for (var i = parent.getIndex(cell) - 1; i >= 0; i--)
+	{
+		var child = model.getChildAt(parent, i);
+
+		if (this.isValidState(child))
+		{
+			return this.getLastCell(child);
+		}
+	}
+
+	return parent;
+};
+
+/**
+ * Function: getLastCell
+ *
+ * Returns the last cell of the walk over all cells under the given cell.
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> whose last cell should be returned.
+ */
+mxGraphView.prototype.getLastCell = function(cell)
+{
+	var model = this.graph.getModel();
+	var next = cell;
+
+	while (next != null)
+	{
+		cell = next;
+		next = null;
+
+		for (var i = model.getChildCount(cell) - 1; i >= 0 && next == null; i--)
+		{
+			var child = model.getChildAt(cell, i);
+
+			if (this.isValidState(child))
+			{
+				next = child;
+			}
+		}
+	}
+
+	return cell;
+};
+
+/**
+ * Function: isValidState
+ *
+ * Returns true if the given cell has a valid state, that is, if it is in
+ * the walk over all cells if its parent is.
+ *
+ * Parameters:
+ *
+ * cell - <mxCell> to be checked.
+ */
+mxGraphView.prototype.isValidState = function(cell)
+{
+	var state = this.getState(cell);
+
+	return state != null && !state.invalid;
 };
 
 /**
@@ -578,23 +1861,28 @@ mxGraphView.prototype.getEmptyBounds = function()
 
 /**
  * Function: updateBoundingBox
- * 
- * Updates the bounding boxes for the given cell state.
- * 
+ *
+ * Updates the bounding boxes for the given cell state. Only the bounding
+ * boxes of the shape and label that were redrawn since their last update
+ * are updated (see <mxShape.invalidBoundingBox>), so a validation measures
+ * the changed cells only.
+ *
  * Parameters:
- * 
+ *
  * state - <mxCellState> whose bounding boxes should be updated.
  */
 mxGraphView.prototype.updateBoundingBox = function(state)
 {
-	if (state.shape != null)
+	if (state.shape != null && state.shape.invalidBoundingBox)
 	{
 		state.shape.updateBoundingBox();
+		state.shape.invalidBoundingBox = false;
 	}
 
-	if (state.text != null)
+	if (state.text != null && state.text.invalidBoundingBox)
 	{
 		state.text.updateBoundingBox();
+		state.text.invalidBoundingBox = false;
 	}
 };
 
@@ -609,75 +1897,238 @@ mxGraphView.prototype.updateBoundingBox = function(state)
  * state - <mxCellState> whose bounding box should be returned.
  * recurse - Optional boolean indicating if the children should be included.
  * Default is true.
- * update - Optional boolean indicating if the bounding boxes
- * should be updated. Default is false.
+ * update - Optional boolean indicating if the invalid bounding boxes
+ * should be updated (see <updateBoundingBox>). Default is false.
  */
 mxGraphView.prototype.getBoundingBox = function(state, recurse, update)
 {
 	recurse = (recurse != null) ? recurse : true;
 	update = (update != null) ? update : false;
-	
+
 	var bbox = null;
-	
+
 	if (state != null)
 	{
-		if (update)
-		{
-			this.updateBoundingBox(state);
-		}
+		bbox = this.addBoundingBox(null, state, recurse, update);
+	}
 
-		function checkBounds(shape)
-		{
-			return shape != null && shape.boundingBox != null && !isNaN(shape.boundingBox.x) &&
-				!isNaN(shape.boundingBox.y) && !isNaN(shape.boundingBox.width) &&
-				!isNaN(shape.boundingBox.height);
-		};
+	return bbox;
+};
 
-		function add(shape)
+/**
+ * Function: addBoundingBox
+ *
+ * Adds the bounding box of the shape and the label for the given
+ * <mxCellState> and its children if recurse is true to the given
+ * rectangle and returns the result. This creates a new rectangle only if
+ * the given rectangle is null. See <getBoundingBox>.
+ *
+ * Parameters:
+ *
+ * bbox - <mxRectangle> to add the bounding boxes to or null.
+ * state - <mxCellState> whose bounding box should be added.
+ * recurse - Boolean indicating if the children should be included.
+ * update - Boolean indicating if the invalid bounding boxes should be
+ * updated (see <updateBoundingBox>). This also stores the bounding box of
+ * each state in <mxCellState.graphBoundingBox>.
+ */
+mxGraphView.prototype.addBoundingBox = function(bbox, state, recurse, update)
+{
+	if (update)
+	{
+		this.updateBoundingBox(state);
+		state.graphBoundingBox = this.getStateBoundingBox(state);
+		state.invalidBoundingBox = false;
+	}
+
+	bbox = this.addShapeBoundingBox(bbox, state.shape);
+	bbox = this.addShapeBoundingBox(bbox, state.text);
+
+	if (recurse)
+	{
+		var model = this.graph.getModel();
+		var childCount = model.getChildCount(state.cell);
+
+		for (var i = 0; i < childCount; i++)
 		{
-			if (checkBounds(shape))
+			var child = this.getState(model.getChildAt(state.cell, i));
+
+			if (child != null)
 			{
-				if (bbox == null)
-				{
-					bbox = shape.boundingBox.clone();
-				}
-				else
-				{
-					bbox.add(shape.boundingBox);
-				}
-			}
-		};
-
-		add(state.shape);
-		add(state.text);
-
-		if (recurse)
-		{
-			var model = this.graph.getModel();
-			var childCount = model.getChildCount(state.cell);
-			
-			for (var i = 0; i < childCount; i++)
-			{
-				var bounds = this.getBoundingBox(this.getState(
-					model.getChildAt(state.cell, i)),
-					recurse, update);
-				
-				if (bounds != null)
-				{
-					if (bbox == null)
-					{
-						bbox = bounds;
-					}
-					else
-					{
-						bbox.add(bounds);
-					}
-				}
+				bbox = this.addBoundingBox(bbox, child, recurse, update);
 			}
 		}
 	}
-	
+
 	return bbox;
+};
+
+/**
+ * Function: addShapeBoundingBox
+ *
+ * Adds the <mxShape.boundingBox> of the given shape to the given rectangle
+ * if it is a number and returns the result, which is a new rectangle if
+ * the given rectangle is null.
+ *
+ * Parameters:
+ *
+ * bbox - <mxRectangle> to add the bounding box to or null.
+ * shape - <mxShape> whose bounding box should be added.
+ */
+mxGraphView.prototype.addShapeBoundingBox = function(bbox, shape)
+{
+	var b = (shape != null) ? shape.boundingBox : null;
+
+	if (b != null && !isNaN(b.x) && !isNaN(b.y) &&
+		!isNaN(b.width) && !isNaN(b.height))
+	{
+		if (bbox == null)
+		{
+			bbox = mxRectangle.fromRectangle(b);
+		}
+		else
+		{
+			bbox.add(b);
+		}
+	}
+
+	return bbox;
+};
+
+/**
+ * Function: getStateBoundingBox
+ *
+ * Returns a new rectangle with the bounding box of the shape and the label
+ * of the given state, or null if neither has a bounding box.
+ *
+ * Parameters:
+ *
+ * state - <mxCellState> whose bounding box should be returned.
+ */
+mxGraphView.prototype.getStateBoundingBox = function(state)
+{
+	return this.addShapeBoundingBox(this.addShapeBoundingBox(
+		null, state.shape), state.text);
+};
+
+/**
+ * Function: invalidateBoundingBox
+ *
+ * Adds the given state to <invalidBoundingBoxes> after its shape or label
+ * was repainted, so that the next <validate> adds its new bounding box to
+ * the graph bounds without adding the bounding boxes of all states. This
+ * is called in <mxShape.redraw>.
+ *
+ * Parameters:
+ *
+ * state - <mxCellState> whose shape or label was repainted.
+ */
+mxGraphView.prototype.invalidateBoundingBox = function(state)
+{
+	// Graph bounds must be updated if the bounding box of a state changes
+	// without a validation of the state (eg. in the live preview)
+	this.graphBoundsInvalid = true;
+
+	if (!state.invalidBoundingBox)
+	{
+		state.invalidBoundingBox = true;
+
+		if (this.invalidBoundingBoxes != null)
+		{
+			this.invalidBoundingBoxes.push(state);
+		}
+	}
+};
+
+/**
+ * Function: getChangedGraphBounds
+ *
+ * Returns the graph bounds of the last <validate> with the bounding boxes
+ * of the states in <invalidBoundingBoxes> added, or null if all bounding
+ * boxes must be added. The bounding boxes of the changed and removed
+ * states are not removed from the graph bounds, which is correct if each
+ * of them was inside the graph bounds without touching their border. The
+ * graph bounds are then defined by the other states. All bounding boxes
+ * are added if any of them touched the border, if the scale or translate
+ * changed or if the graph bounds were changed outside of <validate>.
+ */
+mxGraphView.prototype.getChangedGraphBounds = function()
+{
+	var added = this.addedGraphBounds;
+	var states = this.invalidBoundingBoxes;
+	var removed = this.removedBoundingBoxes;
+
+	if (added == null || states == null || removed == null ||
+		added.scale != this.scale || added.x != this.translate.x ||
+		added.y != this.translate.y || this.graphBounds == null ||
+		!this.graphBounds.equals(added.bounds))
+	{
+		return null;
+	}
+
+	var bounds = added.bounds;
+	var result = mxRectangle.fromRectangle(bounds);
+	var tol = 0.001;
+
+	// Returns true if the given box is inside the bounds and does not touch
+	// their border, so that its removal does not change the graph bounds
+	function isInside(box)
+	{
+		return box.x > bounds.x + tol && box.y > bounds.y + tol &&
+			box.x + box.width < bounds.x + bounds.width - tol &&
+			box.y + box.height < bounds.y + bounds.height - tol;
+	};
+
+	for (var i = 0; i < removed.length; i++)
+	{
+		if (!isInside(removed[i]))
+		{
+			return null;
+		}
+	}
+
+	for (var i = 0; i < states.length; i++)
+	{
+		var state = states[i];
+		state.invalidBoundingBox = false;
+
+		if (this.getState(state.cell) == state)
+		{
+			if (state.graphBoundingBox != null && !isInside(state.graphBoundingBox))
+			{
+				return null;
+			}
+
+			this.updateBoundingBox(state);
+			var box = this.getStateBoundingBox(state);
+			state.graphBoundingBox = box;
+
+			// Adds only boxes that extend the result to keep its values
+			if (box != null && (box.x < result.x || box.y < result.y ||
+				box.x + box.width > result.x + result.width ||
+				box.y + box.height > result.y + result.height))
+			{
+				result.add(box);
+			}
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Function: setAddedGraphBounds
+ *
+ * Stores the given graph bounds that were computed from the bounding boxes
+ * of all states or by <getChangedGraphBounds> for the current scale and
+ * translate and starts collecting the changed bounding boxes.
+ */
+mxGraphView.prototype.setAddedGraphBounds = function(bounds)
+{
+	this.addedGraphBounds = (bounds != null) ? {bounds: mxRectangle.fromRectangle(bounds),
+		scale: this.scale, x: this.translate.x, y: this.translate.y} : null;
+	this.invalidBoundingBoxes = [];
+	this.removedBoundingBoxes = [];
 };
 
 /**
@@ -906,6 +2357,7 @@ mxGraphView.prototype.validateCell = function(cell, visible)
 		if (state != null && !visible)
 		{
 			this.removeState(cell);
+			this.walkStopped = true;
 		}
 		else
 		{
@@ -950,20 +2402,37 @@ mxGraphView.prototype.validateCellState = function(cell, recurse)
 			if (state.invalid)
 			{
 				state.invalid = false;
-				
-				if (state.style == null || state.invalidStyle)
-				{
-					state.style = this.graph.getCellStyle(state.cell);
-					state.invalidStyle = false;
-				}
-				
-				if (cell != this.currentRoot)
-				{
-					this.validateCellState(model.getParent(cell), false);
-				}
+				this.graphBoundsInvalid = true;
 
-				state.setVisibleTerminalState(this.validateCellState(this.getVisibleTerminal(cell, true), false), true);
-				state.setVisibleTerminalState(this.validateCellState(this.getVisibleTerminal(cell, false), false), false);
+				if (this.validatedStates != null)
+				{
+					this.validatedStates.push(state);
+				}
+				
+				this.validateCellStyle(state);
+				var removed = this.removedDependencies;
+				this.dependencyDepth++;
+
+				try
+				{
+					if (this.dependencyDepth > this.maxDependencyDepth)
+					{
+						this.validateDependencies(cell);
+					}
+
+					if (cell != this.currentRoot)
+					{
+						this.validateDependency(cell, model.getParent(cell));
+					}
+
+					state.setVisibleTerminalState(this.validateDependency(cell, this.getVisibleTerminal(cell, true)), true);
+					state.setVisibleTerminalState(this.validateDependency(cell, this.getVisibleTerminal(cell, false)), false);
+				}
+				finally
+				{
+					this.dependencyDepth--;
+					this.removedDependencies = removed;
+				}
 				
 				this.updateCellState(state);
 				
@@ -996,6 +2465,163 @@ mxGraphView.prototype.validateCellState = function(cell, recurse)
 	}
 	
 	return state;
+};
+
+/**
+ * Function: validateCellStyle
+ * 
+ * Updates the style of the given <mxCellState> if it is missing or invalid.
+ * 
+ * Parameters:
+ * 
+ * state - <mxCellState> whose style should be validated.
+ */
+mxGraphView.prototype.validateCellStyle = function(state)
+{
+	if (state.style == null || state.invalidStyle)
+	{
+		state.style = this.graph.getCellStyle(state.cell);
+		state.invalidStyle = false;
+	}
+};
+
+/**
+ * Function: getDependency
+ * 
+ * Returns the parent (index 0), the visible source (index 1) or the visible
+ * target (index 2) of the given cell, which are validated before the cell in
+ * <validateCellState>. Returns null for the parent of <currentRoot>.
+ * 
+ * Parameters:
+ * 
+ * cell - <mxCell> whose dependency should be returned.
+ * index - Integer that specifies the dependency.
+ */
+mxGraphView.prototype.getDependency = function(cell, index)
+{
+	if (index == 0)
+	{
+		return (cell != this.currentRoot) ? this.graph.getModel().getParent(cell) : null;
+	}
+	else
+	{
+		return this.getVisibleTerminal(cell, index == 1);
+	}
+};
+
+/**
+ * Function: validateDependency
+ * 
+ * Validates the given parent or terminal of the given cell in
+ * <validateCellState> and returns its state. If the state of the dependency
+ * was removed in its validation in <validateDependencies>, eg. for an edge
+ * without a visible terminal state, then the removed state is returned for
+ * the first dependency of the cell that is the given cell, as in the
+ * recursion, where the validation of the dependency returns its state.
+ * 
+ * Parameters:
+ * 
+ * cell - <mxCell> whose dependency should be validated.
+ * dependency - <mxCell> that should be validated.
+ */
+mxGraphView.prototype.validateDependency = function(cell, dependency)
+{
+	var result = this.validateCellState(dependency, false);
+	var removed = this.removedDependencies;
+
+	if (result == null && dependency != null && removed != null &&
+		removed.cell == cell)
+	{
+		result = removed.states.remove(dependency) || null;
+	}
+
+	return result;
+};
+
+/**
+ * Function: validateDependencies
+ * 
+ * Validates the invalid parents and terminals that the given cell depends on
+ * with a stack in the order of the recursion in <validateCellState>. This is
+ * used for dependencies that are nested deeper than <maxDependencyDepth>, eg.
+ * long chains of edges that are connected to edges. As in the recursion, the
+ * states are marked as valid and their styles are updated before their own
+ * dependencies are validated, so that cycles use the same states, and each
+ * state is then validated with <validateCellState> after its dependencies.
+ * States that are removed in their validation are kept for the cell that
+ * depends on them in <removedDependencies>, see <validateDependency>.
+ * 
+ * Parameters:
+ * 
+ * cell - <mxCell> whose dependencies should be validated.
+ */
+mxGraphView.prototype.validateDependencies = function(cell)
+{
+	var root = {cell: cell, index: 0, removed: null};
+	var stack = [root];
+	var visited = new mxDictionary();
+
+	while (stack.length > 0)
+	{
+		var entry = stack[stack.length - 1];
+
+		if (entry.index < 3)
+		{
+			var dep = this.getDependency(entry.cell, entry.index++);
+			var state = this.getState(dep);
+
+			// States that stay invalid, eg. if an override of validateCellState
+			// ignores the cell, are not visited again
+			if (state != null && state.invalid && !visited.get(state))
+			{
+				visited.put(state, true);
+				state.invalid = false;
+				this.validateCellStyle(state);
+				stack.push({cell: dep, state: state, index: 0, removed: null});
+			}
+		}
+		else
+		{
+			stack.pop();
+
+			// The given cell is validated by the caller
+			if (entry.state != null)
+			{
+				var previous = this.removedDependencies;
+				this.removedDependencies = (entry.removed != null) ?
+					{cell: entry.cell, states: entry.removed} : null;
+				entry.state.invalid = true;
+				var result = null;
+
+				try
+				{
+					result = this.validateCellState(entry.cell, false);
+				}
+				finally
+				{
+					this.removedDependencies = previous;
+				}
+
+				// Keeps a removed state for the cell that depends on it
+				if (result != null && this.getState(entry.cell) != result)
+				{
+					var parent = stack[stack.length - 1];
+
+					if (parent.removed == null)
+					{
+						parent.removed = new mxDictionary();
+					}
+
+					parent.removed.put(entry.cell, result);
+				}
+			}
+		}
+	}
+
+	if (root.removed != null)
+	{
+		this.removedDependencies = {cell: cell, states: root.removed};
+	}
 };
 
 /**
@@ -1159,7 +2785,8 @@ mxGraphView.prototype.updateEdgeState = function(state, geo)
 		this.updateFixedTerminalPoints(state, source, target);
 		this.updatePoints(state, geo.points, source, target);
 		this.updateFloatingTerminalPoints(state, source, target);
-		
+		this.removeDuplicatePoints(state, geo.points, source, target);
+
 		var pts = state.absolutePoints;
 		
 		if (state.cell != this.currentRoot && (pts == null || pts.length < 2 ||
@@ -1416,6 +3043,14 @@ mxGraphView.prototype.updatePoints = function(edge, points, source, target)
 	if (edge != null && edge.absolutePoints != null &&
 		edge.absolutePoints.length > 0)
 	{
+		// Control points of the expanded layout are not used while a
+		// terminal is replaced by a collapsed ancestor (collapsedPoints=0)
+		if (points != null && points.length > 0 &&
+			this.isCollapsedPointsIgnored(edge.cell, edge.style))
+		{
+			points = null;
+		}
+
 		var pts = [];
 		pts.push(edge.absolutePoints[0]);
 		var edgeStyle = this.getEdgeStyle(edge, points, source, target);
@@ -1464,6 +3099,45 @@ mxGraphView.prototype.updatePoints = function(edge, points, source, target)
 
 		edge.absolutePoints = pts;
 	}
+};
+
+/**
+ * Function: isCollapsedPointsIgnored
+ *
+ * Returns true if the control points of the given edge are ignored. This
+ * is true if <mxConstants.STYLE_COLLAPSED_POINTS> is 0 in the given style
+ * and a terminal of the edge is replaced by a collapsed ancestor, that is,
+ * if the visible terminal differs from the terminal in the model.
+ *
+ * Parameters:
+ *
+ * edge - <mxCell> that represents the edge.
+ * style - Style of the edge.
+ */
+mxGraphView.prototype.isCollapsedPointsIgnored = function(edge, style)
+{
+	if (edge != null && style != null && mxUtils.getValue(style,
+		mxConstants.STYLE_COLLAPSED_POINTS, '1') == '0')
+	{
+		var model = this.graph.getModel();
+
+		for (var i = 0; i < 2; i++)
+		{
+			var terminal = model.getTerminal(edge, i == 0);
+
+			if (terminal != null)
+			{
+				var visible = this.getVisibleTerminal(edge, i == 0);
+
+				if (visible != null && visible != terminal)
+				{
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
 };
 
 /**
@@ -1571,6 +3245,184 @@ mxGraphView.prototype.updateFloatingTerminalPoints = function(state, source, tar
 		{
 			this.updateFloatingTerminalPoint(state, source, target, true);
 		}
+
+		// Connected ends that were already set are fixed connection points
+		if (state.style != null && mxUtils.getValue(state.style,
+			mxConstants.STYLE_FIXED_POINT_SPACING, 0) == 1)
+		{
+			this.updateFixedPointSpacing(state, (p0 != null) ? source : null,
+				(pe != null) ? target : null);
+		}
+	}
+};
+
+/**
+ * Function: removeDuplicatePoints
+ * 
+ * Removes the waypoints of the given edge state that are equal to the point
+ * before or after them. This happens if a route ends inside a terminal, eg.
+ * if the terminals are closer than the jetty size or overlap, or if two
+ * elbows of a route are at the same location. This is only done if
+ * <isDuplicatePointsRemoved> returns true. The terminal points are not
+ * removed.
+ * 
+ * Parameters:
+ * 
+ * state - <mxCellState> that represents the edge.
+ * points - Array of <mxPoints> that constitute the control points.
+ * source - <mxCellState> that represents the source terminal.
+ * target - <mxCellState> that represents the target terminal.
+ */
+mxGraphView.prototype.removeDuplicatePoints = function(state, points, source, target)
+{
+	var pts = state.absolutePoints;
+
+	if (pts != null && pts.length > 2)
+	{
+		var tol = 0.01 * this.scale;
+
+		var equals = function(a, b)
+		{
+			return a != null && b != null && Math.abs(a.x - b.x) < tol &&
+				Math.abs(a.y - b.y) < tol;
+		};
+
+		var duplicates = false;
+
+		for (var i = 1; i < pts.length && !duplicates; i++)
+		{
+			duplicates = equals(pts[i - 1], pts[i]);
+		}
+
+		if (duplicates && this.isDuplicatePointsRemoved(state,
+			this.getEdgeStyle(state, points, source, target), points))
+		{
+			for (var i = pts.length - 2; i > 0 && pts.length > 2; i--)
+			{
+				if (equals(pts[i], pts[i + 1]) || equals(pts[i], pts[i - 1]))
+				{
+					pts.splice(i, 1);
+				}
+			}
+		}
+	}
+};
+
+/**
+ * Function: isDuplicatePointsRemoved
+ * 
+ * Returns true if <removeDuplicatePoints> should remove the duplicate
+ * waypoints of the given edge state. This returns true for edge styles that
+ * compute the waypoints and do not map them to control points, which are
+ * <mxEdgeStyle.OrthConnector> without control points, the elbow styles and
+ * <mxEdgeStyle.EntityRelation>.
+ * 
+ * Parameters:
+ * 
+ * state - <mxCellState> that represents the edge.
+ * edgeStyle - Edge style function that routes the edge.
+ * points - Array of <mxPoints> that constitute the control points.
+ */
+mxGraphView.prototype.isDuplicatePointsRemoved = function(state, edgeStyle, points)
+{
+	return (edgeStyle == mxEdgeStyle.OrthConnector && (points == null || points.length == 0)) ||
+		edgeStyle == mxEdgeStyle.ElbowConnector || edgeStyle == mxEdgeStyle.SideToSide ||
+		edgeStyle == mxEdgeStyle.TopToBottom || edgeStyle == mxEdgeStyle.EntityRelation;
+};
+
+/**
+ * Function: updateFixedPointSpacing
+ *
+ * Moves the source and/or target end of the given edge state, which are
+ * attached to fixed connection points, by <mxConstants.STYLE_SOURCE_PERIMETER_SPACING>
+ * and <mxConstants.STYLE_TARGET_PERIMETER_SPACING> towards the neighbouring
+ * point of the route. Negative values move the end away from that point
+ * along the same line. An end is never moved past its neighbouring point.
+ * This is invoked after routing from <updateFloatingTerminalPoints> if
+ * <mxConstants.STYLE_FIXED_POINT_SPACING> is 1 so that the edge style input
+ * is unchanged.
+ *
+ * Parameters:
+ *
+ * state - <mxCellState> that represents the edge.
+ * source - <mxCellState> that represents the source terminal if the source
+ * end should be moved, else null.
+ * target - <mxCellState> that represents the target terminal if the target
+ * end should be moved, else null.
+ */
+mxGraphView.prototype.updateFixedPointSpacing = function(state, source, target)
+{
+	var pts = state.absolutePoints;
+	var n = (pts != null) ? pts.length : 0;
+
+	if (n > 1 && pts[0] != null && pts[n - 1] != null)
+	{
+		var scale = this.scale;
+
+		var getSpacing = function(key)
+		{
+			var value = parseFloat(state.style[key] || 0);
+
+			return (isNaN(value) || !isFinite(value)) ? 0 : value * scale;
+		};
+
+		// Returns the index of the first point that differs from the end
+		var getNeighbour = function(index, step)
+		{
+			var pt = pts[index];
+
+			for (var i = index + step; i >= 0 && i < n; i += step)
+			{
+				if (pts[i] != null && (pts[i].x != pt.x || pts[i].y != pt.y))
+				{
+					return i;
+				}
+			}
+
+			return -1;
+		};
+
+		var p0 = pts[0];
+		var pe = pts[n - 1];
+		var ds = (source) ? getSpacing(mxConstants.STYLE_SOURCE_PERIMETER_SPACING) : 0;
+		var dt = (target) ? getSpacing(mxConstants.STYLE_TARGET_PERIMETER_SPACING) : 0;
+		var ns = (ds != 0) ? getNeighbour(0, 1) : -1;
+		var nt = (dt != 0) ? getNeighbour(n - 1, -1) : -1;
+
+		// Neighbours are taken before any end is moved
+		var qs = (ns >= 0) ? pts[ns] : null;
+		var qt = (nt >= 0) ? pts[nt] : null;
+		var ls = (qs != null) ? Math.sqrt((qs.x - p0.x) * (qs.x - p0.x) +
+			(qs.y - p0.y) * (qs.y - p0.y)) : 0;
+		var lt = (qt != null) ? Math.sqrt((qt.x - pe.x) * (qt.x - pe.x) +
+			(qt.y - pe.y) * (qt.y - pe.y)) : 0;
+
+		// Clamps to the segment and splits a segment that is shared by both ends,
+		// keeping 1px of the segment so that the direction of markers is defined
+		var ms = Math.max(0, ls - 1);
+		ds = Math.min(ds, ms);
+		dt = Math.min(dt, Math.max(0, lt - 1));
+
+		if (ns == n - 1 && nt == 0 && ds > 0 && dt > 0 && ds + dt > ms)
+		{
+			var f = ms / (ds + dt);
+			ds *= f;
+			dt *= f;
+		}
+
+		if (qs != null && ds != 0)
+		{
+			state.setAbsoluteTerminalPoint(new mxPoint(
+				p0.x + (qs.x - p0.x) * ds / ls,
+				p0.y + (qs.y - p0.y) * ds / ls), true);
+		}
+
+		if (qt != null && dt != 0)
+		{
+			state.setAbsoluteTerminalPoint(new mxPoint(
+				pe.x + (qt.x - pe.x) * dt / lt,
+				pe.y + (qt.y - pe.y) * dt / lt), false);
+		}
 	}
 };
 
@@ -1611,26 +3463,45 @@ mxGraphView.prototype.getFloatingTerminalPoint = function(edge, start, end, sour
 	var next = this.getNextPoint(edge, end, source);
 	
 	var orth = this.graph.isOrthogonal(edge);
-	var alpha = mxUtils.toRadians(Number(start.style[mxConstants.STYLE_ROTATION] || '0'));
+	var rotation = Number(start.style[mxConstants.STYLE_ROTATION] || '0');
+	var alpha = mxUtils.toRadians(rotation);
 	var center = new mxPoint(start.getCenterX(), start.getCenterY());
-	
+
+	// Quarter turns keep vertical and horizontal lines, so orthogonal ends
+	// are projected onto the unrotated shape (with exact sines and cosines)
+	var quarter = rotation % 90 == 0;
+
 	if (alpha != 0)
 	{
 		var cos = Math.cos(-alpha);
 		var sin = Math.sin(-alpha);
+
+		if (quarter)
+		{
+			cos = Math.round(cos);
+			sin = Math.round(sin);
+		}
+
 		next = mxUtils.getRotatedPoint(next, cos, sin, center);
 	}
-	
+
 	var border = parseFloat(edge.style[mxConstants.STYLE_PERIMETER_SPACING] || 0);
 	border += parseFloat(edge.style[(source) ?
 		mxConstants.STYLE_SOURCE_PERIMETER_SPACING :
 		mxConstants.STYLE_TARGET_PERIMETER_SPACING] || 0);
-	var pt = this.getPerimeterPoint(start, next, alpha == 0 && orth, border);
+	var pt = this.getPerimeterPoint(start, next, quarter && orth, border);
 
 	if (alpha != 0)
 	{
 		var cos = Math.cos(alpha);
 		var sin = Math.sin(alpha);
+
+		if (quarter)
+		{
+			cos = Math.round(cos);
+			sin = Math.round(sin);
+		}
+
 		pt = mxUtils.getRotatedPoint(pt, cos, sin, center);
 	}
 
@@ -1740,6 +3611,8 @@ mxGraphView.prototype.getPerimeterPoint = function(terminal, next, orthogonal, b
 						point.y = 2 * bounds.getCenterY() - point.y;
 					}
 				}
+
+				point = this.getLabelPerimeterPoint(terminal, next, orthogonal, bounds, point);
 			}
 		}
 		
@@ -1749,6 +3622,184 @@ mxGraphView.prototype.getPerimeterPoint = function(terminal, next, orthogonal, b
 		}
 	}
 	
+	return point;
+};
+
+/**
+ * Function: getLabelPerimeterSide
+ * 
+ * Returns the side of the given vertex where its label is placed outside the
+ * shape and reaches beyond it, if the vertex has
+ * <mxConstants.STYLE_LABEL_PERIMETER>: one of <mxConstants.DIRECTION_NORTH>,
+ * <mxConstants.DIRECTION_SOUTH>, <mxConstants.DIRECTION_EAST> and
+ * <mxConstants.DIRECTION_WEST>, or null. Labels in a corner, rotated and
+ * flipped vertices and vertices without a painted label return null.
+ * 
+ * Parameters:
+ * 
+ * state - <mxCellState> of the vertex.
+ */
+mxGraphView.prototype.getLabelPerimeterSide = function(state)
+{
+	var side = null;
+
+	if (this.isLabelPerimeter(state) && state.text != null)
+	{
+		// The view measures repainted labels after the validation, but the
+		// edges of the vertex need the size of its label now
+		if (state.text.invalidBoundingBox)
+		{
+			this.updateBoundingBox(state);
+		}
+
+		var bb = state.text.boundingBox;
+		var lp = mxUtils.getValue(state.style, mxConstants.STYLE_LABEL_POSITION,
+			mxConstants.ALIGN_CENTER);
+		var vlp = mxUtils.getValue(state.style, mxConstants.STYLE_VERTICAL_LABEL_POSITION,
+			mxConstants.ALIGN_MIDDLE);
+
+		if (bb == null)
+		{
+			// No painted label
+		}
+		else if (lp == mxConstants.ALIGN_CENTER)
+		{
+			if (vlp == mxConstants.ALIGN_BOTTOM && bb.y + bb.height > state.y + state.height)
+			{
+				side = mxConstants.DIRECTION_SOUTH;
+			}
+			else if (vlp == mxConstants.ALIGN_TOP && bb.y < state.y)
+			{
+				side = mxConstants.DIRECTION_NORTH;
+			}
+		}
+		else if (vlp == mxConstants.ALIGN_MIDDLE)
+		{
+			if (lp == mxConstants.ALIGN_RIGHT && bb.x + bb.width > state.x + state.width)
+			{
+				side = mxConstants.DIRECTION_EAST;
+			}
+			else if (lp == mxConstants.ALIGN_LEFT && bb.x < state.x)
+			{
+				side = mxConstants.DIRECTION_WEST;
+			}
+		}
+	}
+
+	return side;
+};
+
+/**
+ * Function: isLabelPerimeter
+ * 
+ * Returns true if the given state is a vertex with
+ * <mxConstants.STYLE_LABEL_PERIMETER> that is neither rotated nor flipped.
+ * 
+ * Parameters:
+ * 
+ * state - <mxCellState> of the vertex.
+ */
+mxGraphView.prototype.isLabelPerimeter = function(state)
+{
+	return state != null && state.style != null &&
+		this.graph.model.isVertex(state.cell) &&
+		mxUtils.getValue(state.style, mxConstants.STYLE_LABEL_PERIMETER, 0) == 1 &&
+		mxUtils.getValue(state.style, mxConstants.STYLE_ROTATION, 0) == 0 &&
+		mxUtils.getValue(state.style, mxConstants.STYLE_FLIPH, 0) != 1 &&
+		mxUtils.getValue(state.style, mxConstants.STYLE_FLIPV, 0) != 1 &&
+		mxUtils.getValue(state.style, 'stencilFlipH', 0) != 1 &&
+		mxUtils.getValue(state.style, 'stencilFlipV', 0) != 1;
+};
+
+/**
+ * Function: getLabelPerimeterPoint
+ * 
+ * Returns the given perimeter point of the given terminal, or the point
+ * where the edge meets the label of the terminal first if the terminal has
+ * <mxConstants.STYLE_LABEL_PERIMETER> and its label is placed outside the
+ * shape (see <getLabelPerimeterSide>): if the segment from the next point to
+ * the perimeter point crosses the label, the edge ends where it enters the
+ * label, so it never crosses it. A fixed connection point on the side of
+ * the label (the next point on that side of the shape, within the label)
+ * ends at the far edge of the label straight out from the shape.
+ * 
+ * Parameters:
+ * 
+ * terminal - <mxCellState> for the source or target terminal.
+ * next - <mxPoint> that lies outside of the given terminal.
+ * orthogonal - Boolean that specifies if the orthogonal projection onto
+ * the perimeter was returned.
+ * bounds - <mxRectangle> that represents the perimeter bounds of the terminal.
+ * point - <mxPoint> that represents the perimeter point of the terminal.
+ */
+mxGraphView.prototype.getLabelPerimeterPoint = function(terminal, next, orthogonal, bounds, point)
+{
+	var side = (point != null && next != null) ? this.getLabelPerimeterSide(terminal) : null;
+
+	if (side != null)
+	{
+		// Keeps the perimeter spacing of the terminal between the edge and the label
+		var spacing = Math.max(0, terminal.x - bounds.x);
+		var bb = terminal.text.boundingBox;
+		var x0 = bb.x - spacing, y0 = bb.y - spacing;
+		var x1 = bb.x + bb.width + spacing, y1 = bb.y + bb.height + spacing;
+		var edges = [[x0, y0, x1, y0], [x1, y0, x1, y1], [x0, y1, x1, y1], [x0, y0, x0, y1]];
+		var hit = null;
+		var dist = null;
+
+		for (var i = 0; i < edges.length; i++)
+		{
+			var e = edges[i];
+			var p = mxUtils.intersection(next.x, next.y, point.x, point.y, e[0], e[1], e[2], e[3]);
+
+			if (p != null)
+			{
+				var d = (p.x - next.x) * (p.x - next.x) + (p.y - next.y) * (p.y - next.y);
+
+				if (dist == null || d < dist)
+				{
+					hit = p;
+					dist = d;
+				}
+			}
+		}
+
+		// A fixed connection point on the side of the label, where the next
+		// point is the point on that side of the perimeter bounds. Other next
+		// points in the label, such as the last bend of a route, keep the
+		// perimeter point, as the end would be past the bend.
+		if (hit == null)
+		{
+			var tol = 1;
+			var right = bounds.x + bounds.width;
+			var bottom = bounds.y + bounds.height;
+			var inX = next.x >= bounds.x - tol && next.x <= right + tol && next.x > x0 && next.x < x1;
+			var inY = next.y >= bounds.y - tol && next.y <= bottom + tol && next.y > y0 && next.y < y1;
+
+			if (side == mxConstants.DIRECTION_SOUTH && inX && Math.abs(next.y - bottom) <= tol)
+			{
+				hit = new mxPoint(next.x, y1);
+			}
+			else if (side == mxConstants.DIRECTION_NORTH && inX && Math.abs(next.y - bounds.y) <= tol)
+			{
+				hit = new mxPoint(next.x, y0);
+			}
+			else if (side == mxConstants.DIRECTION_EAST && inY && Math.abs(next.x - right) <= tol)
+			{
+				hit = new mxPoint(x1, next.y);
+			}
+			else if (side == mxConstants.DIRECTION_WEST && inY && Math.abs(next.x - bounds.x) <= tol)
+			{
+				hit = new mxPoint(x0, next.y);
+			}
+		}
+
+		if (hit != null)
+		{
+			point = hit;
+		}
+	}
+
 	return point;
 };
 
@@ -1776,6 +3827,23 @@ mxGraphView.prototype.getRoutingCenterY = function (state)
 		[mxConstants.STYLE_ROUTING_CENTER_Y]) || 0 : 0;
 
 	return state.getCenterY() + f * state.height;
+};
+
+/**
+ * Function: getChannelBounds
+ *
+ * Returns the bounds of the given terminal in which horizontal and vertical
+ * segments end on the terminal. <mxEdgeStyle.SegmentConnector> uses them to
+ * decide if a waypoint is level with the terminal and if a bend is inside the
+ * terminal. This implementation returns the given state.
+ *
+ * Parameters:
+ *
+ * state - <mxCellState> of the terminal.
+ */
+mxGraphView.prototype.getChannelBounds = function(state)
+{
+	return state;
 };
 
 /**
@@ -2000,8 +4068,9 @@ mxGraphView.prototype.updateEdgeBounds = function(state)
 		state.length = length;
 		state.segments = segments;
 		
-		var markerSize = 1; // TODO: include marker size
-		
+		// Minimum size of 1 in model units (TODO: include marker size)
+		var markerSize = this.scale;
+
 		state.x = minX;
 		state.y = minY;
 		state.width = Math.max(markerSize, maxX - minX);
@@ -2030,17 +4099,31 @@ mxGraphView.prototype.getPoint = function(state, geometry)
 	{
 		var gx = (geometry != null) ? geometry.x / 2 : 0;
 		var pointCount = state.absolutePoints.length;
-		var dist = Math.round((gx + 0.5) * state.length);
-		var segment = state.segments[0];
-		var length = 0;				
+		// Rounds in model units so that the result does not depend on the scale
+		var dist = Math.round(mxUtils.unscale((gx + 0.5) * state.length, this.scale)) * this.scale;
+		var lengths = this.getSegmentLengths(state);
 		var index = 1;
+		var hi = pointCount - 1;
 
-		while (dist >= Math.round(length + segment) && index < pointCount - 1)
+		// Finds the first point whose rounded length from the first point is
+		// greater than the distance, as a walk over the segments would, in
+		// logarithmic time, as the labels of an edge each search its points
+		while (index < hi)
 		{
-			length += segment;
-			segment = state.segments[index++];
+			var mid = (index + hi) >> 1;
+
+			if (dist >= Math.round(mxUtils.unscale(lengths[mid], this.scale)) * this.scale)
+			{
+				index = mid + 1;
+			}
+			else
+			{
+				hi = mid;
+			}
 		}
 
+		var segment = state.segments[index - 1];
+		var length = lengths[index - 1];
 		var factor = (segment == 0) ? 0 : (dist - length) / segment;
 		var p0 = state.absolutePoints[index-1];
 		var pe = state.absolutePoints[index];
@@ -2084,6 +4167,39 @@ mxGraphView.prototype.getPoint = function(state, geometry)
 	}
 	
 	return new mxPoint(x, y);		
+};
+
+/**
+ * Function: getSegmentLengths
+ *
+ * Returns the lengths of the given edge state from its first point to each
+ * point, the sums of its <mxCellState.segments> in their order, which are
+ * kept in the state for its current segments.
+ *
+ * Parameters:
+ *
+ * state - <mxCellState> that represents the state of the edge.
+ */
+mxGraphView.prototype.getSegmentLengths = function(state)
+{
+	var segments = state.segments;
+	var cache = state.segmentLengths;
+
+	if (cache == null || cache.segments !== segments ||
+		cache.lengths.length != segments.length + 1)
+	{
+		var lengths = [0];
+
+		for (var i = 0; i < segments.length; i++)
+		{
+			lengths.push(lengths[i] + segments[i]);
+		}
+
+		cache = {segments: segments, lengths: lengths};
+		state.segmentLengths = cache;
+	}
+
+	return cache.lengths;
 };
 
 /**
@@ -2285,6 +4401,16 @@ mxGraphView.prototype.getState = function(cell, create)
 			{
 				state = this.createState(cell);
 				this.states.put(cell, state);
+
+				// Validates the new state in the next validation
+				if (this.createdCells != null)
+				{
+					this.createdCells.push(cell);
+				}
+				else if (!this.validatingAllCells)
+				{
+					this.addInvalidCell(cell);
+				}
 			}
 			else
 			{
@@ -2354,6 +4480,13 @@ mxGraphView.prototype.getStates = function()
 mxGraphView.prototype.setStates = function(value)
 {
 	this.states = value;
+
+	// Walks all cells and adds the bounding boxes of all new states in the
+	// next validation
+	this.invalidCells = null;
+	this.addedGraphBounds = null;
+	this.invalidBoundingBoxes = null;
+	this.removedBoundingBoxes = null;
 };
 
 /**
@@ -2404,9 +4537,16 @@ mxGraphView.prototype.removeState = function(cell)
 	if (cell != null)
 	{
 		state = this.states.remove(cell);
-		
+
 		if (state != null)
 		{
+			this.graphBoundsInvalid = true;
+
+			if (state.graphBoundingBox != null && this.removedBoundingBoxes != null)
+			{
+				this.removedBoundingBoxes.push(state.graphBoundingBox);
+			}
+
 			this.graph.cellRenderer.destroy(state);
 			state.invalid = true;
 			state.destroy();
@@ -2540,18 +4680,7 @@ mxGraphView.prototype.isContainerEvent = function(evt)
 mxGraphView.prototype.init = function()
 {
 	this.installListeners();
-	
-	// Creates the DOM nodes for the respective display dialect
-	var graph = this.graph;
-	
-	if (graph.dialect == mxConstants.DIALECT_SVG)
-	{
-		this.createSvg();
-	}
-	else
-	{
-		this.createHtml();
-	}
+	this.createSvg();
 };
 
 /**
@@ -2690,98 +4819,140 @@ mxGraphView.prototype.installListeners = function()
 			}
 		});
 		
-		mxEvent.addGestureListeners(document, null, this.moveHandler, this.endHandler);
+		// Ends a gesture that the browser or the system cancelled, as there
+		// is no end event for it (eg. for a system gesture or an alert)
+		this.cancelHandler = mxUtils.bind(this, function(evt)
+		{
+			if ((graph.isMouseDown || graph.eventSource != null) &&
+				(graph.currentPointerId == null || evt.pointerId == null ||
+				evt.pointerId == graph.currentPointerId))
+			{
+				graph.cancelMouseGesture(evt);
+			}
+		});
+
+		mxEvent.addGestureListeners(document, null, this.moveHandler,
+			this.endHandler, this.cancelHandler);
+
+		// Measures the labels again when fonts or images in labels have loaded
+		// as this changes their size without a repaint. Load events do not
+		// bubble but they are dispatched to capturing listeners.
+		this.labelSizeHandler = mxUtils.bind(this, function(evt)
+		{
+			if (evt.type == 'loadingdone' || (evt.target != null &&
+				evt.target.nodeName == 'IMG'))
+			{
+				this.scheduleLabelBoundingBoxUpdate();
+			}
+		});
+
+		container.addEventListener('load', this.labelSizeHandler, true);
+		container.addEventListener('error', this.labelSizeHandler, true);
+		this.fontFaceSet = container.ownerDocument.fonts;
+
+		if (this.fontFaceSet != null && typeof this.fontFaceSet.addEventListener === 'function')
+		{
+			this.fontFaceSet.addEventListener('loadingdone', this.labelSizeHandler);
+		}
 	}
 };
 
 /**
- * Function: createHtml
+ * Function: scheduleLabelBoundingBoxUpdate
  *
- * Creates the DOM nodes for the HTML display.
+ * Schedules <updateLabelBoundingBoxes> after <labelBoundingBoxDelay> so
+ * that the loading of multiple fonts and images is handled once.
  */
-mxGraphView.prototype.createHtml = function()
+mxGraphView.prototype.scheduleLabelBoundingBoxUpdate = function()
 {
-	var container = this.graph.container;
-	
-	if (container != null)
+	if (this.labelBoundingBoxThread == null)
 	{
-		this.canvas = this.createHtmlPane('100%', '100%');
-		this.canvas.style.overflow = 'hidden';
-	
-		// Uses minimal size for inner DIVs on Canvas. This is required
-		// for correct event processing in IE. If we have an overlapping
-		// DIV then the events on the cells are only fired for labels.
-		this.backgroundPane = this.createHtmlPane('1px', '1px');
-		this.drawPane = this.createHtmlPane('1px', '1px');
-		this.overlayPane = this.createHtmlPane('1px', '1px');
-		this.decoratorPane = this.createHtmlPane('1px', '1px');
-		
-		this.canvas.appendChild(this.backgroundPane);
-		this.canvas.appendChild(this.drawPane);
-		this.canvas.appendChild(this.overlayPane);
-		this.canvas.appendChild(this.decoratorPane);
-
-		container.appendChild(this.canvas);
-		this.updateContainerStyle(container);
+		this.labelBoundingBoxThread = window.setTimeout(mxUtils.bind(this, function()
+		{
+			this.labelBoundingBoxThread = null;
+			this.updateLabelBoundingBoxes();
+		}), this.labelBoundingBoxDelay);
 	}
 };
 
 /**
- * Function: updateHtmlCanvasSize
- * 
- * Updates the size of the HTML canvas.
+ * Function: updateLabelBoundingBoxes
+ *
+ * Measures the bounding boxes of all labels again and updates the graph
+ * bounds. This is used after fonts or images in labels have loaded, which
+ * changes the size of the labels without repainting them. The labels are
+ * measured in the next validation if the model is being changed.
  */
-mxGraphView.prototype.updateHtmlCanvasSize = function(width, height)
+mxGraphView.prototype.updateLabelBoundingBoxes = function()
 {
-	if (this.graph.container != null)
+	if (this.canvas != null)
 	{
-		var ow = this.graph.container.offsetWidth;
-		var oh = this.graph.container.offsetHeight;
+		var perimeters = [];
 
-		if (ow < width)
+		this.states.visit(mxUtils.bind(this, function(key, state)
 		{
-			this.canvas.style.width = width + 'px';
-		}
-		else
+			if (state.text != null)
+			{
+				// Edges that end at the label follow its new size
+				if (this.isLabelPerimeter(state))
+				{
+					var bbox = (!state.text.invalidBoundingBox) ? state.text.boundingBox : null;
+					perimeters.push([state, (bbox != null) ? [bbox.width, bbox.height] : null]);
+				}
+
+				state.text.invalidateBoundingBox();
+				state.text.offsetWidth = null;
+				state.text.offsetHeight = null;
+			}
+		}));
+
+		// Only for labels whose size changed, as the edges are painted again,
+		// which loads the images in their labels again, so that an image in
+		// the label of such an edge would measure the labels again forever.
+		// Each cell is walked once for all labels (see invalidatedCells).
+		var invalidated = this.invalidatedCells;
+
+		if (invalidated == null)
 		{
-			this.canvas.style.width = '100%';
+			this.invalidatedCells = new mxDictionary();
 		}
 
-		if (oh < height)
+		try
 		{
-			this.canvas.style.height = height + 'px';
+			for (var i = 0; i < perimeters.length; i++)
+			{
+				var state = perimeters[i][0];
+				var size = perimeters[i][1];
+				this.updateBoundingBox(state);
+				var bbox = state.text.boundingBox;
+
+				if (size == null || bbox == null || bbox.width != size[0] || bbox.height != size[1])
+				{
+					this.invalidate(state.cell, false, true);
+				}
+			}
 		}
-		else
+		finally
 		{
-			this.canvas.style.height = '100%';
+			if (invalidated == null)
+			{
+				this.invalidatedCells = null;
+			}
+		}
+
+		this.graphBoundsInvalid = true;
+
+		if (this.graph.model.updateLevel == 0)
+		{
+			var bounds = mxRectangle.fromRectangle(this.getGraphBounds());
+			this.validate();
+
+			if (!bounds.equals(this.getGraphBounds()))
+			{
+				this.graph.sizeDidChange();
+			}
 		}
 	}
-};
-
-/**
- * Function: createHtmlPane
- * 
- * Creates and returns a drawing pane in HTML (DIV).
- */
-mxGraphView.prototype.createHtmlPane = function(width, height)
-{
-	var pane = document.createElement('DIV');
-	
-	if (width != null && height != null)
-	{
-		pane.style.position = 'absolute';
-		pane.style.left = '0px';
-		pane.style.top = '0px';
-
-		pane.style.width = width;
-		pane.style.height = height;
-	}
-	else
-	{
-		pane.style.position = 'relative';
-	}
-	
-	return pane;
 };
 
 /**
@@ -2865,12 +5036,33 @@ mxGraphView.prototype.destroy = function()
 	if (root != null && root.parentNode != null)
 	{
 		this.clear(this.currentRoot, true);
-		mxEvent.removeGestureListeners(document, null, this.moveHandler, this.endHandler);
+		mxEvent.removeGestureListeners(document, null, this.moveHandler,
+			this.endHandler, this.cancelHandler);
 		mxEvent.release(this.graph.container);
 		root.parentNode.removeChild(root);
-		
+
+		if (this.labelSizeHandler != null)
+		{
+			this.graph.container.removeEventListener('load', this.labelSizeHandler, true);
+			this.graph.container.removeEventListener('error', this.labelSizeHandler, true);
+
+			if (this.fontFaceSet != null && typeof this.fontFaceSet.removeEventListener === 'function')
+			{
+				this.fontFaceSet.removeEventListener('loadingdone', this.labelSizeHandler);
+			}
+
+			window.clearTimeout(this.labelBoundingBoxThread);
+			this.labelBoundingBoxThread = null;
+			this.labelSizeHandler = null;
+			this.fontFaceSet = null;
+		}
+
+		window.clearTimeout(this.toleranceScaleThread);
+		this.toleranceScaleThread = null;
+
 		this.moveHandler = null;
 		this.endHandler = null;
+		this.cancelHandler = null;
 		this.canvas = null;
 		this.backgroundPane = null;
 		this.drawPane = null;

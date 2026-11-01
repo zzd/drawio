@@ -92,6 +92,13 @@ var mxUtils =
 	varColorRegex: /^var\([^)]+\)/,
 
 	/**
+	 * Variable: systemColorRegex
+	 *
+	 * Regular expression for CSS system colors, eg. Canvas and CanvasText.
+	 */
+	systemColorRegex: /^\s*(AccentColor|AccentColorText|ActiveText|ButtonBorder|ButtonFace|ButtonText|Canvas|CanvasText|Field|FieldText|GrayText|Highlight|HighlightText|LinkText|Mark|MarkText|SelectedItem|SelectedItemText|VisitedText)\s*$/i,
+
+	/**
 	 * Variable: hexColorRegex
 	 * 
 	 * Regular expression for parsing hex color values.
@@ -2172,6 +2179,34 @@ var mxUtils =
 	},
 
 	/**
+	 * Function: compareNumbers
+	 *
+	 * Compares the given values as numbers, like a - b in a comparator of a
+	 * sort, but consistently: values that are no numbers (NaN, also after the
+	 * conversion of a string) are after all numbers and equal to each other,
+	 * and equal infinities are equal. A comparator that returns NaN (a - b for
+	 * these) makes the order of a sort depend on the engine, eg. Chrome sorts
+	 * differently once the code is optimized.
+	 *
+	 * Parameters:
+	 *
+	 * a - First value to compare.
+	 * b - Second value to compare.
+	 */
+	compareNumbers: function(a, b)
+	{
+		var x = Number(a), y = Number(b);
+		var nx = isNaN(x), ny = isNaN(y);
+
+		if (nx || ny)
+		{
+			return (nx ? 1 : 0) - (ny ? 1 : 0);
+		}
+
+		return (x < y) ? -1 : ((x > y) ? 1 : 0);
+	},
+
+	/**
 	 * Function: parsePadding
 	 *
 	 * Parses a CSS-style padding value (1-4 space-separated numbers) into an
@@ -2245,6 +2280,57 @@ var mxUtils =
 	},
 
 	/**
+	 * Function: isSystemColor
+	 *
+	 * Returns true if the given color is a CSS system color, eg. Canvas. The
+	 * browser resolves these for the color scheme where they are used.
+	 */
+	isSystemColor: function(color)
+	{
+		return typeof color === 'string' && mxUtils.systemColorRegex.test(color);
+	},
+
+	/**
+	 * Function: isVarOrSystemColor
+	 *
+	 * Returns true if the given color is a CSS var function or a system
+	 * color. These are resolved by the browser, so they are not converted
+	 * to hex values and are used as they are in both color schemes.
+	 */
+	isVarOrSystemColor: function(color)
+	{
+		return mxUtils.isVarColor(color) || mxUtils.isSystemColor(color);
+	},
+
+	/**
+	 * Function: getInverseSystemColor
+	 *
+	 * Returns the inverse of the given system color or null if the color
+	 * has no inverse system color. Canvas and CanvasText are the inverse of
+	 * each other.
+	 */
+	getInverseSystemColor: function(color)
+	{
+		var name = (typeof color === 'string') ? mxUtils.trim(color).toLowerCase() : null;
+
+		return (name == 'canvas') ? 'CanvasText' :
+			((name == 'canvastext') ? 'Canvas' : null);
+	},
+
+	/**
+	 * Function: hasResourceReference
+	 *
+	 * Returns true if the given color contains url() or src(), which load
+	 * paint servers in fill and stroke and filters in drop-shadow(), or a
+	 * backslash, which can escape these in CSS. Colors come from styles,
+	 * which may be untrusted, and are used in SVG attributes and CSS.
+	 */
+	hasResourceReference: function(color)
+	{
+		return typeof color === 'string' && /url\(|src\(|\\/i.test(color);
+	},
+
+	/**
 	 * Function: isHexColor
 	 * 
 	 * Returns true if the given color is a hex color.
@@ -2282,6 +2368,15 @@ var mxUtils =
 			if (color.toLowerCase() == mxUtils.normalizedValidInvalidColor)
 			{
 				return true;
+			}
+			else if (mxUtils.canvasContext == null)
+			{
+				// Uses the CSS parser if the browser provides no 2D context,
+				// without the keywords and functions that the canvas rejects
+				return /^(#[0-9a-f]+|(rgb|hsl)a?\([\w.,%\/+-]*\)|[a-z]+)$/i.test(color) &&
+					!/^(transparent|inherit|initial|unset|revert)$/i.test(color) &&
+					window.CSS != null && typeof CSS.supports === 'function' &&
+					CSS.supports('color', color);
 			}
 			else
 			{
@@ -2337,7 +2432,7 @@ var mxUtils =
 		}
 
 		if (dark == null && (useLightColor ||
-			mxUtils.isVarColor(light)))
+			mxUtils.isVarOrSystemColor(light)))
 		{
 			dark = light;
 		}
@@ -2367,6 +2462,13 @@ var mxUtils =
 		if (color.toLowerCase() == 'transparent')
 		{
 			return color;
+		}
+
+		var inverse = mxUtils.getInverseSystemColor(color);
+
+		if (inverse != null)
+		{
+			return inverse;
 		}
 
 		// Parses hex or rgb color
@@ -2497,16 +2599,41 @@ var mxUtils =
 	},
 	
 	/**
+	 * Function: getOtherSchemeColor
+	 *
+	 * Returns the given color of one side of a light-dark color for use on
+	 * the other side. System colors are resolved in the color scheme where
+	 * they are used, so Canvas and CanvasText are replaced with their
+	 * inverse, also as the fallback of a CSS var function.
+	 */
+	getOtherSchemeColor: function(color)
+	{
+		var inverse = mxUtils.getInverseSystemColor(color);
+
+		if (inverse != null)
+		{
+			return inverse;
+		}
+
+		var match = (typeof color === 'string') ?
+			/^(var\([^,()]+,\s*)([a-zA-Z]+)(\s*\))$/.exec(color) : null;
+		inverse = (match != null) ? mxUtils.getInverseSystemColor(match[2]) : null;
+
+		return (inverse != null) ? match[1] + inverse + match[3] : color;
+	},
+
+	/**
 	 * Function: invertLightDarkColor
-	 * 
-	 * Inverts the given light dark color.
+	 *
+	 * Inverts the given light dark color by swapping the light and dark
+	 * colors (see getOtherSchemeColor).
 	 */
 	invertLightDarkColor: function(lightDarkColor)
 	{
 		var result = {};
 
-		result.light = lightDarkColor.dark;
-		result.dark = lightDarkColor.light;
+		result.light = mxUtils.getOtherSchemeColor(lightDarkColor.dark);
+		result.dark = mxUtils.getOtherSchemeColor(lightDarkColor.light);
 		result.cssText = (result.light == result.dark) ? result.light :
 			'light-dark(' + result.light + ', ' + result.dark + ')';
 
@@ -2821,17 +2948,23 @@ var mxUtils =
 	/**
 	 * Function: arcToCurves
 	 * 
-	 * Converts the given arc to a series of curves.
+	 * Converts the given arc to a series of curves and returns their control
+	 * and end points, 6 numbers per curve. As in SVG, an arc with identical
+	 * end points is omitted and an arc with a zero radius is a straight line.
 	 */
 	arcToCurves: function(x0, y0, r1, r2, angle, largeArcFlag, sweepFlag, x, y)
 	{
 		x -= x0;
 		y -= y0;
-		
-        if (r1 === 0 || r2 === 0) 
-        {
-        	return result;
-        }
+
+		if (x == 0 && y == 0)
+		{
+			return [];
+		}
+		else if (r1 == 0 || r2 == 0)
+		{
+			return [x0, y0, x + x0, y + y0, x + x0, y + y0];
+		}
         
         var fS = sweepFlag;
         var psai = angle;
@@ -3521,30 +3654,38 @@ var mxUtils =
 	{
 		var offsetLeft = 0;
 		var offsetTop = 0;
-		
-		// Ignores document scroll origin for fixed elements
-		var fixed = false;
-		var node = container;
-		var b = document.body;
-		var d = document.documentElement;
 
-		while (node != null && node != b && node != d && !fixed)
-		{
-			var style = mxUtils.getCurrentStyle(node);
-			
-			if (style != null)
-			{
-				fixed = fixed || style.position == 'fixed';
-			}
-			
-			node = node.parentNode;
-		}
-		
-		if (!scrollOffset && !fixed)
+		if (!scrollOffset)
 		{
 			var offset = mxUtils.getDocumentScrollOrigin(container.ownerDocument);
-			offsetLeft += offset.x;
-			offsetTop += offset.y;
+
+			// Ignores document scroll origin for fixed elements. The styles
+			// are only computed if the document is scrolled.
+			if (offset.x != 0 || offset.y != 0)
+			{
+				var fixed = false;
+				var node = container;
+				var b = document.body;
+				var d = document.documentElement;
+
+				while (node != null && node != b && node != d && !fixed)
+				{
+					var style = mxUtils.getCurrentStyle(node);
+
+					if (style != null)
+					{
+						fixed = style.position == 'fixed';
+					}
+
+					node = node.parentNode;
+				}
+
+				if (!fixed)
+				{
+					offsetLeft += offset.x;
+					offsetTop += offset.y;
+				}
+			}
 		}
 		
 		var r = container.getBoundingClientRect();
@@ -3596,6 +3737,11 @@ var mxUtils =
 		var b = doc.body;
 		var d = doc.documentElement;
 		var result = new mxPoint();
+		var origin = (includeDocument) ? mxUtils.getDocumentScrollOrigin(doc) : null;
+
+		// The styles are only needed to ignore the scroll origin of the
+		// document for fixed nodes, so they are only computed if it is added
+		var scrolled = origin != null && (origin.x != 0 || origin.y != 0);
 		var fixed = false;
 
 		while (node != null && node != b && node != d)
@@ -3605,25 +3751,22 @@ var mxUtils =
 				result.x += node.scrollLeft;
 				result.y += node.scrollTop;
 			}
-			
-			var style = mxUtils.getCurrentStyle(node);
-			
-			if (style != null)
+
+			if (scrolled && !fixed)
 			{
-				fixed = fixed || style.position == 'fixed';
+				var style = mxUtils.getCurrentStyle(node);
+				fixed = style != null && style.position == 'fixed';
 			}
 
 			node = (includeAncestors) ? node.parentNode : null;
 		}
 
-		if (!fixed && includeDocument)
+		if (scrolled && !fixed)
 		{
-			var origin = mxUtils.getDocumentScrollOrigin(doc);
-
 			result.x += origin.x;
 			result.y += origin.y;
 		}
-		
+
 		return result;
 	},
 
@@ -3646,13 +3789,16 @@ var mxUtils =
 	 */
 	convertPoint: function(container, x, y)
 	{
-		var origin = mxUtils.getScrollOrigin(container, false);
-		var offset = mxUtils.getOffset(container);
+		// The point and the bounding client rectangle are both relative to
+		// the viewport, so the scroll origin of the document and fixed
+		// ancestors do not matter and no styles are computed (this runs for
+		// every mouse event). Adding the scroll origin of the document for
+		// the container only if no ancestor was fixed moved the point by the
+		// scroll origin of the document if an ancestor was fixed.
+		var r = container.getBoundingClientRect();
 
-		offset.x -= origin.x;
-		offset.y -= origin.y;
-		
-		return new mxPoint(x - offset.x, y - offset.y);
+		return new mxPoint(x - r.left + container.scrollLeft,
+			y - r.top + container.scrollTop);
 	},
 	
 	/**
@@ -3747,10 +3893,26 @@ var mxUtils =
 	 */
 	ltrim: function(str, chars)
 	{
-		chars = chars || "\\s|\\0";
-		
-		return (str != null) ? str.replace(new RegExp("^[" + chars + "]+", "g"), "") : null;
+		// Precompiled expression for the default characters
+		var exp = (!chars) ? mxUtils.ltrimExpression :
+			new RegExp("^[" + chars + "]+", "g");
+
+		return (str != null) ? str.replace(exp, "") : null;
 	},
+
+	/**
+	 * Variable: ltrimExpression
+	 *
+	 * Expression for <ltrim> with the default characters.
+	 */
+	ltrimExpression: new RegExp("^[\\s|\\0]+", "g"),
+
+	/**
+	 * Variable: rtrimExpression
+	 *
+	 * Expression for <rtrim> with the default characters.
+	 */
+	rtrimExpression: new RegExp("[\\s|\\0]"),
 	
 	/**
 	 * Function: rtrim
@@ -3767,9 +3929,25 @@ var mxUtils =
 	 */
 	rtrim: function(str, chars)
 	{
-		chars = chars || "\\s|\\0";
-		
-		return (str != null) ? str.replace(new RegExp("[" + chars + "]+$", "g"), "") : null;
+		if (str != null)
+		{
+			// Scans backwards as [chars]+$ takes quadratic time on a long run
+			// of these characters that is not at the end of the string
+			var exp = (!chars) ? mxUtils.rtrimExpression :
+				new RegExp("[" + chars + "]");
+			var end = str.length;
+
+			while (end > 0 && exp.test(str.charAt(end - 1)))
+			{
+				end--;
+			}
+
+			return str.substring(0, end);
+		}
+		else
+		{
+			return null;
+		}
 	},
 	
 	/**
@@ -3852,6 +4030,28 @@ var mxUtils =
 	mod: function(n, m)
 	{
 		return ((n % m) + m) % m;
+	},
+
+	/**
+	 * Function: unscale
+	 *
+	 * Returns the given scaled coordinate in model units, that is, divided by
+	 * scale minus the optional translate, without the floating point noise of
+	 * the conversion so that rounding the result does not depend on the scale
+	 * or translate of the view.
+	 *
+	 * Parameters:
+	 *
+	 * value - Scaled coordinate to be converted.
+	 * scale - Scale of the view.
+	 * translate - Optional translate along the axis of the coordinate. Default
+	 * is 0.
+	 */
+	unscale: function(value, scale, translate)
+	{
+		translate = (translate != null) ? translate : 0;
+
+		return Math.round((value / scale - translate) * 1e6) / 1e6;
 	},
 
 	/**
@@ -4124,30 +4324,142 @@ var mxUtils =
 	sortCells: function(cells, ascending)
 	{
 		ascending = (ascending != null) ? ascending : true;
-		var lookup = new mxDictionary();
-		cells.sort(function(o1, o2)
+
+		if (cells.length > 1)
 		{
-			var p1 = lookup.get(o1);
-			
-			if (p1 == null)
+			// Ranks the cells in the order of their paths (see mxCellPath.compare)
+			// in a tree of the paths, where the paths of the ancestors are created
+			// once. Creating and comparing the path of each cell is quadratic in
+			// the depth of the hierarchy. As in mxCellPath, cells without a parent
+			// have the empty path and the paths of cells in different trees are
+			// compared as if they were in the same tree.
+			var root = {children: null};
+			var nodes = new mxDictionary();
+			var indices = new mxDictionary();
+
+			// Returns the index of the child in the parent. Creates a lookup for
+			// the children of a parent that is used often as mxCell.getIndex is
+			// linear in the number of children.
+			var getIndex = function(parent, child)
 			{
-				p1 = mxCellPath.create(o1).split(mxCellPath.PATH_SEPARATOR);
-				lookup.put(o1, p1);
-			}
-			
-			var p2 = lookup.get(o2);
-			
-			if (p2 == null)
+				var entry = indices.get(parent);
+
+				if (entry == null)
+				{
+					entry = {count: 0, lookup: null};
+					indices.put(parent, entry);
+				}
+
+				if (entry.lookup == null && ++entry.count > 8)
+				{
+					entry.lookup = new mxDictionary();
+
+					for (var i = parent.getChildCount() - 1; i >= 0; i--)
+					{
+						entry.lookup.put(parent.getChildAt(i), i);
+					}
+				}
+
+				var index = (entry.lookup != null) ? entry.lookup.get(child) :
+					parent.getIndex(child);
+
+				return (index != null) ? index : -1;
+			};
+
+			var getNode = function(cell)
 			{
-				p2 = mxCellPath.create(o2).split(mxCellPath.PATH_SEPARATOR);
-				lookup.put(o2, p2);
+				var node = (cell != null) ? nodes.get(cell) : root;
+				var path = [];
+
+				while (node == null)
+				{
+					var parent = cell.getParent();
+
+					if (parent == null)
+					{
+						node = root;
+					}
+					else
+					{
+						path.push(cell);
+						cell = parent;
+						node = nodes.get(cell);
+					}
+				}
+
+				if (cell != null)
+				{
+					nodes.put(cell, node);
+				}
+
+				for (var i = path.length - 1; i >= 0; i--)
+				{
+					var index = getIndex(path[i].getParent(), path[i]);
+
+					if (node.children == null)
+					{
+						node.children = {};
+					}
+
+					var child = node.children[index];
+
+					if (child == null)
+					{
+						child = {index: index, children: null};
+						node.children[index] = child;
+					}
+
+					node = child;
+					nodes.put(path[i], node);
+				}
+
+				return node;
+			};
+
+			for (var i = 0; i < cells.length; i++)
+			{
+				getNode(cells[i]);
 			}
-			
-			var comp = mxCellPath.compare(p1, p2);
-			
-			return (comp == 0) ? 0 : (((comp > 0) == ascending) ? 1 : -1);
-		});
-		
+
+			// Ranks the paths in preorder with the children ordered by index
+			var stack = [root];
+			var rank = 0;
+
+			while (stack.length > 0)
+			{
+				var node = stack.pop();
+				node.rank = rank++;
+
+				if (node.children != null)
+				{
+					var children = [];
+
+					for (var key in node.children)
+					{
+						children.push(node.children[key]);
+					}
+
+					// Pushes the first child last so that it is visited first
+					children.sort(function(c1, c2)
+					{
+						return c2.index - c1.index;
+					});
+
+					for (var i = 0; i < children.length; i++)
+					{
+						stack.push(children[i]);
+					}
+				}
+			}
+
+			cells.sort(function(o1, o2)
+			{
+				var comp = getNode(o1).rank - getNode(o2).rank;
+
+				return (comp == 0) ? 0 : (((comp > 0) == ascending) ? 1 : -1);
+			});
+		}
+
 		return cells;
 	},
 
@@ -4921,14 +5233,50 @@ var mxUtils =
 			cache.text = text;
 		}
 
-		return new mxRectangle(0, 0, div.offsetWidth, div.offsetHeight);
+		var size = new mxRectangle(0, 0, div.offsetWidth, div.offsetHeight);
+
+		// Removes markup after measuring, as the element stays in the page,
+		// where a style element of the markup would apply and an element with
+		// a fixed position and visibility:visible would cover the page
+		if (typeof text === 'string' && text.indexOf('<') >= 0)
+		{
+			div.innerHTML = '';
+			cache.text = null;
+		}
+
+		return size;
 	},
 	
 	/**
+	 * Function: deprecated
+	 *
+	 * Writes a warning to the console the first time the deprecated function
+	 * with the given name is called. Deprecated functions are removed in a
+	 * later release.
+	 */
+	deprecated: function(name)
+	{
+		if (mxUtils.deprecatedCalls == null)
+		{
+			mxUtils.deprecatedCalls = {};
+		}
+
+		if (!mxUtils.deprecatedCalls[name] && typeof console !== 'undefined')
+		{
+			mxUtils.deprecatedCalls[name] = true;
+			console.warn(name + ' is deprecated and will be removed in a later release');
+		}
+	},
+
+	/**
 	 * Function: getViewXml
+	 *
+	 * Deprecated. Returns the XML of the view of the given graph (see
+	 * <mxGraphViewCodec>).
 	 */
 	getViewXml: function(graph, scale, cells, x0, y0)
 	{
+		mxUtils.deprecated('mxUtils.getViewXml');
 		x0 = (x0 != null) ? x0 : 0;
 		y0 = (y0 != null) ? y0 : 0;
 		scale = (scale != null) ? scale : 1;

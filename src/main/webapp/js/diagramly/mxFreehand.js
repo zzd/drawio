@@ -189,6 +189,12 @@ function mxFreehand(graph)
 	    }
 	});
 
+	// Keeps the stroke so far if the system cancels the gesture
+	graph.addListener(mxEvent.CANCEL_MOUSE_GESTURE, function(sender, evt)
+	{
+		endPath(evt.getProperty('event'));
+	});
+
 	// Used to retrieve default styles
 	var edge = new mxCell();
 	edge.edge = true;
@@ -393,9 +399,12 @@ function mxFreehand(graph)
 		    {
 				var e = me.getEvent();
 				
+				// Ignores gestures that started forced panning (eg. space+drag)
 				if (!enabled || mxEvent.isPopupTrigger(e) ||
 					mxEvent.isMiddleMouseButton(e) ||
-					mxEvent.isMultiTouchEvent(e))
+					mxEvent.isMultiTouchEvent(e) ||
+					(graph.panningHandler != null &&
+					graph.panningHandler.isActive()))
 				{
 					return;
 				}

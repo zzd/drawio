@@ -237,6 +237,38 @@ mxEdgeHandler.prototype.outlineConnect = false;
 mxEdgeHandler.prototype.manageLabelHandle = false;
 
 /**
+ * Variable: livePreview
+ * 
+ * Specifies if the edge, its label and its children should be painted at
+ * their new location while the label, the terminals or the control points
+ * are moved. Default is false.
+ */
+mxEdgeHandler.prototype.livePreview = false;
+
+/**
+ * Variable: livePreviewActive
+ * 
+ * Specifies if the edge is painted at its new location. Default is false.
+ */
+mxEdgeHandler.prototype.livePreviewActive = false;
+
+/**
+ * Variable: previewHandle
+ * 
+ * Holds the handle that is moved with the preview while the other handles
+ * are hidden (see <livePreview>). Default is null.
+ */
+mxEdgeHandler.prototype.previewHandle = null;
+
+/**
+ * Variable: hiddenHandles
+ * 
+ * Holds the handles that are hidden while <previewHandle> is moved. Default
+ * is null.
+ */
+mxEdgeHandler.prototype.hiddenHandles = null;
+
+/**
  * Function: init
  * 
  * Initializes the shapes required for this edge handler.
@@ -441,9 +473,17 @@ mxEdgeHandler.prototype.createParentHighlightShape = function(bounds)
 		null, this.getSelectionColor());
 	shape.strokewidth = this.getSelectionStrokeWidth();
 	shape.isDashed = this.isSelectionDashed();
-	
+
 	return shape;
 };
+
+/**
+ * Function: createEdgeParentHighlightShape
+ *
+ * Creates the shape used to highlight the given edge state if the parent
+ * of the cell is an edge.
+ */
+mxEdgeHandler.prototype.createEdgeParentHighlightShape = mxVertexHandler.prototype.createEdgeParentHighlightShape;
 
 /**
  * Function: createSelectionShape
@@ -535,7 +575,7 @@ mxEdgeHandler.prototype.createMarker = function()
 		// Checks for cell at preview point (with grid)
 		if ((cell == self.state.cell || cell == null) && self.currentPoint != null)
 		{
-			cell = self.graph.getCellAt(self.currentPoint.x, self.currentPoint.y);
+			cell = self.getTerminalCellAt(self.currentPoint.x, self.currentPoint.y);
 		}
 		
 		// Uses connectable parent vertex if one exists
@@ -973,6 +1013,16 @@ mxEdgeHandler.prototype.start = function(x, y, index)
 	this.isSource = (this.bends == null) ? false : index == 0;
 	this.isTarget = (this.bends == null) ? false : index == this.bends.length - 1;
 	this.isLabel = index == mxEvent.LABEL_HANDLE;
+	this.labelOffset = null;
+
+	// Keeps the distance between the mouse and the label so that the label
+	// does not jump to the mouse if the handle was moved away from the label
+	// (see checkLabelHandle) or if the drag starts anywhere on the label
+	if (this.isLabel && this.label != null)
+	{
+		var pt = mxUtils.convertPoint(this.graph.container, x, y);
+		this.labelOffset = new mxPoint(this.label.x - pt.x, this.label.y - pt.y);
+	}
 
 	if (this.isSource || this.isTarget)
 	{
@@ -1062,6 +1112,28 @@ mxEdgeHandler.prototype.isSnapToTerminalsEvent = function(me)
 };
 
 /**
+ * Function: snapToGuides
+ *
+ * Hook for subclassers to snap the given point in <getPointForEvent> after
+ * it was snapped to the terminals and before it is snapped to the grid.
+ * Returns true if the point was snapped, in which case it is not snapped
+ * to the grid. This implementation returns false.
+ *
+ * Parameters:
+ *
+ * point - <mxPoint> to be snapped in place.
+ * me - <mxMouseEvent> that contains the current event.
+ * snappedX - Boolean that specifies if the x-coordinate was snapped to a
+ * terminal or point.
+ * snappedY - Boolean that specifies if the y-coordinate was snapped to a
+ * terminal or point.
+ */
+mxEdgeHandler.prototype.snapToGuides = function(point, me, snappedX, snappedY)
+{
+	return false;
+};
+
+/**
  * Function: getPointForEvent
  * 
  * Returns the point for the given event.
@@ -1125,6 +1197,12 @@ mxEdgeHandler.prototype.getPointForEvent = function(me)
 				}
 			}
 		}
+	}
+
+	if (this.snapToGuides(point, me, overrideX, overrideY))
+	{
+		overrideX = true;
+		overrideY = true;
 	}
 
 	if (this.graph.isGridEnabledEvent(me.getEvent()))
@@ -1490,6 +1568,296 @@ mxEdgeHandler.prototype.updatePreviewState = function(edge, point, terminalState
 };
 
 /**
+ * Function: getTerminalCellAt
+ * 
+ * Returns the topmost cell at the given point that is not the edge of this
+ * handler or one of its descendants.
+ */
+mxEdgeHandler.prototype.getTerminalCellAt = function(x, y)
+{
+	var model = this.graph.getModel();
+	var edge = this.state.cell;
+
+	return this.graph.getCellAt(x, y, null, null, null, function(state)
+	{
+		return model.isAncestor(edge, state.cell);
+	});
+};
+
+/**
+ * Function: getTerminalEvent
+ * 
+ * Returns the given mouse event or, if the event is for the edge of this
+ * handler or one of its descendants, a mouse event for the cell under the
+ * mouse. The moved end of the edge is under the mouse, and the edge is
+ * painted there in the live preview (see <livePreview>).
+ */
+mxEdgeHandler.prototype.getTerminalEvent = function(me)
+{
+	var cell = me.getCell();
+
+	if (cell != null && this.graph.getModel().isAncestor(this.state.cell, cell))
+	{
+		var te = new mxMouseEvent(me.getEvent(), this.graph.view.getState(
+			this.getTerminalCellAt(me.getGraphX(), me.getGraphY())));
+		te.graphX = me.getGraphX();
+		te.graphY = me.getGraphY();
+		me = te;
+	}
+
+	return me;
+};
+
+/**
+ * Function: isLivePreviewEvent
+ * 
+ * Returns true if the edge should be painted at its new location for the
+ * given event. This returns false for clone events, which do not move the
+ * edge.
+ */
+mxEdgeHandler.prototype.isLivePreviewEvent = function(me)
+{
+	return this.livePreview && this.state.shape != null && (this.isLabel ||
+		!this.cloneEnabled || !this.graph.isCloneEvent(me.getEvent()) ||
+		this.graph.isIgnoreTerminalEvent(me.getEvent()) ||
+		!this.graph.isCellsCloneable());
+};
+
+/**
+ * Function: updateLivePreview
+ * 
+ * Paints the edge and its children for the given preview state or, if no
+ * state is given, the label of the edge at the location of the label
+ * handle. The state of the edge is not changed.
+ * 
+ * Parameters:
+ * 
+ * clone - Optional <mxCellState> of the edge from <clonePreviewState>.
+ */
+mxEdgeHandler.prototype.updateLivePreview = function(clone)
+{
+	var state = this.state;
+	var pts = (clone != null) ? clone.absolutePoints : null;
+
+	if (clone != null && (pts == null || pts.length < 2 ||
+		pts[0] == null || pts[pts.length - 1] == null))
+	{
+		this.resetLivePreview();
+	}
+	else
+	{
+		var temp = new mxCellState();
+		temp.setState(state);
+		this.livePreviewActive = true;
+
+		try
+		{
+			if (clone != null)
+			{
+				clone.view.updateEdgeBounds(clone);
+				clone.view.updateEdgeLabelOffset(clone);
+				state.setState(clone);
+				this.graph.cellRenderer.redraw(state, true);
+
+				// Child states are computed for the preview state of the edge
+				this.redrawChildren(state);
+			}
+			else if (this.label != null)
+			{
+				state.absoluteOffset = new mxPoint(this.label.x, this.label.y);
+				this.graph.cellRenderer.redrawLabel(state, false);
+			}
+		}
+		finally
+		{
+			state.setState(temp);
+		}
+	}
+};
+
+/**
+ * Function: redrawChildren
+ * 
+ * Updates and paints the states of the children of the given edge state.
+ */
+mxEdgeHandler.prototype.redrawChildren = function(state)
+{
+	var model = this.graph.getModel();
+	var childCount = model.getChildCount(state.cell);
+
+	for (var i = 0; i < childCount; i++)
+	{
+		var child = state.view.getState(model.getChildAt(state.cell, i));
+
+		if (child != null)
+		{
+			state.view.updateCellState(child);
+			this.graph.cellRenderer.redraw(child, true);
+		}
+	}
+};
+
+/**
+ * Function: resetLivePreview
+ * 
+ * Paints the edge and its children for their current states if the edge
+ * is painted at its new location (see <livePreviewActive>).
+ */
+mxEdgeHandler.prototype.resetLivePreview = function()
+{
+	if (this.livePreviewActive)
+	{
+		this.livePreviewActive = false;
+		var state = this.state;
+
+		if (state != null && state.shape != null &&
+			state.view.getState(state.cell) == state)
+		{
+			this.graph.cellRenderer.redraw(state, true);
+			this.redrawChildren(state);
+		}
+	}
+};
+
+/**
+ * Function: getPreviewHandle
+ * 
+ * Returns the shape of the handle that is moved (a bend, a virtual bend, the
+ * label handle or a custom handle).
+ */
+mxEdgeHandler.prototype.getPreviewHandle = function()
+{
+	var handle = null;
+
+	if (this.isLabel)
+	{
+		handle = this.labelShape;
+	}
+	else if (this.index != null && this.index <= mxEvent.VIRTUAL_HANDLE)
+	{
+		handle = (this.virtualBends != null) ? this.virtualBends[mxEvent.VIRTUAL_HANDLE - this.index] : null;
+	}
+	else if (this.index != null && this.index <= mxEvent.CUSTOM_HANDLE)
+	{
+		handle = (this.customHandles != null) ? this.customHandles[mxEvent.CUSTOM_HANDLE - this.index] : null;
+		handle = (handle != null) ? handle.shape : null;
+	}
+	else if (this.index != null && this.index >= 0)
+	{
+		handle = (this.bends != null) ? this.bends[this.index] : null;
+	}
+
+	return handle;
+};
+
+/**
+ * Function: redrawPreviewHandles
+ * 
+ * Hides all handles except the handle that is moved, which is painted at the
+ * end of the preview for terminals, at the current point for other bends, by
+ * <drawPreview> for the label and by itself for custom handles, and hides
+ * the selection border if the edge is painted at its new location (see
+ * <livePreview>). A bend or the label handle that is moved does not handle
+ * events so that it does not hide the cells and the highlight under the
+ * mouse.
+ */
+mxEdgeHandler.prototype.redrawPreviewHandles = function()
+{
+	var handle = this.getPreviewHandle();
+	var custom = this.index <= mxEvent.CUSTOM_HANDLE && this.index > mxEvent.VIRTUAL_HANDLE;
+
+	if (this.previewHandle == null && handle != null)
+	{
+		var handles = [this.labelShape].concat(this.bends || [], this.virtualBends || []);
+		this.previewHandle = handle;
+		this.hiddenHandles = [];
+
+		if (this.customHandles != null)
+		{
+			for (var i = 0; i < this.customHandles.length; i++)
+			{
+				if (this.customHandles[i] != null)
+				{
+					handles.push(this.customHandles[i].shape);
+				}
+			}
+		}
+
+		for (var i = 0; i < handles.length; i++)
+		{
+			if (handles[i] != null && handles[i] != handle && handles[i].node != null &&
+				handles[i].node.style.display != 'none')
+			{
+				handles[i].node.style.display = 'none';
+				this.hiddenHandles.push(handles[i]);
+			}
+		}
+
+		if (!custom)
+		{
+			handle.pointerEvents = false;
+			handle.node.style.pointerEvents = 'none';
+		}
+	}
+
+	if (handle != null && !custom && !this.isLabel && this.abspoints != null)
+	{
+		var pt = (this.isSource) ? this.abspoints[0] : ((this.isTarget) ?
+			this.abspoints[this.abspoints.length - 1] : this.currentPoint);
+
+		if (pt != null)
+		{
+			var b = handle.bounds;
+			handle.bounds = new mxRectangle(Math.floor(pt.x - b.width / 2),
+				Math.floor(pt.y - b.height / 2), b.width, b.height);
+			handle.redraw();
+		}
+	}
+
+	if (!custom && this.shape != null && this.shape.node != null)
+	{
+		this.shape.node.style.display = (this.livePreviewActive) ? 'none' : '';
+	}
+};
+
+/**
+ * Function: resetPreviewHandles
+ * 
+ * Shows the handles and the selection border that were hidden in
+ * <redrawPreviewHandles>. The handles are moved back in <reset>.
+ */
+mxEdgeHandler.prototype.resetPreviewHandles = function()
+{
+	var handle = this.previewHandle;
+
+	if (handle != null)
+	{
+		for (var i = 0; i < this.hiddenHandles.length; i++)
+		{
+			if (this.hiddenHandles[i].node != null)
+			{
+				this.hiddenHandles[i].node.style.display = '';
+			}
+		}
+
+		this.previewHandle = null;
+		this.hiddenHandles = null;
+
+		// Restores the events of a bend or the label handle
+		if (handle.node != null && handle.node.style.pointerEvents == 'none')
+		{
+			delete handle.pointerEvents;
+			handle.node.style.pointerEvents = '';
+		}
+
+		if (this.shape != null && this.shape.node != null)
+		{
+			this.shape.node.style.display = '';
+		}
+	}
+};
+
+/**
  * Function: mouseMove
  * 
  * Handles the event by updating the preview.
@@ -1499,7 +1867,17 @@ mxEdgeHandler.prototype.mouseMove = function(sender, me)
 	if (this.index != null && this.marker != null)
 	{
 		var constraintHandler = this.getConstraintHandler();
-		this.currentPoint = this.getPointForEvent(me);
+		var pe = me;
+
+		// Snaps the label position instead of the mouse position
+		if (this.isLabel && this.labelOffset != null)
+		{
+			pe = new mxMouseEvent(me.getEvent(), me.getState());
+			pe.graphX = me.getGraphX() + this.labelOffset.x;
+			pe.graphY = me.getGraphY() + this.labelOffset.y;
+		}
+
+		this.currentPoint = this.getPointForEvent(pe);
 		this.error = null;
 		
 		// Uses the current point from the constraint handler if available
@@ -1530,17 +1908,34 @@ mxEdgeHandler.prototype.mouseMove = function(sender, me)
 				{
 					this.shape.node.style.display = 'none';
 				}
+
+				if (this.livePreview)
+				{
+					this.redrawPreviewHandles();
+				}
 			}
 		}
 		else if (this.isLabel)
 		{
 			this.label.x = this.currentPoint.x;
 			this.label.y = this.currentPoint.y;
+
+			if (this.isLivePreviewEvent(me))
+			{
+				this.updateLivePreview();
+			}
+
+			if (this.livePreview)
+			{
+				this.redrawPreviewHandles();
+			}
 		}
 		else
 		{
+			// Ignores the edge under the mouse for finding the terminal
+			var te = this.getTerminalEvent(me);
 			this.points = this.getPreviewPoints(this.currentPoint, me);
-			var terminalState = (this.isSource || this.isTarget) ? this.getPreviewTerminalState(me) : null;
+			var terminalState = (this.isSource || this.isTarget) ? this.getPreviewTerminalState(te) : null;
 			
 			if (constraintHandler.currentConstraint != null &&
 				constraintHandler.currentFocus != null &&
@@ -1551,14 +1946,14 @@ mxEdgeHandler.prototype.mouseMove = function(sender, me)
 			else if (this.outlineConnect)
 			{
 				// Need to check outline before cloning terminal state
-				var outline = (this.isSource || this.isTarget) ? this.isOutlineConnectEvent(me) : false
+				var outline = (this.isSource || this.isTarget) ? this.isOutlineConnectEvent(te) : false
 						
 				if (outline)
 				{
 					terminalState = this.marker.highlight.state;
 				}
-				else if (terminalState != null && terminalState != me.getState() &&
-					this.graph.isCellConnectable(me.getCell()) &&
+				else if (terminalState != null && terminalState != te.getState() &&
+					this.graph.isCellConnectable(te.getCell()) &&
 					this.marker.highlight.shape != null)
 				{
 					this.marker.highlight.shape.stroke = 'transparent';
@@ -1574,7 +1969,7 @@ mxEdgeHandler.prototype.mouseMove = function(sender, me)
 			}
 			
 			var clone = this.clonePreviewState(this.currentPoint, (terminalState != null) ? terminalState.cell : null);
-			this.updatePreviewState(clone, this.currentPoint, terminalState, me, outline);
+			this.updatePreviewState(clone, this.currentPoint, terminalState, te, outline);
 
 			// Sets the color of the preview to valid or invalid, updates the
 			// points of the preview and redraws
@@ -1583,6 +1978,20 @@ mxEdgeHandler.prototype.mouseMove = function(sender, me)
 			this.abspoints = clone.absolutePoints;
 			this.active = true;
 			this.updateHint(me, this.currentPoint, clone);
+
+			if (this.isLivePreviewEvent(me))
+			{
+				this.updateLivePreview(clone);
+			}
+			else
+			{
+				this.resetLivePreview();
+			}
+
+			if (this.livePreview)
+			{
+				this.redrawPreviewHandles();
+			}
 		}
 
 		// This should go before calling isOutlineConnectEvent above. As a workaround
@@ -1797,6 +2206,9 @@ mxEdgeHandler.prototype.mouseUp = function(sender, me)
  */
 mxEdgeHandler.prototype.reset = function()
 {
+	this.resetPreviewHandles();
+	this.resetLivePreview();
+
 	if (this.active)
 	{
 		this.refresh();
@@ -1813,20 +2225,10 @@ mxEdgeHandler.prototype.reset = function()
 	this.mouseDownY = null;
 	this.snapPoint = null;
 	this.isLabel = false;
+	this.labelOffset = null;
 	this.isSource = false;
 	this.isTarget = false;
 	this.active = false;
-	
-	if (this.livePreview && this.sizers != null)
-	{
-		for (var i = 0; i < this.sizers.length; i++)
-		{
-			if (this.sizers[i] != null)
-			{
-				this.sizers[i].node.style.display = '';
-			}
-		}
-	}
 
 	if (this.marker != null)
 	{
@@ -2474,8 +2876,8 @@ mxEdgeHandler.prototype.redrawInnerBends = function(p0, pe)
 				}
 				else if (this.handleImage == null && this.labelShape.visible && mxUtils.intersects(this.bends[i].bounds, this.labelShape.bounds))
 				{
-					w = mxConstants.HANDLE_SIZE + 3;
-					h = mxConstants.HANDLE_SIZE + 3;
+					var w = mxConstants.HANDLE_SIZE + 3;
+					var h = mxConstants.HANDLE_SIZE + 3;
 					this.bends[i].bounds = new mxRectangle(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
 				}
 				
@@ -2688,6 +3090,8 @@ mxEdgeHandler.prototype.destroyBends = function(bends)
  */
 mxEdgeHandler.prototype.destroy = function()
 {
+	this.resetLivePreview();
+
 	if (this.escapeHandler != null)
 	{
 		this.state.view.graph.removeListener(this.escapeHandler);

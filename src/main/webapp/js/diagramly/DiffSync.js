@@ -33,7 +33,8 @@ EditorUi.transientViewStateProperties = ['defaultParent', 'currentRoot', 'scroll
  */
 EditorUi.prototype.viewStateProperties = {background: true, backgroundImage: true, shadowVisible: true,
 	foldingEnabled: true, pageScale: true, mathEnabled: true, pageFormat: true, extFonts: true,
-	adaptiveColors: true};
+	adaptiveColors: true, measureScale: true, backgroundGradient: true,
+	backgroundGradientDirection: true};
 
 /**
  * Contains all known cell properties that should be ignored for a generic cell diff.
@@ -124,9 +125,87 @@ EditorUi.patchMap = function(value)
 };
 
 /**
- * Shared codec.
+ * Shared codec for encoding. Decoding uses a new codec for each value, see
+ * decodeGeometry.
  */
 EditorUi.prototype.codec = new mxCodec();
+
+/**
+ * Decodes the given geometry XML of a diff with a new codec for the parsed
+ * document. A shared codec resolves an ID to the object it last decoded
+ * under it, so a later diff decoded into the live geometry of another cell,
+ * and a codec without the document does not ignore duplicate IDs, eg. a
+ * geometry that is its own targetPoint. Returns null if the result is not
+ * a valid geometry, see isValidGeometry.
+ */
+EditorUi.prototype.decodeGeometry = function(xml)
+{
+	var doc = mxUtils.parseXml(xml);
+	var geo = new mxCodec(doc).decodeAs(doc.documentElement, mxGeometry);
+
+	return (this.isValidGeometry(geo)) ? geo : null;
+};
+
+/**
+ * Returns true if the given decoded geometry only contains points with
+ * primitive fields, in points or in any other field. The codec decodes
+ * any child node into any field, eg. a cell whose parent is the geometry,
+ * which overflows the stack in clone and encode, or a value that hides a
+ * method such as clone.
+ */
+EditorUi.prototype.isValidGeometry = function(geo)
+{
+	// Own fields must not hide methods or hold functions, and objects
+	// must pass the given function
+	var fieldsValid = function(obj, objectValid)
+	{
+		var proto = Object.getPrototypeOf(obj);
+
+		for (var key in obj)
+		{
+			if (Object.prototype.hasOwnProperty.call(obj, key))
+			{
+				var value = obj[key];
+
+				if (typeof proto[key] == 'function' ||
+					typeof value == 'function' || (value != null &&
+					typeof value == 'object' && !objectValid(key, value)))
+				{
+					return false;
+				}
+			}
+		}
+
+		return true;
+	};
+
+	var pointValid = function(key, value)
+	{
+		return value instanceof mxPoint && fieldsValid(value, function()
+		{
+			return false;
+		});
+	};
+
+	var pointsValid = function(points)
+	{
+		for (var i = 0; i < points.length; i++)
+		{
+			if (!pointValid(i, points[i]))
+			{
+				return false;
+			}
+		}
+
+		return fieldsValid(points, pointValid);
+	};
+
+	return geo instanceof mxGeometry && fieldsValid(geo, function(key, value)
+	{
+		return (key == 'points') ? Array.isArray(value) &&
+			pointsValid(value) : pointValid(key, value);
+	});
+};
 
 /**
  * Applies the given patches to the given pages. If mergeInserts is true,
@@ -157,12 +236,14 @@ EditorUi.prototype.applyPatches = function(pages, patches, markPages, resolver, 
 };
 
 /**
- * Applies file-level attribute changes from the given patches to the fileNode.
- * Returns true if any file-level attributes were changed.
+ * Applies file-level attribute changes from the given patches to the fileNode
+ * and updates the tabs if the page groups are shown or hidden. Returns true if
+ * any file-level attributes were changed.
  */
 EditorUi.prototype.patchFileNode = function(patches)
 {
 	var changed = false;
+	var tabs = false;
 
 	if (this.fileNode != null && patches != null)
 	{
@@ -173,6 +254,12 @@ EditorUi.prototype.patchFileNode = function(patches)
 				for (var key in patches[i][EditorUi.DIFF_FILE])
 				{
 					var val = patches[i][EditorUi.DIFF_FILE][key];
+
+					if (key == 'pageGroups')
+					{
+						tabs = tabs || (this.fileNode.getAttribute(key) !=
+							((val != null) ? String(val) : null));
+					}
 
 					if (val != null)
 					{
@@ -186,6 +273,11 @@ EditorUi.prototype.patchFileNode = function(patches)
 					changed = true;
 				}
 			}
+		}
+
+		if (tabs)
+		{
+			this.updateTabContainer();
 		}
 	}
 
@@ -219,6 +311,15 @@ EditorUi.prototype.getAbsoluteOrigin = function(cell)
 };
 
 /**
+ * Absolute origins of the parents that patches removed cells from, by
+ * removed cell (weak keys: nothing is added to the cells, their copies
+ * or the XML). The removal cuts the cell out of the tree, so a connector
+ * that still references it needs this origin for its open end (see
+ * disconnectTerminal).
+ */
+EditorUi.removedCellOrigins = new WeakMap();
+
+/**
  * Disconnects the given end of the edge and keeps the edge RENDERABLE:
  * an end that is neither a terminal nor a terminal point cannot be
  * drawn, so the edge silently disappears from the screen while the
@@ -230,7 +331,20 @@ EditorUi.prototype.getAbsoluteOrigin = function(cell)
  * geometry alone: several clients sanitize the same window
  * independently, so a view-dependent attachment point (as in the undo
  * replay, where a single client computes it and the diff distributes
- * the result) would diverge between them.
+ * the result) would diverge between them. It replaces a point that the
+ * end already has: the point of a connected end is not drawn and can be
+ * far away (eg. the old terminal of a clone, see mxGraph.cloneCells).
+ *
+ * A terminal in a subtree that was removed from the model (its topmost
+ * ancestor is a shape outside of the tree of the edge, not a root) has
+ * lost the offset of the parent it was removed from. A patch keeps that
+ * origin (removedCellOrigins), which makes the point exact. Without it,
+ * the offsets up to the removed shape are read in the frame of the
+ * edge's parent, which is exact if the shape was a child of the edge's
+ * parent: the edge is kept in the nearest common ancestor of its
+ * terminals (mxGraphModel.maintainEdgeParent), so the shape was there or
+ * below it. Subtracting the edge's origin from them put the end near the
+ * page origin.
  */
 EditorUi.prototype.disconnectTerminal = function(edge, source, model)
 {
@@ -239,8 +353,7 @@ EditorUi.prototype.disconnectTerminal = function(edge, source, model)
 		var terminal = edge.getTerminal(source);
 		var geo = edge.getGeometry();
 
-		if (terminal != null && geo != null &&
-			geo.getTerminalPoint(source) == null)
+		if (terminal != null && geo != null)
 		{
 			var tgeo = terminal.getGeometry();
 
@@ -248,6 +361,32 @@ EditorUi.prototype.disconnectTerminal = function(edge, source, model)
 			{
 				var to = this.getAbsoluteOrigin(terminal);
 				var eo = this.getAbsoluteOrigin(edge);
+				var graphModel = this.editor.graph.getModel();
+				var top = graphModel.getRoot(terminal);
+
+				if (top != graphModel.getRoot(edge) &&
+					(top.isVertex() || top.isEdge()))
+				{
+					var topGeo = top.getGeometry();
+
+					if (topGeo != null && !topGeo.relative && !top.isEdge())
+					{
+						to.x += topGeo.x;
+						to.y += topGeo.y;
+					}
+
+					var po = EditorUi.removedCellOrigins.get(top);
+
+					if (po != null)
+					{
+						to.x += po.x;
+						to.y += po.y;
+					}
+					else
+					{
+						eo = new mxPoint();
+					}
+				}
 				geo = geo.clone();
 				geo.setTerminalPoint(new mxPoint(
 					to.x + tgeo.width / 2 - eo.x,
@@ -488,78 +627,7 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
 		}
 	}
 
-	// Emits the claimant chains anchored at the given ID in
-	// depth-first order (a claimant is followed by its own chain
-	// before the next claimant of the same anchor)
-	var emittedIds = Object.create(null);
-	var order = [];
-
-	var emitRun = function(anchor)
-	{
-		var stack = [];
-		var list = claimants[anchor];
-
-		if (list != null)
-		{
-			delete claimants[anchor];
-
-			for (var i = list.length - 1; i >= 0; i--)
-			{
-				stack.push(list[i]);
-			}
-		}
-
-		while (stack.length > 0)
-		{
-			var current = stack.pop();
-
-			if (current.id == null || !emittedIds[current.id])
-			{
-				if (current.id != null)
-				{
-					emittedIds[current.id] = true;
-				}
-
-				order.push(current);
-				var next = (current.id != null) ?
-					claimants[current.id] : null;
-
-				if (next != null)
-				{
-					delete claimants[current.id];
-
-					for (var i = next.length - 1; i >= 0; i--)
-					{
-						stack.push(next[i]);
-					}
-				}
-			}
-		}
-	};
-
-	// The whole order is one anchor graph rooted at the start
-	emitRun('');
-
-	// Orphaned chains (the anchor vanished in the local pages) are
-	// appended in anchor ID order. Collected and sorted ONCE:
-	// emitRun only ever removes anchors, never adds any, so an
-	// anchor a previous run consumed leaves an empty stack and its
-	// call is a no-op. Termination no longer rests on every pass
-	// consuming an anchor, and the drain is linear instead of
-	// rescanning the whole claimant map once per orphan.
-	var orphans = [];
-
-	for (id in claimants)
-	{
-		orphans.push(id);
-	}
-
-	orphans.sort();
-
-	for (var oi = 0; oi < orphans.length; oi++)
-	{
-		emitRun(orphans[oi]);
-	}
+	var order = this.getClaimantOrder(claimants);
 
   	// FIXME: Workaround for possible duplicate pages
   	var added = Object.create(null);
@@ -596,6 +664,18 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
 					}
 				}
 
+				// Page group — empty string removes it.
+				if (typeof pageDiff.group === 'string')
+				{
+					page.setGroup((pageDiff.group != '') ? pageDiff.group : null);
+				}
+
+				// Text alternative — empty string removes it.
+				if (typeof pageDiff.alt === 'string')
+				{
+					page.setAlt(pageDiff.alt);
+				}
+
 				if (pageDiff.view != null)
 				{
 					this.patchViewState(page, pageDiff.view);
@@ -611,7 +691,7 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
 				if (markPages && (pageDiff.cells != null ||
 					pageDiff.view != null))
 				{
-					page.needsUpdate = true;
+					page.invalidateNode();
 				}
 			}
 		}
@@ -720,6 +800,16 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
 						}
 					}
 
+					if (typeof pageDiff.group === 'string')
+					{
+						page.setGroup((pageDiff.group != '') ? pageDiff.group : null);
+					}
+
+					if (typeof pageDiff.alt === 'string')
+					{
+						page.setAlt(pageDiff.alt);
+					}
+
 					if (pageDiff.view != null)
 					{
 						this.patchViewState(page, pageDiff.view);
@@ -736,7 +826,7 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
 
 			if (markPages)
 			{
-				page.needsUpdate = true;
+				page.invalidateNode();
 			}
 
 			// Repositions the merged page at the insert position
@@ -778,6 +868,90 @@ EditorUi.prototype.patchPages = function(pages, diff, markPages, resolver, updat
 	}
 
 	return newPages;
+};
+
+/**
+ * Returns the canonical order of the given claimants (anchor ID -> list of
+ * claims with the claimant ID and, for inserts, the insert entry) for the
+ * order rebuild in patchPages and patchCellRecursive. The claimant chains
+ * are emitted in depth-first order (a claimant is followed by its own chain
+ * before the next claimant of the same anchor), starting at the empty
+ * anchor. Consumes the given map.
+ */
+EditorUi.prototype.getClaimantOrder = function(claimants)
+{
+	var emittedIds = Object.create(null);
+	var order = [];
+	var id = null;
+
+	var emitRun = function(anchor)
+	{
+		var stack = [];
+		var list = claimants[anchor];
+
+		if (list != null)
+		{
+			delete claimants[anchor];
+
+			for (var i = list.length - 1; i >= 0; i--)
+			{
+				stack.push(list[i]);
+			}
+		}
+
+		while (stack.length > 0)
+		{
+			var current = stack.pop();
+
+			if (current.id == null || !emittedIds[current.id])
+			{
+				if (current.id != null)
+				{
+					emittedIds[current.id] = true;
+				}
+
+				order.push(current);
+				var next = (current.id != null) ?
+					claimants[current.id] : null;
+
+				if (next != null)
+				{
+					delete claimants[current.id];
+
+					for (var i = next.length - 1; i >= 0; i--)
+					{
+						stack.push(next[i]);
+					}
+				}
+			}
+		}
+	};
+
+	// The whole order is one anchor graph rooted at the start
+	emitRun('');
+
+	// Orphaned chains (the anchor vanished in the local pages or model)
+	// are appended in anchor ID order. Collected and sorted ONCE:
+	// emitRun only ever removes anchors, never adds any, so an
+	// anchor a previous run consumed leaves an empty stack and its
+	// call is a no-op. Termination no longer rests on every pass
+	// consuming an anchor, and the drain is linear instead of
+	// rescanning the whole claimant map once per orphan.
+	var orphans = [];
+
+	for (id in claimants)
+	{
+		orphans.push(id);
+	}
+
+	orphans.sort();
+
+	for (var oi = 0; oi < orphans.length; oi++)
+	{
+		emitRun(orphans[oi]);
+	}
+
+	return order;
 };
 
 /**
@@ -982,16 +1156,16 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 			root = this.getCellForJson(cellDiff);
 		}
 		
-		// Handles cells becoming root
-		if (root == null)
+		// Ignores cells moved to the root: diffCells re-inserts a page
+		// whose root id changed, so only a crafted patch moves a cell
+		// there, and a container with children taken as the root cut
+		// the old root, its layers and all their content out of the
+		// model (adversarial-patch). The cell stays in its parent.
+		if (root == null && temp != null && temp.moved != null &&
+			temp.moved[''] != null)
 		{
-			var id = (temp != null && temp.moved != null &&
-				temp.moved[''] != null) ? temp.moved[''][0] : null;
-			
-			if (id != null)
-			{
-				root = model.getCell(id);
-			}
+			EditorUi.debug('EditorUi.patchPage: Ignoring cell moved to root',
+				temp.moved['']);
 		}
 		
 		var previousRoot = model.getRoot();
@@ -1010,8 +1184,11 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 			// checksum for the whole page (31.5.0, jgraph/drawio-dev#677).
 			// The layer invariant the remove pass enforces is checked
 			// after the walk instead, see below.
+			// The page root is changed in the same edit, as the
+			// undo of an undoable patch (eg. Edit Diagram) must
+			// restore both (jgraph/drawio#5795).
 			model.setRoot(root);
-			page.root = root;
+			model.execute(new ChangePageRoot(this, page, root));
 
 			EditorUi.debug('EditorUi.patchPage: Root changed', root.id);
 		}
@@ -1039,6 +1216,24 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 					if (reinserted != null)
 					{
 						reinserted[id] = true;
+
+						// A vetoed cell keeps its LOCAL content: its own
+						// copy is fresher than this entry (edits flushed
+						// after the incoming save was computed). The
+						// content merge honors that in patchCellRecursive,
+						// so applying the entry's terminals below would
+						// reinstate exactly the stale connection the veto
+						// exists to keep out. The veto only protects a
+						// COLLISION: a cell this patch creates (eg. a
+						// pending insert resurrected after the save
+						// patches removed it) gets its terminals from the
+						// entry alone.
+						if (this.realtimeMergeVeto != null &&
+							this.realtimeMergeVeto[id] != null &&
+							model.getCell(id) != null)
+						{
+							ignoredInserts[id] = true;
+						}
 					}
 					else if (model.getCell(id) != null)
 					{
@@ -1052,7 +1247,10 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 
 		// Inserts and updates previous and parent (hierarchy update)
 		this.patchCellRecursive(page, model, model.root,
-			parentLookup, diff, reinserted, cellUpdate);
+			parentLookup, diff, reinserted, cellUpdate,
+			(root != null && root != previousRoot) ? null :
+			this.getPatchedParents(model, parentLookup,
+				cellUpdate, reinserted));
 
 		// Mirrors the invariant the remove pass enforces: a page must
 		// never be left without a layer, or the model is unrenderable
@@ -1065,7 +1263,7 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 			model.getChildCount(model.getRoot()) == 0)
 		{
 			model.setRoot(previousRoot);
-			page.root = previousRoot;
+			model.execute(new ChangePageRoot(this, page, previousRoot));
 
 			EditorUi.debug('EditorUi.patchPage: refused root without ' +
 				'a layer', root.id);
@@ -1136,6 +1334,8 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 					model.getChildCount(root) > 1))
 				{
 					disconnect(cell);
+					EditorUi.removedCellOrigins.set(cell,
+						this.getAbsoluteOrigin(model.getParent(cell)));
 					model.remove(cell);
 				}
 			}
@@ -1217,15 +1417,8 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 
 				var cell = model.getCell(cellDiff.id);
 
-				// A vetoed cell keeps its LOCAL content: its own copy is
-				// fresher than this entry (edits flushed after the
-				// incoming save was computed). The content merge honors
-				// that in patchCellRecursive, so re-applying the entry's
-				// terminals here would reinstate exactly the stale
-				// connection the veto exists to keep out.
-				if (cell != null && !ignoredInserts[cellDiff.id] &&
-					(this.realtimeMergeVeto == null ||
-					this.realtimeMergeVeto[cellDiff.id] == null))
+				// Skips ignored and vetoed collisions (see above)
+				if (cell != null && !ignoredInserts[cellDiff.id])
 				{
 					model.setTerminal(cell, model.getCell(cellDiff.source), true);
 					model.setTerminal(cell, model.getCell(cellDiff.target), false);
@@ -1254,9 +1447,84 @@ EditorUi.prototype.patchPage = function(page, diff, resolver, updateEdgeParents,
 };
 
 /**
+ * Returns the IDs of the cells whose children the given patch inserts, moves
+ * or removes from their current position, and of their ancestors, or null
+ * if the whole tree must be walked. <patchCellRecursive> only needs to visit
+ * these cells: the children of all other cells keep their order and the
+ * walk does not change them.
+ */
+EditorUi.prototype.getPatchedParents = function(model, parentLookup, update, reinserted)
+{
+	// Null prototype: keyed by cell ids from the patch and the document
+	var result = Object.create(null);
+	var cells = [];
+
+	// Parents that receive inserted or moved children
+	for (var id in parentLookup)
+	{
+		result[id] = true;
+		cells.push(model.getCell(id));
+	}
+
+	// Current parents of moved and reinserted children, which are taken
+	// out of the order of these parents
+	var addParent = function(id)
+	{
+		var cell = model.getCell(id);
+
+		if (cell != null)
+		{
+			cells.push(model.getParent(cell));
+		}
+	};
+
+	for (var id in update)
+	{
+		if (update[id] != null && (update[id].previous != null ||
+			update[id].parent != null))
+		{
+			addParent(id);
+		}
+	}
+
+	for (var id in reinserted)
+	{
+		addParent(id);
+	}
+
+	// Ancestors of all these cells in the current tree, each visited once
+	var visited = Object.create(null);
+
+	for (var i = 0; i < cells.length; i++)
+	{
+		var cell = cells[i];
+
+		while (cell != null)
+		{
+			var id = cell.getId();
+
+			if (id == null)
+			{
+				return null;
+			}
+			else if (visited[id])
+			{
+				break;
+			}
+
+			visited[id] = true;
+			result[id] = true;
+			cell = model.getParent(cell);
+		}
+	}
+
+	return result;
+};
+
+/**
  * Removes all labels, user objects and styles from the given node in-place.
  */
-EditorUi.prototype.patchCellRecursive = function(page, model, cell, parentLookup, diff, reinserted, update)
+EditorUi.prototype.patchCellRecursive = function(page, model, cell, parentLookup, diff, reinserted, update, walk)
 {
 	if (cell != null)
 	{
@@ -1342,77 +1610,7 @@ EditorUi.prototype.patchCellRecursive = function(page, model, cell, parentLookup
 			prev = cellId;
 		}
 
-		// Emits the claimant chains anchored at the given ID in
-		// depth-first order (a claimant is followed by its own chain
-		// before the next claimant of the same anchor)
-		var emittedIds = Object.create(null);
-		var order = [];
-
-		var emitRun = function(anchor)
-		{
-			var stack = [];
-			var list = claimants[anchor];
-
-			if (list != null)
-			{
-				delete claimants[anchor];
-
-				for (var i = list.length - 1; i >= 0; i--)
-				{
-					stack.push(list[i]);
-				}
-			}
-
-			while (stack.length > 0)
-			{
-				var current = stack.pop();
-
-				if (current.id == null || !emittedIds[current.id])
-				{
-					if (current.id != null)
-					{
-						emittedIds[current.id] = true;
-					}
-
-					order.push(current);
-					var next = (current.id != null) ?
-						claimants[current.id] : null;
-
-					if (next != null)
-					{
-						delete claimants[current.id];
-
-						for (var i = next.length - 1; i >= 0; i--)
-						{
-							stack.push(next[i]);
-						}
-					}
-				}
-			}
-		};
-
-		emitRun('');
-
-		// Orphaned chains (the anchor vanished in the local model) are
-		// appended in anchor ID order. Collected and sorted ONCE:
-		// emitRun only ever removes anchors, never adds any, so an
-		// anchor a previous run consumed leaves an empty stack and its
-		// call is a no-op. Termination no longer rests on every pass
-		// consuming an anchor, and the drain is linear instead of
-		// rescanning the whole claimant map once per orphan.
-		var orphans = [];
-
-		for (id in claimants)
-		{
-			orphans.push(id);
-		}
-
-		orphans.sort();
-
-		for (var oi = 0; oi < orphans.length; oi++)
-		{
-			emitRun(orphans[oi]);
-		}
+		var order = this.getClaimantOrder(claimants);
 
 		var addCell = mxUtils.bind(this, function(child, insert)
 		{
@@ -1496,8 +1694,12 @@ EditorUi.prototype.patchCellRecursive = function(page, model, cell, parentLookup
 						'Ignoring cyclic move', 'cell', child);
 				}
 
-				this.patchCellRecursive(page, model,
-					child, parentLookup, diff, reinserted, update);
+				// Skips subtrees without patched parents
+				if (walk == null || (id != null && walk[id]))
+				{
+					this.patchCellRecursive(page, model, child,
+						parentLookup, diff, reinserted, update, walk);
+				}
 			}
 		});
 
@@ -1596,11 +1798,16 @@ EditorUi.prototype.patchCell = function(model, cell, diff, resolve)
 		}
 		
 		// A geometry travels as an XML string; anything else is
-		// malformed input and the parser dereferences it as one
+		// malformed input and the parser dereferences it as one.
+		// An invalid geometry is ignored.
 		if (typeof diff.geometry == 'string')
 		{
-			model.setGeometry(cell, this.codec.decode(mxUtils.parseXml(
-				diff.geometry).documentElement));
+			var geo = this.decodeGeometry(diff.geometry);
+
+			if (geo != null)
+			{
+				model.setGeometry(cell, geo);
+			}
 		}
 		
 		// diffCell encodes a disconnect as an empty id; the point that
@@ -1729,9 +1936,12 @@ EditorUi.prototype.getPagesForNode = function(node, nodeName, allowPartial)
 };
 
 /**
- * Removes all labels, user objects and styles from the given node in-place.
+ * Returns the differences between the given pages. Optional skipCells maps
+ * page IDs to true for pages whose cells must not be diffed and changedCells
+ * maps page IDs to maps of the IDs of the cells whose geometries, XML values
+ * and custom properties may differ on that page (see <diffCells>).
  */
-EditorUi.prototype.diffPages = function(oldPages, newPages, skipCells)
+EditorUi.prototype.diffPages = function(oldPages, newPages, skipCells, changedCells)
 {
 	var inserted = [];
 	var removed = [];
@@ -1777,7 +1987,8 @@ EditorUi.prototype.diffPages = function(oldPages, newPages, skipCells)
 				// be unchanged (dirty page tracking in the sync); page
 				// order, name, view state and view box are still diffed
 				var temp = (skipCells != null && skipCells[id]) ? null :
-					this.diffCells(oldPages[i].root, newPage.page.root);
+					this.diffCells(oldPages[i].root, newPage.page.root,
+						(changedCells != null) ? changedCells[id] : null);
 				var pageDiff = {};
 
 				if (temp != null && !mxUtils.isEmptyObject(temp))
@@ -1819,6 +2030,26 @@ EditorUi.prototype.diffPages = function(oldPages, newPages, skipCells)
 					pageDiff.viewBox = (newViewBox != null) ? newViewBox : '';
 				}
 
+				// Page group is diffed like the view box (see
+				// DiagramPage.getGroup)
+				var oldGroup = oldPages[i].getGroup();
+				var newGroup = newPage.page.getGroup();
+
+				if (newGroup != oldGroup)
+				{
+					pageDiff.group = (newGroup != null) ? newGroup : '';
+				}
+
+				// Text alternative is diffed like the view box (see
+				// DiagramPage.getAlt)
+				var oldAlt = oldPages[i].getAlt();
+				var newAlt = newPage.page.getAlt();
+
+				if (newAlt != oldAlt)
+				{
+					pageDiff.alt = (newAlt != null) ? newAlt : '';
+				}
+
 				if (!mxUtils.isEmptyObject(pageDiff))
 				{
 					diff[id] = pageDiff;
@@ -1858,6 +2089,91 @@ EditorUi.prototype.diffPages = function(oldPages, newPages, skipCells)
 };
 
 /**
+ * Returns the differences between the given shadow pages and the pages of a
+ * save. The page format of a saved page is added for every page whose shadow
+ * has no stored page size: each client shows such a page in its own default
+ * format (see Graph.createViewState) and the checksum ignores the page size,
+ * so the clients that merge the save would keep their format while the file
+ * holds the one of the saver. Live diffs never add it, as clients with
+ * different defaults would swap their formats with every crossing message.
+ */
+EditorUi.prototype.diffSavedPages = function(shadowPages, pages)
+{
+	var result = this.diffPages(shadowPages, pages);
+
+	if (shadowPages != null && pages != null)
+	{
+		var lookup = Object.create(null);
+
+		for (var i = 0; i < pages.length; i++)
+		{
+			if (pages[i] != null)
+			{
+				lookup[pages[i].getId()] = pages[i];
+			}
+		}
+
+		for (var i = 0; i < shadowPages.length; i++)
+		{
+			var page = (shadowPages[i] != null) ?
+				lookup[shadowPages[i].getId()] : null;
+			var pageFormat = (page != null && page.viewState != null) ?
+				JSON.stringify(this.getViewStateProperty(
+					page.viewState, 'pageFormat')) : null;
+
+			if (pageFormat != null && !this.isPageFormatStored(shadowPages[i]))
+			{
+				var update = result[EditorUi.DIFF_UPDATE];
+
+				if (update == null)
+				{
+					update = Object.create(null);
+					result[EditorUi.DIFF_UPDATE] = update;
+				}
+
+				var pageDiff = update[page.getId()];
+
+				if (pageDiff == null)
+				{
+					pageDiff = {};
+					update[page.getId()] = pageDiff;
+				}
+
+				if (pageDiff.view == null)
+				{
+					pageDiff.view = {};
+				}
+
+				pageDiff.view.pageFormat = pageFormat;
+			}
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Returns true if the stored model of the given page has a page size. Pages
+ * of files that were not written by draw.io can have none.
+ */
+EditorUi.prototype.isPageFormatStored = function(page)
+{
+	try
+	{
+		var node = (page.graphModelNode != null) ? page.graphModelNode :
+			this.editor.extractGraphModel(page.node);
+
+		return node != null && node.getAttribute('pageWidth') != null &&
+			node.getAttribute('pageHeight') != null;
+	}
+	catch (e)
+	{
+		// Unreadable pages are not changed
+		return true;
+	}
+};
+
+/**
  * Removes all labels, user objects and styles from the given node in-place.
  */
 EditorUi.prototype.createCellLookup = function(cell, prev, lookup)
@@ -1888,9 +2204,11 @@ EditorUi.prototype.createCellLookup = function(cell, prev, lookup)
 };
 
 /**
- * Removes all labels, user objects and styles from the given node in-place.
+ * Adds the differences between the given cell and its descendants and the
+ * cells in the given lookup to the given diff. The cells that are not in the
+ * given optional changedCells map are compared shallow (see <diffCells>).
  */
-EditorUi.prototype.diffCellRecursive = function(cell, prev, lookup, diff, removed)
+EditorUi.prototype.diffCellRecursive = function(cell, prev, lookup, diff, removed, changedCells)
 {
 	diff = (diff != null) ? diff : {};
 	var newCell = lookup[cell.getId()];
@@ -1909,7 +2227,8 @@ EditorUi.prototype.diffCellRecursive = function(cell, prev, lookup, diff, remove
 	}
 	else
 	{
-		var temp = this.diffCell(cell, newCell.cell);
+		var temp = this.diffCell(cell, newCell.cell, changedCells != null &&
+			!changedCells[cell.getId()]);
 		
 		if (temp.parent != null ||
 			(((newCell.prev != null) ? prev == null : prev != null) ||
@@ -1938,7 +2257,7 @@ EditorUi.prototype.diffCellRecursive = function(cell, prev, lookup, diff, remove
 	for (var i = 0; i < childCount; i++)
 	{
 		var child = cell.getChildAt(i);
-		this.diffCellRecursive(child, prev, lookup, diff, removed);
+		this.diffCellRecursive(child, prev, lookup, diff, removed, changedCells);
 		prev = child;
 	}
 	
@@ -1946,9 +2265,17 @@ EditorUi.prototype.diffCellRecursive = function(cell, prev, lookup, diff, remove
 };
 
 /**
- * Removes all labels, user objects and styles from the given node in-place.
+ * Returns the differences between the cells of the given roots. If the
+ * optional changedCells maps cell IDs to true then the geometries, XML
+ * values and custom properties, which are the most expensive to compare,
+ * are only compared for these cells. The other cells must have the same
+ * values for these in both trees, eg. because only the given cells were
+ * changed through the model. All other properties, the order, inserts and
+ * removes are diffed for all cells, so the result is the same as without
+ * changedCells (eg. if a cell ID changes, its children and edges are
+ * updated with the new ID).
  */
-EditorUi.prototype.diffCells = function(oldRoot, newRoot)
+EditorUi.prototype.diffCells = function(oldRoot, newRoot, changedCells)
 {
 	var result = {};
 	var inserted = [];
@@ -1958,7 +2285,8 @@ EditorUi.prototype.diffCells = function(oldRoot, newRoot)
 	if (newRoot.id == oldRoot.id)
 	{
 		var removed = [];
-		var diff = this.diffCellRecursive(oldRoot, null, lookup, null, removed);
+		var diff = this.diffCellRecursive(oldRoot, null, lookup,
+			null, removed, changedCells);
 
 		if (!mxUtils.isEmptyObject(diff))
 		{
@@ -2047,7 +2375,8 @@ EditorUi.prototype.diffViewStateProperty = function(source, target, key, result)
 };
 
 /**
- * Ignores image data for background pages and normalizes extFonts.
+ * Ignores image data for background pages and normalizes extFonts,
+ * measureScale and the gradient of the background.
  */
 EditorUi.prototype.getViewStateProperty = function(viewState, key)
 {
@@ -2062,6 +2391,17 @@ EditorUi.prototype.getViewStateProperty = function(viewState, key)
 	{
 		result = [];
 	}
+	else if (key == 'measureScale')
+	{
+		// Missing and invalid values are the default
+		result = Graph.parseMeasureScale(result);
+	}
+	else if ((key == 'backgroundGradient' ||
+		key == 'backgroundGradientDirection') && result == null)
+	{
+		// Missing values are null
+		result = null;
+	}
 
 	return result;
 };
@@ -2075,8 +2415,8 @@ EditorUi.prototype.getCellForJson = function(json)
 	// xmlValue travel as XML STRINGS and a label is a primitive.
 	// Anything else is malformed input, and parseXml dereferences it as
 	// a string, which throws from the middle of the patch
-	var geometry = (typeof json.geometry == 'string') ? this.codec.decode(
-		mxUtils.parseXml(json.geometry).documentElement) : null;
+	var geometry = (typeof json.geometry == 'string') ?
+		this.decodeGeometry(json.geometry) : null;
 	var value = (json.value == null || typeof json.value != 'object') ?
 		json.value : null;
 
@@ -2193,9 +2533,34 @@ EditorUi.prototype.getJsonForCell = function(cell, previous)
 };
 
 /**
- * Removes all labels, user objects and styles from the given node in-place.
+ * Returns true if the given cell value is an XML node.
  */
-EditorUi.prototype.diffCell = function(oldCell, newCell)
+EditorUi.isNodeValue = function(value)
+{
+	return value != null && typeof value === 'object' && typeof value.nodeType === 'number' &&
+		typeof value.nodeName === 'string' && typeof value.getAttribute === 'function';
+};
+
+/**
+ * Returns a geometry with the default values for comparing geometries in
+ * <diffCell>. Created once, it must not be changed.
+ */
+EditorUi.getDefaultGeometry = function()
+{
+	if (EditorUi.defaultGeometry == null)
+	{
+		EditorUi.defaultGeometry = new mxGeometry();
+	}
+
+	return EditorUi.defaultGeometry;
+};
+
+/**
+ * Returns the differences between the given cells. If shallow is true then
+ * geometries, XML values and custom properties are not compared (see
+ * <diffCells>).
+ */
+EditorUi.prototype.diffCell = function(oldCell, newCell, shallow)
 {
 	var diff = {};
 
@@ -2235,15 +2600,11 @@ EditorUi.prototype.diffCell = function(oldCell, newCell)
 		diff.target = (newCell.target != null) ? newCell.target.getId() : '';
 	}
 	
-	function isNode(value)
-	{
-		return value != null && typeof value === 'object' && typeof value.nodeType === 'number' &&
-			typeof value.nodeName === 'string' && typeof value.getAttribute === 'function';
-	};
+	var isNode = EditorUi.isNodeValue;
 	
 	if (isNode(oldCell.value) && isNode(newCell.value))
 	{
-		if (!oldCell.value.isEqualNode(newCell.value))
+		if (!shallow && !oldCell.value.isEqualNode(newCell.value))
 		{
 			diff.xmlValue = mxUtils.getXml(newCell.value);
 		}
@@ -2281,17 +2642,100 @@ EditorUi.prototype.diffCell = function(oldCell, newCell)
 		diff.collapsed = (newCell.collapsed) ? 1 : 0;
 	}
 
-	// FIXME: Proto only needed because source.geometry has no constructor (wrong type?)
-	if (!this.isObjectEqual(oldCell.geometry, newCell.geometry, new mxGeometry()))
+	if (!shallow)
 	{
-		var node = this.codec.encode(newCell.geometry);
-		
-		if (node != null)
+		// FIXME: Proto only needed because source.geometry has no constructor (wrong type?)
+		if (!this.isObjectEqual(oldCell.geometry, newCell.geometry, EditorUi.getDefaultGeometry()))
 		{
-			diff.geometry = mxUtils.getXml(node);
+			var node = this.codec.encode(newCell.geometry);
+
+			if (node != null)
+			{
+				diff.geometry = mxUtils.getXml(node);
+			}
+		}
+
+		if (!this.diffOwnCellProperties(oldCell, newCell, diff))
+		{
+			this.diffAllCellProperties(oldCell, newCell, diff);
 		}
 	}
-	
+
+	return diff;
+};
+
+/**
+ * Adds the custom properties that differ between the given cells to the
+ * given diff in the same order as <diffAllCellProperties> by comparing only
+ * their own keys, which skips the inherited keys of mxCell (about 0.2 ms for
+ * 100 cells). Returns false and changes nothing if that does not give the
+ * same result, ie. if the cells have different prototypes or newCell has an
+ * own value for a key that oldCell inherits and that differs from it.
+ */
+EditorUi.prototype.diffOwnCellProperties = function(oldCell, newCell, diff)
+{
+	if (Object.getPrototypeOf(oldCell) !== Object.getPrototypeOf(newCell))
+	{
+		return false;
+	}
+
+	var newKeys = Object.keys(newCell);
+	var added = null;
+
+	// Inherited keys of oldCell are the same for newCell, apart from those
+	// that newCell sets itself, which the loop over all keys would add after
+	// the own keys of oldCell. Own keys of newCell that oldCell does not have
+	// are added after the own keys of oldCell.
+	for (var i = 0; i < newKeys.length; i++)
+	{
+		var key = newKeys[i];
+
+		if (!this.cellProperties[key] && typeof newCell[key] !== 'function' &&
+			!Object.prototype.hasOwnProperty.call(oldCell, key))
+		{
+			if (key in oldCell)
+			{
+				if (typeof oldCell[key] !== 'function' &&
+					oldCell[key] != newCell[key])
+				{
+					return false;
+				}
+			}
+			else if (oldCell[key] != newCell[key])
+			{
+				added = (added != null) ? added : [];
+				added.push(key);
+			}
+		}
+	}
+
+	var oldKeys = Object.keys(oldCell);
+
+	for (var i = 0; i < oldKeys.length; i++)
+	{
+		var key = oldKeys[i];
+
+		if (!this.cellProperties[key] && typeof oldCell[key] !== 'function' &&
+			typeof newCell[key] !== 'function' && oldCell[key] != newCell[key])
+		{
+			diff[key] = (newCell[key] === undefined) ? null : newCell[key];
+		}
+	}
+
+	for (var i = 0; added != null && i < added.length; i++)
+	{
+		diff[added[i]] = (newCell[added[i]] === undefined) ? null : newCell[added[i]];
+	}
+
+	return true;
+};
+
+/**
+ * Adds the custom properties that differ between the given cells to the
+ * given diff, comparing all their keys including the inherited ones.
+ */
+EditorUi.prototype.diffAllCellProperties = function(oldCell, newCell, diff)
+{
 	// Compares all keys from oldCell to newCell and uses null in the diff
 	// to force the attribute to be removed in the receiving client
 	for (var key in oldCell)
@@ -2315,6 +2759,137 @@ EditorUi.prototype.diffCell = function(oldCell, newCell)
 	}
 	
 	return diff;
+};
+
+/**
+ * Returns the IDs of the pages whose cells <resolveCrossReferences> does not
+ * need in the diff from the given own pages to the given pages for the given
+ * own diff: the given skipped pages, the pages without cell changes in the
+ * own diff and the pages without cells that the own page lacks. Cells are
+ * only adopted from pages with such cells, so skipping the others gives the
+ * same result as the full diff, which costs as much as the own diff.
+ */
+EditorUi.prototype.getCrossReferenceSkip = function(ownPages, pages, ownDiff, skip)
+{
+	// Null prototypes: keyed by page ids from the document
+	var result = Object.create(null);
+	var updates = (ownDiff != null) ? ownDiff[EditorUi.DIFF_UPDATE] : null;
+	var lookup = Object.create(null);
+
+	if (ownPages != null && pages != null)
+	{
+		for (var i = 0; i < pages.length; i++)
+		{
+			if (pages[i] != null)
+			{
+				lookup[pages[i].getId()] = pages[i];
+			}
+		}
+
+		// Only the first own page of an ID is diffed (as in diffPages)
+		for (var i = 0; i < ownPages.length; i++)
+		{
+			if (ownPages[i] != null)
+			{
+				var id = ownPages[i].getId();
+				var page = lookup[id];
+
+				if (page != null && ((skip != null && skip[id]) ||
+					updates == null || updates[id] == null ||
+					updates[id].cells == null ||
+					!this.hasInsertedCells(ownPages[i], page)))
+				{
+					result[id] = true;
+				}
+
+				delete lookup[id];
+			}
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Returns the cells whose properties <resolveCrossReferences> uses in the
+ * diff from the own pages to the pages for the given own diff, as a map from
+ * page IDs to maps of cell IDs for <diffPages>. These are the cells updated
+ * by the own diff: of all other cells only the inserts are used, which do
+ * not depend on the changed cells, so the shallow diff of the other cells
+ * gives the same result as the full diff.
+ */
+EditorUi.prototype.getCrossReferenceCells = function(ownDiff)
+{
+	// Null prototypes: keyed by page and cell ids from the document
+	var result = Object.create(null);
+	var updates = (ownDiff != null) ? ownDiff[EditorUi.DIFF_UPDATE] : null;
+
+	for (var pageId in updates)
+	{
+		var cells = Object.create(null);
+		var cellDiff = (updates[pageId] != null) ? updates[pageId].cells : null;
+		var cellUpdates = (cellDiff != null) ? cellDiff[EditorUi.DIFF_UPDATE] : null;
+
+		for (var id in cellUpdates)
+		{
+			cells[id] = true;
+		}
+
+		result[pageId] = cells;
+	}
+
+	return result;
+};
+
+/**
+ * Returns true if the cell diff from the given old page to the given new page
+ * may insert cells, ie. if the roots differ or if the new page has a cell
+ * with an ID that the old page does not have (see <diffCells>).
+ */
+EditorUi.prototype.hasInsertedCells = function(oldPage, newPage)
+{
+	this.updatePageRoot(oldPage);
+	this.updatePageRoot(newPage);
+
+	if (oldPage.root.id != newPage.root.id)
+	{
+		return true;
+	}
+
+	// Null prototype: keyed by cell ids from the document
+	var ids = Object.create(null);
+
+	var addIds = function(cell)
+	{
+		ids[cell.getId()] = true;
+
+		for (var i = 0; i < cell.getChildCount(); i++)
+		{
+			addIds(cell.getChildAt(i));
+		}
+	};
+
+	var hasNewIds = function(cell)
+	{
+		if (cell.getId() != null && ids[cell.getId()] == null)
+		{
+			return true;
+		}
+
+		for (var i = 0; i < cell.getChildCount(); i++)
+		{
+			if (hasNewIds(cell.getChildAt(i)))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	};
+
+	addIds(oldPage.root);
+
+	return hasNewIds(newPage.root);
 };
 
 /**
@@ -2600,7 +3175,113 @@ EditorUi.prototype.adoptTerminalCell = function(cellId, cell, theirInsertedCells
 };
 
 /**
- *
+ * Returns the given value as JSON.stringify passes it on with the replacer of
+ * <isObjectEqual> for the given key, or undefined if JSON leaves it out.
+ */
+EditorUi.getJsonValue = function(value, key, proto)
+{
+	if (value != null && typeof value === 'object' &&
+		typeof value.toJSON === 'function')
+	{
+		value = value.toJSON(key);
+	}
+
+	value = (proto == null || proto[key] != value) ?
+		((value === true) ? 1 : value) : undefined;
+
+	if (value instanceof Number || value instanceof String ||
+		value instanceof Boolean)
+	{
+		value = value.valueOf();
+	}
+
+	if (typeof value === 'number' && !isFinite(value))
+	{
+		value = null;
+	}
+
+	return (typeof value === 'function' || typeof value === 'symbol') ?
+		undefined : value;
+};
+
+/**
+ * Returns true if the given values, as returned by <getJsonValue>, have the
+ * same JSON representation apart from the order of the keys.
+ */
+EditorUi.isJsonEqual = function(a, b, proto)
+{
+	if (a === null || b === null || typeof a !== 'object' ||
+		typeof b !== 'object')
+	{
+		return a === b;
+	}
+	else if (Array.isArray(a) || Array.isArray(b))
+	{
+		if (!Array.isArray(a) || !Array.isArray(b) || a.length != b.length)
+		{
+			return false;
+		}
+
+		// Array elements that JSON leaves out are written as null
+		for (var i = 0; i < a.length; i++)
+		{
+			var key = String(i);
+			var ai = EditorUi.getJsonValue(a[i], key, proto);
+			var bi = EditorUi.getJsonValue(b[i], key, proto);
+
+			if (!EditorUi.isJsonEqual((ai === undefined) ? null : ai,
+				(bi === undefined) ? null : bi, proto))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+	else
+	{
+		// Own enumerable keys as in JSON.stringify
+		var aKeys = Object.keys(a);
+		var bKeys = Object.keys(b);
+		var count = 0;
+
+		for (var i = 0; i < aKeys.length; i++)
+		{
+			var key = aKeys[i];
+			var av = EditorUi.getJsonValue(a[key], key, proto);
+
+			if (av !== undefined)
+			{
+				count++;
+
+				if (!Object.prototype.propertyIsEnumerable.call(b, key) ||
+					!EditorUi.isJsonEqual(av, EditorUi.getJsonValue(
+						b[key], key, proto), proto))
+				{
+					return false;
+				}
+			}
+		}
+
+		for (var i = 0; i < bKeys.length; i++)
+		{
+			if (EditorUi.getJsonValue(b[bKeys[i]], bKeys[i], proto) !== undefined)
+			{
+				count--;
+			}
+		}
+
+		return count == 0;
+	}
+};
+
+/**
+ * Returns true if the given objects have the same JSON values, leaving out
+ * values that are equal to the value of the same key in the given proto and
+ * writing true as 1. Unlike comparing the JSON strings, the order of the
+ * keys is ignored: a geometry decoded from a patch has its keys in the order
+ * of the XML, eg. points before targetPoint, while an edited one has them in
+ * the order they were set, and the diff must not report them as different.
  */
 EditorUi.prototype.isObjectEqual = function(source, target, proto)
 {
@@ -2614,14 +3295,7 @@ EditorUi.prototype.isObjectEqual = function(source, target, proto)
 	}
 	else
 	{
-		var replacer = function(key, value)
-		{
-			return (proto == null || proto[key] != value) ? ((value === true) ? 1 : value) : undefined;
-		};
-
-		//console.log('eq', JSON.stringify(source, replacer), JSON.stringify(target, replacer));
-		
-		return JSON.stringify(source, replacer) == JSON.stringify(target, replacer);
-
+		return EditorUi.isJsonEqual(EditorUi.getJsonValue(source, '', proto),
+			EditorUi.getJsonValue(target, '', proto), proto);
 	}
 };

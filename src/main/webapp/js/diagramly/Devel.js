@@ -6,18 +6,21 @@
  * is used for development mode where the JS is in separate
  * files and the mxClient.js loads other files.
  */
+// CSP-POLICIES-BEGIN - this block is also evaluated on its own (with only
+// mxIsElectron, urlParams, mxmeta and console defined) to deploy the CSP
+// response headers, so it must stay self-contained.
 if (!mxIsElectron)
 {
 	(function()
 	{
 		var hashes = 'default-src \'self\'; ' +
-			'script-src %script-src% \'self\' https://viewer.diagrams.net https://apis.google.com https://*.pusher.com; ';
+			'script-src %script-src% \'self\' https://viewer.diagrams.net https://apis.google.com; ';
 
 		var directives = 'connect-src %connect-src% \'self\' https://*.draw.io https://*.diagrams.net ' +
-			'https://*.googleapis.com wss://app.diagrams.net wss://*.pusher.com https://*.pusher.com ' +
+			'https://*.googleapis.com wss://app.diagrams.net ' +
 			'https://api.github.com https://raw.githubusercontent.com https://gitlab.com ' +
 			'https://graph.microsoft.com https://my.microsoftpersonalcontent.com https://*.sharepoint.com https://*.sharepoint.de  ' +
-			'https://*.1drv.com https://api.onedrive.com https://dl.dropboxusercontent.com https://api.openai.com ' +
+			'https://*.1drv.com https://api.onedrive.com https://api.openai.com ' +
 			'https://*.google.com https://fonts.gstatic.com https://fonts.googleapis.com https://api.anthropic.com; ' +
 			'img-src * data: blob:; media-src * data:; font-src * data:; ' +
 			// www.draw.io required for browser data migration to app.diagrams.net and
@@ -31,9 +34,9 @@ if (!mxIsElectron)
 		var csp = hashes + directives;
 		var devCsp = csp.
 			// Adds script tags and loads shapes with eval
-			replace(/%script-src%/g, 'https://www.dropbox.com https://api.trello.com \'unsafe-eval\'').
-			// Adds Trello and Dropbox backend storage
-			replace(/%connect-src%/g, 'https://*.dropboxapi.com https://trello.com https://api.trello.com https://my.microsoftpersonalcontent.com').
+			replace(/%script-src%/g, 'https://api.trello.com \'unsafe-eval\'').
+			// Adds Trello backend storage
+			replace(/%connect-src%/g, 'https://trello.com https://api.trello.com https://my.microsoftpersonalcontent.com').
 			// Loads common.css from mxgraph
 			replace(/%style-src%/g, '').
 			replace(/%frame-src%/g, '').
@@ -44,19 +47,22 @@ if (!mxIsElectron)
 		if (urlParams['print-csp'] == '1')
 		{
 			console.log('Content-Security-Policy');
-			var app_diagrams_net = csp.replace(/%script-src%/g, 'https://www.dropbox.com https://api.trello.com').
-				replace(/%connect-src%/g, 'https://*.dropboxapi.com https://api.trello.com').
+			var app_diagrams_net = csp.replace(/%script-src%/g, 'https://api.trello.com').
+				replace(/%connect-src%/g, 'https://api.trello.com').
 				replace(/%frame-src%/g, '').
 					replace(/%style-src%/g, '').
 					replace(/  /g, ' ') + ' frame-ancestors \'self\' https://teams.microsoft.com https://*.cloud.microsoft https://*.sharepoint.com https://*.sharepoint.de;';
 			console.log('app.diagrams.net:', app_diagrams_net);
 
-			var viewer_diagrams_net = hashes.replace(/%script-src%/g, 'https://www.dropbox.com https://api.trello.com https://app.diagrams.net') +
+			var viewer_diagrams_net = hashes.replace(/%script-src%/g, 'https://api.trello.com https://app.diagrams.net') +
 				'connect-src *; ' +
 				'img-src * data: blob:; ' +
 				'media-src * data:; ' +
 				'font-src * data:; ' +
 				'style-src \'self\' https://fonts.googleapis.com \'unsafe-inline\'; ' +
+				// Google Picker for Allow access in the lightbox of published links
+				// (App.showDriveAccessDialog), as frames would fall back to default-src
+				'frame-src \'self\' https://*.google.com; ' +
 				'base-uri \'none\'; ' +
 				'object-src \'none\'; ' +
 				'worker-src https://viewer.diagrams.net/service-worker.js;'
@@ -72,6 +78,71 @@ if (!mxIsElectron)
 				" worker-src https://app.diagrams.net/service-worker.js;";
 				
 			console.log('teams.diagrams.net:', teams_diagrams_net);
+
+			// Teams app V2 tab pages (app.diagrams.net/connect/teamsV2/*) load the
+			// TeamsJS SDK and Fabric CSS from the Office CDN. Scripts are limited
+			// to the SDK's path: the CDN hosts much more than TeamsJS.
+			var teamsV2_diagrams_net = csp
+				.replace(/%script-src%/g, 'https://res.cdn.office.net/teams-js/')
+				.replace(/%connect-src%/g, 'https://res.cdn.office.net')
+				.replace(/%frame-src%/g, '')
+				.replace(/%style-src%/g, 'https://res-1.cdn.office.net')
+				.replace(/  /g, ' ') +
+				" frame-ancestors 'self' https://teams.microsoft.com https://*.cloud.microsoft;";
+
+			console.log('app.diagrams.net/connect/teamsV2/:', teamsV2_diagrams_net);
+
+			// Teams app tab configuration pages (config1.2.0.html, which the
+			// published manifest uses, and the older config.html) load Fabric
+			// from SharePoint's CDN, which redirects to the Office CDN, and pick
+			// files in OneDrive like the Teams editor
+			var fabric = 'https://static2.sharepointonline.com/files/fabric/ https://res-1.cdn.office.net/files/fabric/';
+			var teams_config = csp
+				.replace(/%script-src%/g, fabric)
+				.replace(/%connect-src%/g, 'https://res.cdn.office.net')
+				.replace(/%frame-src%/g, '')
+				.replace(/%style-src%/g, fabric)
+				.replace(/  /g, ' ') +
+				" frame-ancestors 'self' https://teams.microsoft.com https://*.cloud.microsoft;";
+
+			console.log('app.diagrams.net/connect/teams/tabs/config.html:', teams_config);
+
+			// embed.diagrams.net is framed by any embedder (the embed_gate snippet
+			// decides which), and embedders name their own hosts for files,
+			// libraries and fonts (cors URL parameter, configure): no
+			// frame-ancestors, and any host for connections and stylesheets.
+			// Also for import.diagrams.net, whose editor only runs framed.
+			var embed_diagrams_net = hashes.replace(/%script-src%/g, '').replace(/  /g, ' ') +
+				'connect-src *; img-src * data: blob:; media-src * data:; font-src * data:; ' +
+				directives.match(/frame-src [^;]*;/)[0].replace(/%frame-src% /g, '') + ' ' +
+				'style-src * \'unsafe-inline\'; base-uri \'none\'; child-src \'self\'; object-src \'none\';';
+
+			console.log('embed.diagrams.net:', embed_diagrams_net);
+
+			// export3.html renders untrusted diagrams for the export service
+			// (viewer.diagrams.net/export3.html) with any image, font and font
+			// stylesheet a diagram names, and the service adds an inline style
+			// for its fonts. Only its own scripts run. 'unsafe-eval' is for the
+			// JavaScript stencils (shapes/*.js) that Graph.getStencil evaluates
+			// from this origin while mxStencilRegistry.allowEval is on (export.js
+			// turns it off in Electron only).
+			var export3 = 'default-src \'self\'; script-src \'self\' \'unsafe-eval\'; connect-src *; ' +
+				'img-src * data: blob:; media-src * data: blob:; font-src * data: blob:; ' +
+				'style-src * \'unsafe-inline\'; frame-src \'none\'; base-uri \'none\'; object-src \'none\'; ' +
+				'form-action \'none\'; frame-ancestors \'none\';';
+
+			console.log('export3.html:', export3);
+
+			// The admin console (admin.html) loads only its own files; the
+			// Configuration editor adds a style element. It is never framed,
+			// so no page can make an admin click its buttons. Its own hosts
+			// (account.diagrams.net, ws ADMIN_HOSTS) send the same policy from
+			// the ws worker (ADMIN_CSP in site.js, whose tests compare them).
+			var admin_console = 'default-src \'self\'; script-src \'self\'; connect-src \'self\'; ' +
+				'img-src \'self\' data:; style-src \'self\' \'unsafe-inline\'; base-uri \'none\'; ' +
+				'object-src \'none\'; form-action \'none\'; frame-ancestors \'none\';';
+
+			console.log('app.diagrams.net/admin.html:', admin_console);
 
 			var ac_draw_io = csp.replace(/%script-src%/g, 'https://aui-cdn.atlassian.com https://connect-cdn.atl-paas.net').
 					replace(/%frame-src%/g, 'https://www.lucidchart.com https://app.lucidchart.com https://lucid.app blob:').
@@ -89,14 +160,27 @@ if (!mxIsElectron)
 					'worker-src https://aj.draw.io/service-worker.js;';
 			console.log('aj.draw.io:', aj_draw_io);
 
-			console.log('import.diagrams.net:', 'default-src \'self\'; worker-src blob:; img-src \'self\' blob: data: https://www.lucidchart.com ' +
-					'https://app.lucidchart.com https://lucid.app; style-src \'self\' \'unsafe-inline\'; frame-src https://www.lucidchart.com https://app.lucidchart.com https://lucid.app;');
+			// The Lucidchart importer, opened by the draw.io importer browser
+			// extension (in a tab, or framed in the popup of older versions):
+			// Lucid's documents page in a hidden frame, its previews, and a ZIP
+			// built in the page
+			console.log('app.diagrams.net/tools/lucid/import.html:', 'default-src \'self\'; worker-src blob:; img-src \'self\' blob: data: https://www.lucidchart.com ' +
+					'https://app.lucidchart.com https://lucid.app; style-src \'self\' \'unsafe-inline\'; frame-src https://www.lucidchart.com https://app.lucidchart.com https://lucid.app; ' +
+					'base-uri \'none\'; form-action \'none\'; frame-ancestors \'self\' chrome-extension://cnoplimhpndhhhnmoigbanpjeghjpohi;');
+
+			// Paths with ';' or an escape: GAE cuts a path at ';' and decodes
+			// %2F, so /;x, /index.html;x and /js/..%2Findex.html serve the pages
+			// above, whose rules match exact paths. Nothing links to such a path,
+			// so it only runs the page's own scripts and is never framed.
+			console.log('ambiguous paths:', 'default-src \'self\'; script-src \'self\'; connect-src \'self\'; img-src \'self\' data:; ' +
+					'style-src \'self\' \'unsafe-inline\'; base-uri \'none\'; object-src \'none\'; form-action \'none\'; frame-ancestors \'none\';');
 			console.log('Development:', devCsp);
 
 			console.log('Remember to add index.html new hashes to Desktop app (electron.js). In desktop, only newest hashes are needed.');
 		}
 	})();
 }
+// CSP-POLICIES-END
 
 mxscript(drawDevUrl + 'js/cryptojs/aes.min.js');
 mxscript(drawDevUrl + 'js/spin/spin.min.js');
@@ -194,6 +278,8 @@ mxscript(drawDevUrl + 'js/diagramly/util/mxAsyncCanvas.js');
 
 mxscript(drawDevUrl + 'js/diagramly/gif/GifEncoder.js');
 mxscript(drawDevUrl + 'js/diagramly/gif/AnimatedExport.js');
+mxscript(drawDevUrl + 'js/diagramly/gif/Mp4Encoder.js');
+mxscript(drawDevUrl + 'js/diagramly/gif/AnimationExport.js');
 
 mxscript(drawDevUrl + 'js/diagramly/DrawioFile.js');
 mxscript(drawDevUrl + 'js/diagramly/LocalFile.js');
@@ -223,9 +309,14 @@ mxscript(drawDevUrl + 'js/diagramly/UrlLibrary.js');
 mxscript(drawDevUrl + 'js/diagramly/DriveFile.js');
 mxscript(drawDevUrl + 'js/diagramly/DriveLibrary.js');
 mxscript(drawDevUrl + 'js/diagramly/DriveClient.js');
-mxscript(drawDevUrl + 'js/diagramly/DropboxFile.js');
-mxscript(drawDevUrl + 'js/diagramly/DropboxLibrary.js');
-mxscript(drawDevUrl + 'js/diagramly/DropboxClient.js');
+mxscript(drawDevUrl + 'js/diagramly/HomeDialog.js');
+
+if (!window.DRAWIO_PUBLIC_BUILD)
+{
+	// Settings of the admin console (ws worker), not in the public repository
+	mxscript(drawDevUrl + 'js/diagramly/OrgSettings.js');
+}
+
 mxscript(drawDevUrl + 'js/diagramly/GitHubFile.js');
 mxscript(drawDevUrl + 'js/diagramly/GitHubLibrary.js');
 mxscript(drawDevUrl + 'js/diagramly/GitHubClient.js');
@@ -244,45 +335,54 @@ mxscript(drawDevUrl + 'js/diagramly/App.js');
 mxscript(drawDevUrl + 'js/diagramly/Menus.js');
 mxscript(drawDevUrl + 'js/diagramly/Pages.js');
 mxscript(drawDevUrl + 'js/diagramly/Trees.js');
+mxscript(drawDevUrl + 'js/diagramly/ForceExplorer.js');
+mxscript(drawDevUrl + 'js/diagramly/SpringHandle.js');
+// In extensions.min.js
+mxscript(drawDevUrl + 'js/diagramly/SpringMove.js');
 mxscript(drawDevUrl + 'js/diagramly/Minimal.js');
 mxscript(drawDevUrl + 'js/diagramly/mxRuler.js');
 mxscript(drawDevUrl + 'js/diagramly/mxFreehand.js');
 mxscript(drawDevUrl + 'js/diagramly/P2PCollab.js');
 mxscript(drawDevUrl + 'js/diagramly/DevTools.js');
+mxscript(drawDevUrl + 'js/diagramly/Simple.js');
 
 if (!window.DRAWIO_PUBLIC_BUILD)
 {
-	mxscript(drawDevUrl + 'js/diagramly/Simple.js');
+	// VSDX export (with mxVsdxCanvas2D.js below) is not in the public repository
 	mxscript(drawDevUrl + 'js/diagramly/vsdx/VsdxExport.js');
 }
+else
+{
+	// The public repository ships the stencil bundle without the stencil XML
+	mxscript(drawDevUrl + 'js/stencils.min.js');
+}
 
-// ELK layout engine + mxGraph bridge (drawio-elk port, built from
-// ../drawio-elk). Exposes window.ELK (engine), window.ElkLayout (facade
-// extending mxGraphLayout), window.ElkAdapter, window.ElkApplier.
+// ELK layout engine + mxGraph bridge (prebuilt bundle). Exposes
+// window.ELK (engine), window.ElkLayout (facade extending mxGraphLayout),
+// window.ElkAdapter, window.ElkApplier.
 // Must load BEFORE ElkLayout.js (whose statics decorate ElkLayout) and
 // BEFORE drawio-mermaid (which picks ELK up via globalThis.ELK).
 mxscript(drawDevUrl + 'js/elk/drawio-elk.min.js');
 
 // ElkLayout editor bindings (run / runWithDialog / DIALOG_FIELDS /
 // localStorage settings). Decorates the bundled ElkLayout above with
-// the Arrange > Layout menu integration. drawio-elk doesn't ship these
+// the Arrange > Layout menu integration. The ELK bundle doesn't ship these
 // because they're editor-only.
 mxscript(drawDevUrl + 'js/diagramly/ElkLayout.js');
 
-// Mermaid custom parser + cell factory + layout (single bundle built from
-// ../drawio-mermaid via esbuild). Uses window.ELK from drawio-elk above.
+// Mermaid custom parser + cell factory + layout (prebuilt bundle). Uses
+// window.ELK from drawio-elk above.
 mxscript(drawDevUrl + 'js/mermaid/drawio-mermaid.min.js');
 
-// PlantUML clean-room parser + cell factory (single bundle built from
-// ../drawio-plantuml via esbuild). Exposes window.PlantUml and
-// window.mxPlantUmlToDrawio for the native "Diagram" output (the
-// default) of the PlantUML insert dialog.
+// PlantUML clean-room parser + cell factory (prebuilt bundle). Exposes
+// window.PlantUml and window.mxPlantUmlToDrawio for the native "Diagram"
+// output (the default) of the PlantUML insert dialog.
 mxscript(drawDevUrl + 'js/plantuml/drawio-plantuml.min.js');
 
-// libavoid obstacle-avoiding orthogonal edge router (pure-JS, built from source
-// in ../drawio-libavoid; see js/libavoid-js/README.md). The bundle is
-// self-contained and self-publishing (like drawio-mermaid): it defines
-// window.Avoid synchronously on load — no separate loader. Fixed order: the
+// libavoid obstacle-avoiding orthogonal edge router (prebuilt pure-JS bundle,
+// see js/libavoid-js/README.md). The bundle is self-contained and
+// self-publishing (like drawio-mermaid): it defines window.Avoid
+// synchronously on load — no separate loader. Fixed order: the
 // bundle → the shared routing core (defines AvoidRouting; canonical, vendored
 // verbatim by drawio-mcp) → the LibavoidRouting editor binding (Arrange >
 // Layout > Orthogonal Routing).
@@ -292,10 +392,20 @@ mxscript(drawDevUrl + 'js/diagramly/LibavoidRouting.js');
 
 // Vsdx/vssx support
 mxscript(drawDevUrl + 'js/diagramly/emf/emf-svg.js');
-mxscript(drawDevUrl + 'js/diagramly/vsdx/mxVsdxCanvas2D.js');
+
+if (!window.DRAWIO_PUBLIC_BUILD)
+{
+	mxscript(drawDevUrl + 'js/diagramly/vsdx/mxVsdxCanvas2D.js');
+}
+
 mxscript(drawDevUrl + 'js/diagramly/vsdx/bmpDecoder.js');
 mxscript(drawDevUrl + 'js/diagramly/vsdx/importer.js');
 mxscript(drawDevUrl + 'js/jszip/jszip.min.js');
+
+// Binary Visio (.vsd/.vss/.vst) to Visio XML converter (prebuilt bundle).
+// Exposes window.DrawioVsd; importVisio converts binary files in the
+// browser before the VSDX importer reads them.
+mxscript(drawDevUrl + 'js/vsd/drawio-vsd.min.js');
 
 // GraphMl Import
 mxscript(drawDevUrl + 'js/diagramly/graphml/mxGraphMlCodec.js');

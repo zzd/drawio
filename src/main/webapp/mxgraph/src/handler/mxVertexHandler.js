@@ -360,6 +360,28 @@ mxVertexHandler.prototype.createParentHighlightShape = function(bounds)
 };
 
 /**
+ * Function: createEdgeParentHighlightShape
+ *
+ * Creates the shape used to highlight the given edge state if the parent
+ * of the cell is an edge. This implementation returns an outline of the
+ * edge shape that looks like the selection of the edge.
+ */
+mxVertexHandler.prototype.createEdgeParentHighlightShape = function(state)
+{
+	var shape = new state.shape.constructor();
+	shape.outline = true;
+	shape.apply(state);
+	shape.points = state.absolutePoints.slice();
+	shape.scale = state.view.scale;
+	shape.isDashed = mxConstants.EDGE_SELECTION_DASHED;
+	shape.stroke = mxConstants.EDGE_SELECTION_COLOR;
+	shape.strokewidth = mxConstants.EDGE_SELECTION_STROKEWIDTH / shape.scale / shape.scale;
+	shape.isShadow = false;
+
+	return shape;
+};
+
+/**
  * Function: createSelectionShape
  * 
  * Creates the shape used to draw the selection border.
@@ -941,8 +963,7 @@ mxVertexHandler.prototype.moveLabel = function(me)
 		point.y = (this.graph.snap(point.y / scale - tr.y) + tr.y) * scale;
 	}
 
-	var index = (this.rotationShape != null) ? this.sizers.length - 2 : this.sizers.length - 1;
-	this.moveSizerTo(this.sizers[index], point.x, point.y);
+	this.moveSizerTo(this.labelShape, point.x, point.y);
 };
 
 /**
@@ -973,7 +994,7 @@ mxVertexHandler.prototype.rotateVertex = function(me)
 		
 		if (dist - this.startDist < 2)
 		{
-			raster = 15;
+			var raster = 15;
 		}
 		else if (dist - this.startDist < 25)
 		{
@@ -2203,17 +2224,24 @@ mxVertexHandler.prototype.updateParentHighlight = function()
 					this.parentHighlight.redraw();
 				}
 			}
-			else
+			// Edge highlights are created again if the edge changes
+			else if (!this.graph.model.isEdge(parent) || !visible || (pstate != null &&
+				(this.parentHighlight.scale != pstate.view.scale ||
+				!mxUtils.equalPoints(this.parentHighlight.points, pstate.absolutePoints))))
 			{
 				this.destroyParentHighlight();
 			}
 		}
-		else if (this.parentHighlightEnabled && visible)
+
+		if (this.parentHighlight == null && this.parentHighlightEnabled && visible)
 		{
-			if (this.graph.model.isVertex(parent) && pstate != null &&
+			var edge = this.graph.model.isEdge(parent);
+
+			if ((edge || this.graph.model.isVertex(parent)) && pstate != null &&
 				pstate.parentHighlight == null)
 			{
-				this.parentHighlight = this.createParentHighlightShape(pstate);
+				this.parentHighlight = (edge) ? this.createEdgeParentHighlightShape(pstate) :
+					this.createParentHighlightShape(pstate);
 				this.parentHighlight.dialect = mxConstants.DIALECT_SVG;
 				this.parentHighlight.svgStrokeTolerance = 0;
 				this.parentHighlight.pointerEvents = false;

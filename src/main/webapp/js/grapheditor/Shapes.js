@@ -188,106 +188,6 @@
 
 	mxCellRenderer.registerShape('tableLine', TableLineShape);
 
-	// LATER: Use this to implement striping
-	function paintTableBackground(state, c, x, y, w, h, r)
-	{
-		if (state != null)
-		{
-			var graph = state.view.graph;
-			var start = graph.getActualStartSize(state.cell, true);
-			var rows = graph.model.getChildCells(state.cell, true);
-			
-			if (rows.length > 0)
-			{
-				var events = false;
-				
-				if (this.style != null)
-				{
-					events = mxUtils.getValue(this.style, mxConstants.STYLE_POINTER_EVENTS, '1') == '1';
-				}
-				
-				if (!events)
-				{
-					c.pointerEvents = false;
-				}
-				
-				var evenRowColor = mxUtils.getValue(state.style,
-					'evenRowColor', mxConstants.NONE);
-				var oddRowColor = mxUtils.getValue(state.style,
-					'oddRowColor', mxConstants.NONE);
-				var evenColColor = mxUtils.getValue(state.style,
-					'evenColumnColor', mxConstants.NONE);
-				var oddColColor = mxUtils.getValue(state.style,
-					'oddColumnColor', mxConstants.NONE);
-				var cols = graph.model.getChildCells(rows[0], true);
-				
-				// Paints column backgrounds
-				for (var i = 0; i < cols.length; i++)
-				{
-					var clr = (mxUtils.mod(i, 2) == 1) ? evenColColor : oddColColor;
-					var geo = graph.getCellGeometry(cols[i]);
-					
-					if (geo != null && clr != mxConstants.NONE)
-					{
-						c.setFillColor(clr);
-						c.begin();
-						c.moveTo(x + geo.x, y + start.y);
-						
-						if (r > 0 && i == cols.length - 1)
-						{
-							c.lineTo(x + geo.x + geo.width - r, y);
-							c.quadTo(x + geo.x + geo.width, y, x + geo.x + geo.width, y + r);
-							c.lineTo(x + geo.x + geo.width, y + h - r);
-							c.quadTo(x + geo.x + geo.width, y + h, x + geo.x + geo.width - r, y + h);
-						}
-						else
-						{
-							c.lineTo(x + geo.x + geo.width, y + start.y);
-							c.lineTo(x + geo.x + geo.width, y + h - start.height);
-						}
-						
-						c.lineTo(x + geo.x, y + h);
-						c.close();
-						c.fill();
-					}
-				}
-				
-				// Paints row backgrounds
-				for (var i = 0; i < rows.length; i++)
-				{
-					var clr = (mxUtils.mod(i, 2) == 1) ? evenRowColor : oddRowColor;
-					var geo = graph.getCellGeometry(rows[i]);
-	
-					if (geo != null && clr != mxConstants.NONE)
-					{
-						var b = (i == rows.length - 1) ? y + h : y + geo.y + geo.height;
-						c.setFillColor(clr);
-						
-						c.begin();
-						c.moveTo(x + start.x, y + geo.y);
-						c.lineTo(x + w - start.width, y + geo.y);
-						
-						if (r > 0 && i == rows.length - 1)
-						{
-							c.lineTo(x + w, b - r);
-							c.quadTo(x + w, b, x + w - r, b);
-							c.lineTo(x + r, b);
-							c.quadTo(x, b, x, b - r);
-						}
-						else
-						{
-							c.lineTo(x + w - start.width, b);
-							c.lineTo(x + start.x, b);
-						}
-						
-						c.close();
-						c.fill();
-					}
-				}
-			}
-		}
-	};
-
 	// Table Shape
 	function TableShape()
 	{
@@ -298,12 +198,24 @@
 
 	TableShape.prototype.fixedHeaderDefault = false;
 
+	// Paints the glass effect on the title (see paintCollapsedTable)
+	TableShape.prototype.isGlassable = function()
+	{
+		return this.getTitleSize() > 0;
+	};
+
 	TableShape.prototype.paintVertexShape = function(c, x, y, w, h)
 	{
-		// LATER: Split background to add striping, paint rows and cells
-		//paintTableBackground(this.state, c, x, y, w, h);
 		var collapsed = (this.state != null) ? this.state.view.graph.
 			isCellCollapsed(this.state.cell) : false;
+
+		if (!collapsed && this.isCollapsedRender())
+		{
+			this.paintCollapsedTable(c);
+
+			return;
+		}
+
 		var horizontal = this.isHorizontal();
 		var start = this.getTitleSize();
 		var fixedHeader = mxUtils.getValue(this.style,
@@ -355,12 +267,113 @@
 			// Negative transform to avoid save/restore
 			c.rotate(-this.getShapeRotation(), flipH, flipV, x + w / 2, y + h / 2);
 			
-			s = this.scale;
+			var s = this.scale;
 			x = this.bounds.x / s;
 			y = this.bounds.y / s;
 			w = this.bounds.width / s;
 			h = this.bounds.height / s;
+
+			if (this.hasStripes())
+			{
+				var graph = this.state.view.graph;
+				var start = graph.getActualStartSize(this.state.cell, true);
+				var body = graph.getCollapsedTableBands(0, 0, w, h, start).body;
+				var r = (this.isRounded) ? this.getCollapsedArcSize(w, h, start) : 0;
+				var pointerEvents = c.pointerEvents;
+				c.pointerEvents = false;
+				c.setShadow(false);
+				this.paintStripes(c, x, y, w, h, r, body);
+				c.pointerEvents = pointerEvents;
+			}
+
 			this.paintTableForeground(c, x, y, w, h);
+		}
+	};
+
+	/**
+	 * Returns true if the table has a color for the odd or even rows or
+	 * columns (evenRowColor, oddRowColor, evenColumnColor, oddColumnColor).
+	 */
+	TableShape.prototype.hasStripes = function()
+	{
+		var keys = ['evenRowColor', 'oddRowColor', 'evenColumnColor', 'oddColumnColor'];
+
+		for (var i = 0; i < keys.length; i++)
+		{
+			if (mxUtils.getValue(this.style, keys[i], mxConstants.NONE) != mxConstants.NONE)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	};
+
+	/**
+	 * Paints the column and row striping of the table in the given body
+	 * (the area below the table title in table coordinates), below the rows
+	 * and cells so that their own fills cover the striping. Odd and even are
+	 * counted from 1 for the visible rows and the columns of the first visible
+	 * row, so evenRowColor is the color of every second row. Columns use the
+	 * width of a single column for merged cells (alternateBounds).
+	 */
+	TableShape.prototype.paintStripes = function(c, x, y, w, h, r, body)
+	{
+		var graph = this.state.view.graph;
+		var model = graph.model;
+		var evenRowColor = mxUtils.getValue(this.style, 'evenRowColor', mxConstants.NONE);
+		var oddRowColor = mxUtils.getValue(this.style, 'oddRowColor', mxConstants.NONE);
+		var evenColColor = mxUtils.getValue(this.style, 'evenColumnColor', mxConstants.NONE);
+		var oddColColor = mxUtils.getValue(this.style, 'oddColumnColor', mxConstants.NONE);
+		var rows = model.getChildCells(this.state.cell, true);
+		var visible = [];
+
+		for (var i = 0; i < rows.length; i++)
+		{
+			if (model.isVisible(rows[i]) && graph.getCellGeometry(rows[i]) != null)
+			{
+				visible.push(rows[i]);
+			}
+		}
+
+		var fill = mxUtils.bind(this, function(clr, rect)
+		{
+			if (clr != mxConstants.NONE && rect.width > 0 && rect.height > 0)
+			{
+				c.setFillColor(clr);
+				this.addCollapsedRegionPath(c, x, y, w, h, r, rect);
+				c.fill();
+			}
+		});
+
+		if ((evenColColor != mxConstants.NONE || oddColColor != mxConstants.NONE) &&
+			visible.length > 0)
+		{
+			var rowGeo = graph.getCellGeometry(visible[0]);
+			var cols = model.getChildCells(visible[0], true);
+
+			for (var i = 0; i < cols.length; i++)
+			{
+				var geo = graph.getCellGeometry(cols[i]);
+
+				if (geo != null)
+				{
+					var gw = (geo.alternateBounds != null) ?
+						geo.alternateBounds.width : geo.width;
+					fill((mxUtils.mod(i, 2) == 1) ? evenColColor : oddColColor,
+						new mxRectangle(rowGeo.x + geo.x, body.y, gw, body.height));
+				}
+			}
+		}
+
+		if (evenRowColor != mxConstants.NONE || oddRowColor != mxConstants.NONE)
+		{
+			for (var i = 0; i < visible.length; i++)
+			{
+				var geo = graph.getCellGeometry(visible[i]);
+				fill((mxUtils.mod(i, 2) == 1) ? evenRowColor : oddRowColor,
+					new mxRectangle(body.x, geo.y, body.width, geo.height));
+			}
 		}
 	};
 
@@ -376,6 +389,520 @@
 		}
 	}
 	
+	/**
+	 * Returns true if this table paints its rows and cells with collapsed
+	 * borders (tableRender=collapsed, see Graph.isCollapsedTable).
+	 */
+	TableShape.prototype.isCollapsedRender = function()
+	{
+		return this.state != null && !this.outline && this.style != null &&
+			this.style['tableRender'] == 'collapsed' &&
+			this.state.view.graph.isCollapsedTable != null &&
+			this.state.view.graph.isCollapsedTable(this.state.cell);
+	};
+
+	/**
+	 * Disables the shadow filter on the shape node of a collapsed table, which
+	 * would add shadows to all fills and borders of the rows and cells. The
+	 * shadow is added to the table background in paintCollapsedTable.
+	 */
+	TableShape.prototype.isShadowEnabled = function()
+	{
+		return mxSwimlane.prototype.isShadowEnabled.apply(this, arguments) &&
+			(!this.isCollapsedRender() || this.state.view.graph.isCellCollapsed(this.state.cell));
+	};
+
+	/**
+	 * Returns the arc size for the outline of a collapsed table.
+	 */
+	TableShape.prototype.getCollapsedArcSize = function(w, h, start)
+	{
+		var r = 0;
+
+		if (this.isRounded)
+		{
+			var size = Math.max(start.x, start.y, start.width, start.height);
+
+			if (size == 0)
+			{
+				r = mxShape.prototype.getArcSize.call(this, w, h);
+			}
+			else
+			{
+				r = this.getSwimlaneArcSize(w, h, size);
+				r = Math.min(((start.y > 0 || start.height > 0) ? h : w) - size,
+					Math.min(size, r));
+			}
+		}
+
+		return Math.max(0, Math.min(r, w / 2, h / 2));
+	};
+
+	/**
+	 * Adds the path for the given rectangle to the canvas, where the corners
+	 * that are corners of the table with the given size follow the arc of the
+	 * table outline. The canvas has no clipping, so the fills of corner cells
+	 * must be shaped like the outline.
+	 */
+	TableShape.prototype.addCollapsedRegionPath = function(c, x, y, w, h, r, rect)
+	{
+		var eps = 0.01;
+		var x0 = rect.x, y0 = rect.y, x1 = rect.x + rect.width, y1 = rect.y + rect.height;
+		var top = Math.abs(y0) < eps, left = Math.abs(x0) < eps;
+		var bottom = Math.abs(y1 - h) < eps, right = Math.abs(x1 - w) < eps;
+		var tl = r > 0 && top && left, tr = r > 0 && top && right;
+		var br = r > 0 && bottom && right, bl = r > 0 && bottom && left;
+		var rr = Math.min(r, rect.width / (((tl && tr) || (bl && br)) ? 2 : 1),
+			rect.height / (((tl && bl) || (tr && br)) ? 2 : 1));
+		x0 += x;
+		x1 += x;
+		y0 += y;
+		y1 += y;
+
+		c.begin();
+
+		if (tl)
+		{
+			c.moveTo(x0, y0 + rr);
+			c.arcTo(rr, rr, 0, 0, 1, x0 + rr, y0);
+		}
+		else
+		{
+			c.moveTo(x0, y0);
+		}
+
+		if (tr)
+		{
+			c.lineTo(x1 - rr, y0);
+			c.arcTo(rr, rr, 0, 0, 1, x1, y0 + rr);
+		}
+		else
+		{
+			c.lineTo(x1, y0);
+		}
+
+		if (br)
+		{
+			c.lineTo(x1, y1 - rr);
+			c.arcTo(rr, rr, 0, 0, 1, x1 - rr, y1);
+		}
+		else
+		{
+			c.lineTo(x1, y1);
+		}
+
+		if (bl)
+		{
+			c.lineTo(x0 + rr, y1);
+			c.arcTo(rr, rr, 0, 0, 1, x0, y1 - rr);
+		}
+		else
+		{
+			c.lineTo(x0, y1);
+		}
+
+		c.close();
+	};
+
+	/**
+	 * Fills the given region of a row or cell with the given fill info (see
+	 * Graph.getCollapsedTableShapeInfo).
+	 */
+	TableShape.prototype.fillCollapsedRegion = function(c, x, y, w, h, r, rect, fill, info, gradientBounds)
+	{
+		if (fill != null && fill != mxConstants.NONE && rect.width > 0 && rect.height > 0)
+		{
+			c.save();
+			c.setAlpha(info.opacity / 100);
+			c.setFillAlpha(info.fillOpacity / 100);
+
+			if (info.gradient != null && info.gradient != mxConstants.NONE &&
+				gradientBounds != null)
+			{
+				c.setGradient(fill, info.gradient, x + gradientBounds.x,
+					y + gradientBounds.y, gradientBounds.width,
+					gradientBounds.height, info.gradientDirection);
+			}
+			else
+			{
+				c.setFillColor(fill);
+			}
+
+			this.addCollapsedRegionPath(c, x, y, w, h, r, rect);
+			c.fill();
+			c.restore();
+		}
+	};
+
+	/**
+	 * Fills the given row or cell (see Graph.getCollapsedTableRegions).
+	 */
+	TableShape.prototype.fillCollapsedChild = function(c, x, y, w, h, r, child)
+	{
+		if (child.takeover && child.info != null)
+		{
+			if (child.mode == 'full')
+			{
+				this.fillCollapsedRegion(c, x, y, w, h, r, child,
+					child.info.fill, child.info, child);
+			}
+			else if (child.mode == 'lane')
+			{
+				var bands = child.split.bands;
+
+				for (var i = 0; i < bands.length; i++)
+				{
+					this.fillCollapsedRegion(c, x, y, w, h, r, bands[i],
+						child.info.fill, child.info, bands[i]);
+				}
+
+				this.fillCollapsedRegion(c, x, y, w, h, r, child.split.body,
+					child.info.laneFill, child.info, null);
+			}
+		}
+	};
+
+	/**
+	 * Sets the given border (see Graph.createCollapsedTableBorder) as the
+	 * stroke of the canvas.
+	 */
+	TableShape.prototype.setCollapsedBorder = function(c, border)
+	{
+		c.setAlpha(border.opacity / 100);
+		c.setStrokeAlpha(border.strokeOpacity / 100);
+		c.setStrokeColor(border.color);
+		c.setStrokeWidth(border.width);
+		c.setDashed(border.dashed, border.fixDash);
+
+		if (border.dashed)
+		{
+			c.setDashPattern((border.dashPattern != null) ?
+				border.dashPattern : '3 3');
+		}
+	};
+
+	/**
+	 * Paints the table, its rows and cells with collapsed borders. The table
+	 * is painted below its rows and cells, which only paint their labels and
+	 * a transparent area for events (see Graph.isCollapsedTableChildShape).
+	 * The fills are painted in the order table, column and row striping,
+	 * rows and cells, so that the fill of a cell covers the fill of its row,
+	 * which covers the striping and the table fill. All borders are then
+	 * painted on top so that fills never hide them. Each piece of the grid
+	 * is painted once with the stroke of its owner (see
+	 * Graph.getCollapsedTableBorders).
+	 */
+	TableShape.prototype.paintCollapsedTable = function(c)
+	{
+		var graph = this.state.view.graph;
+		var cell = this.state.cell;
+		var flipH = this.flipH;
+		var flipV = this.flipV;
+
+		if (this.direction == mxConstants.DIRECTION_NORTH ||
+			this.direction == mxConstants.DIRECTION_SOUTH)
+		{
+			var tmp = flipH;
+			flipH = flipV;
+			flipV = tmp;
+		}
+
+		var s = this.scale;
+		var x = this.bounds.x / s;
+		var y = this.bounds.y / s;
+		var w = this.bounds.width / s;
+		var h = this.bounds.height / s;
+
+		// Uses unrotated coordinates as rows and cells are not rotated
+		c.rotate(-this.getShapeRotation(), flipH, flipV, x + w / 2, y + h / 2);
+
+		var pointerEvents = c.pointerEvents;
+		var tableBorder = graph.createCollapsedTableBorder(this.stroke, this);
+		var data = graph.getCollapsedTableRegions(cell, w, h);
+		var borders = graph.getCollapsedTableBorders(cell, w, h, tableBorder, data);
+		var r = this.getCollapsedArcSize(w, h, data.start);
+		var full = new mxRectangle(0, 0, w, h);
+		var events = mxUtils.getValue(this.style, mxConstants.STYLE_POINTER_EVENTS, '1') == '1';
+
+		// Table background with shadow in a separate group as the shadow
+		// filter of the shape node is disabled (see isShadowEnabled)
+		var root = c.root;
+		var group = null;
+
+		if (this.isShadow && root != null && c instanceof mxSvgCanvas2D)
+		{
+			group = c.createElement('g');
+			group.style.filter = this.createDropShadow(this.getShadowStyle(), c.state.scale);
+			root.appendChild(group);
+			c.root = group;
+		}
+
+		if (graph.getCollapsedTableFillMode(this.style, data.start) == 'full')
+		{
+			this.addCollapsedRegionPath(c, x, y, w, h, r, full);
+			c.fill();
+		}
+		else
+		{
+			for (var i = 0; i < data.title.bands.length; i++)
+			{
+				this.addCollapsedRegionPath(c, x, y, w, h, r, data.title.bands[i]);
+				c.fill();
+			}
+
+			if (this.laneFill != null && this.laneFill != mxConstants.NONE)
+			{
+				c.pointerEvents = pointerEvents && events;
+				c.setFillColor(this.laneFill);
+				this.addCollapsedRegionPath(c, x, y, w, h, r, data.title.body);
+				c.fill();
+				c.pointerEvents = pointerEvents;
+			}
+		}
+
+		if (this.isShadow && graph.getCollapsedTableBorderKey(tableBorder) != null)
+		{
+			this.addCollapsedRegionPath(c, x, y, w, h, r, full);
+			c.stroke();
+		}
+
+		if (group != null)
+		{
+			c.root = root;
+		}
+
+		c.setShadow(false);
+		c.pointerEvents = false;
+
+		// Striping
+		this.paintStripes(c, x, y, w, h, r, data.title.body);
+
+		// Row and cell fills
+		for (var i = 0; i < data.rows.length; i++)
+		{
+			this.fillCollapsedChild(c, x, y, w, h, r, data.rows[i]);
+		}
+
+		for (var i = 0; i < data.cells.length; i++)
+		{
+			this.fillCollapsedChild(c, x, y, w, h, r, data.cells[i]);
+		}
+
+		// Inner borders grouped by style, thicker borders on top
+		var groups = {};
+		var keys = [];
+
+		for (var i = 0; i < borders.lines.length; i++)
+		{
+			var line = borders.lines[i];
+
+			if (groups[line.key] == null)
+			{
+				groups[line.key] = [];
+				keys.push(line.key);
+			}
+
+			groups[line.key].push(line);
+		}
+
+		// Widths that are no numbers (eg. strokeWidth=abc) paint as thin lines
+		keys.sort(function(k1, k2)
+		{
+			return mxUtils.compareNumbers(groups[k1][0].border.width || 0,
+				groups[k2][0].border.width || 0);
+		});
+
+		c.setLineCap('square');
+
+		for (var i = 0; i < keys.length; i++)
+		{
+			var lines = groups[keys[i]];
+			c.save();
+			this.setCollapsedBorder(c, lines[0].border);
+			c.begin();
+
+			for (var j = 0; j < lines.length; j++)
+			{
+				c.moveTo(x + lines[j].x1, y + lines[j].y1);
+				c.lineTo(x + lines[j].x2, y + lines[j].y2);
+			}
+
+			c.stroke();
+			c.restore();
+		}
+
+		c.setLineCap('flat');
+		c.pointerEvents = pointerEvents;
+		this.paintCollapsedOutline(c, x, y, w, h, r, borders.outline);
+
+		if (this.glass && this.fill != null && this.fill != mxConstants.NONE)
+		{
+			for (var i = 0; i < data.title.bands.length; i++)
+			{
+				var band = data.title.bands[i];
+				this.paintTitleGlassEffect(c, x + band.x, y + band.y, band.width,
+					band.height, r, data.title.sides[i]);
+			}
+		}
+	};
+
+	/**
+	 * Paints the outline of a collapsed table with the given outline pieces
+	 * (see Graph.getCollapsedTableBorders). Consecutive pieces with the same
+	 * border are painted as one path, including the corner arcs.
+	 */
+	TableShape.prototype.paintCollapsedOutline = function(c, x, y, w, h, r, outline)
+	{
+		var graph = this.state.view.graph;
+		var eps = 0.01;
+		var ops = [];
+		var corners = [];
+
+		// Sides in clockwise order with start point and direction
+		var sides = [{pieces: outline.top, x0: 0, y0: 0, dx: 1, dy: 0, len: w, rev: false},
+			{pieces: outline.right, x0: w, y0: 0, dx: 0, dy: 1, len: h, rev: false},
+			{pieces: outline.bottom, x0: w, y0: h, dx: -1, dy: 0, len: w, rev: true},
+			{pieces: outline.left, x0: 0, y0: h, dx: 0, dy: -1, len: h, rev: true}];
+
+		function getPoint(side, t)
+		{
+			return new mxPoint(side.x0 + side.dx * t, side.y0 + side.dy * t);
+		};
+
+		for (var i = 0; i < sides.length; i++)
+		{
+			var side = sides[i];
+			var pieces = side.pieces.slice();
+
+			if (side.rev)
+			{
+				pieces.reverse();
+			}
+
+			side.first = (pieces.length > 0) ? pieces[0].border : null;
+			side.last = (pieces.length > 0) ? pieces[pieces.length - 1].border : null;
+
+			for (var j = 0; j < pieces.length; j++)
+			{
+				var t0 = Math.max(r, (side.rev) ? side.len - pieces[j].b : pieces[j].a);
+				var t1 = Math.min(side.len - r, (side.rev) ? side.len - pieces[j].a : pieces[j].b);
+
+				if (t1 - t0 > eps)
+				{
+					ops.push({arc: false, from: getPoint(side, t0), to: getPoint(side, t1),
+						border: pieces[j].border});
+				}
+			}
+
+			if (r > 0)
+			{
+				var corner = {arc: true, side: i, from: getPoint(side, side.len - r)};
+				corners.push(corner);
+				ops.push(corner);
+			}
+		}
+
+		// Corner arcs use the border of the incoming or else the outgoing side
+		for (var i = 0; i < corners.length; i++)
+		{
+			var side = sides[corners[i].side];
+			var next = sides[(corners[i].side + 1) % sides.length];
+			var border = side.last;
+
+			if (graph.getCollapsedTableBorderKey(border) == null)
+			{
+				border = next.first;
+			}
+
+			corners[i].to = getPoint(next, r);
+			corners[i].border = border;
+		}
+
+		for (var i = 0; i < ops.length; i++)
+		{
+			ops[i].key = graph.getCollapsedTableBorderKey(ops[i].border);
+		}
+
+		function isJoined(op1, op2)
+		{
+			return op1.key == op2.key && Math.abs(op1.to.x - op2.from.x) < eps &&
+				Math.abs(op1.to.y - op2.from.y) < eps;
+		};
+
+		var paintRun = mxUtils.bind(this, function(run, close)
+		{
+			c.save();
+			this.setCollapsedBorder(c, run[0].border);
+			c.begin();
+			c.moveTo(x + run[0].from.x, y + run[0].from.y);
+
+			for (var k = 0; k < run.length; k++)
+			{
+				if (run[k].arc)
+				{
+					c.arcTo(r, r, 0, 0, 1, x + run[k].to.x, y + run[k].to.y);
+				}
+				else
+				{
+					c.lineTo(x + run[k].to.x, y + run[k].to.y);
+				}
+			}
+
+			if (close)
+			{
+				c.close();
+			}
+
+			c.stroke();
+			c.restore();
+		});
+
+		// Starts at the first break in the outline
+		var start = -1;
+
+		for (var i = 0; i < ops.length && start < 0; i++)
+		{
+			if (!isJoined(ops[(i + ops.length - 1) % ops.length], ops[i]))
+			{
+				start = i;
+			}
+		}
+
+		if (start < 0)
+		{
+			if (ops.length > 0 && ops[0].key != null)
+			{
+				paintRun(ops, true);
+			}
+		}
+		else
+		{
+			var run = null;
+
+			for (var i = 0; i < ops.length; i++)
+			{
+				var op = ops[(start + i) % ops.length];
+
+				if (run != null && !isJoined(run[run.length - 1], op))
+				{
+					paintRun(run, false);
+					run = null;
+				}
+
+				if (op.key != null)
+				{
+					run = (run != null) ? run : [];
+					run.push(op);
+				}
+			}
+
+			if (run != null)
+			{
+				paintRun(run, false);
+			}
+		}
+	};
+
 	TableShape.prototype.configurePointerEvents = function(c)
 	{
 		var start = this.getTitleSize();
@@ -400,6 +927,11 @@
 	
 	mxUtils.extend(TableRowShape, TableShape);
 
+	TableRowShape.prototype.isGlassable = function()
+	{
+		return false;
+	};
+
 	TableRowShape.prototype.paintForeground = function()
 	{
 		// overridden to do nothing
@@ -407,12 +939,81 @@
 	
 	mxCellRenderer.registerShape('tableRow', TableRowShape);
 
+	// Places the title of a table cell or row whose title region is pulled to
+	// 0 (startSize=0) in the cell instead of on the border of the empty title
+	// region: a cell's title in the middle of the cell and a row's title in the
+	// middle of the first cell of the row (or of the row if it has no cells).
+	// Tables and other swimlanes keep their title in the title region.
+	var mxSwimlaneGetLabelBounds = mxSwimlane.prototype.getLabelBounds;
+	mxSwimlane.prototype.getLabelBounds = function(rect)
+	{
+		var graph = (this.state != null) ? this.state.view.graph : null;
+
+		if (graph != null && graph.isTableCell != null && this.getTitleSize() == 0 &&
+			mxUtils.getValue(this.style, 'childLayout', null) != 'tableLayout')
+		{
+			var cell = this.state.cell;
+
+			if (graph.isTableCell(cell))
+			{
+				return mxShape.prototype.getLabelBounds.apply(this, arguments);
+			}
+			else if (graph.isTableRow(cell))
+			{
+				var bounds = this.getTableRowTitleBounds(rect);
+
+				return (bounds != null) ? bounds :
+					mxShape.prototype.getLabelBounds.apply(this, arguments);
+			}
+		}
+
+		return mxSwimlaneGetLabelBounds.apply(this, arguments);
+	};
+
+	/**
+	 * Returns the label bounds for the middle of the first cell of the table
+	 * row of this shape (see Graph.getTableRowFirstCellBounds) for the given
+	 * label bounds of the row, or null if the row has no cells. The bounds of
+	 * a vertical label are the bounds of the horizontal label rotated by 90
+	 * degrees around the center of the row (see mxCellRenderer.getLabelBounds).
+	 */
+	mxSwimlane.prototype.getTableRowTitleBounds = function(rect)
+	{
+		var cell = this.state.view.graph.getTableRowFirstCellBounds(this.state.cell);
+		var result = null;
+
+		if (cell != null)
+		{
+			var inverted = this.state.text != null &&
+				this.state.text.isPaintBoundsInverted();
+			var w = (inverted) ? rect.height : rect.width;
+			var h = (inverted) ? rect.width : rect.height;
+			var x = Math.max(0, Math.min(w, cell.x * this.scale));
+			var y = Math.max(0, Math.min(h, cell.y * this.scale));
+			var cw = Math.max(0, Math.min(w - x, cell.width * this.scale));
+			var ch = Math.max(0, Math.min(h - y, cell.height * this.scale));
+
+			// Center of the cell relative to the center of the row
+			var dx = x + (cw - w) / 2;
+			var dy = y + (ch - h) / 2;
+			var cx = rect.getCenterX();
+			var cy = rect.getCenterY();
+
+			result = (inverted) ? new mxRectangle(cx - dy - ch / 2, cy + dx - cw / 2, ch, cw) :
+				new mxRectangle(cx + dx - cw / 2, cy + dy - ch / 2, cw, ch);
+		}
+
+		return result;
+	};
+
 	// Repaints the grid lines a filled swimlane-shaped table cell (table, table
 	// row or lane) would otherwise hide with its fill. The table draws the lines
 	// centered on the cell boundaries and below its child cells, so the fill
 	// covers its half of them (see Graph.paintTableCellLines). mxSwimlane has
 	// translated the canvas to the shape origin, so the cell bounds are 0, 0,
-	// w, h here. TableShape/TableRowShape reach this via the super call.
+	// w, h here. TableShape/TableRowShape reach this via the super call. The
+	// canvas of a shape with a direction (eg. a row title with horizontal text,
+	// direction=north) is rotated, so the lines are mapped to the canvas.
 	var mxSwimlanePaintVertexShape = mxSwimlane.prototype.paintVertexShape;
 	mxSwimlane.prototype.paintVertexShape = function(c, x, y, w, h)
 	{
@@ -427,6 +1028,7 @@
 			if (filled && graph.paintTableCellLines != null)
 			{
 				var cell = this.state.cell;
+				var directed = this.getDirectionMap(w, h);
 
 				// A table row only fills its title strip, so the separators are
 				// only covered there. Restricting the repaint to the strip leaves
@@ -436,7 +1038,22 @@
 				{
 					var start = this.getTitleSize();
 
-					if (this.isHorizontal())
+					if (directed != null)
+					{
+						var dir = graph.getSwimlaneDirection(this.style);
+						var cw = directed.width;
+						var ch = directed.height;
+						var sw = (dir == mxConstants.DIRECTION_WEST ||
+							dir == mxConstants.DIRECTION_EAST) ? Math.min(start, cw) : cw;
+						var sh = (dir == mxConstants.DIRECTION_NORTH ||
+							dir == mxConstants.DIRECTION_SOUTH) ? Math.min(start, ch) : ch;
+
+						graph.paintTableCellLines(c, cell,
+							(dir == mxConstants.DIRECTION_EAST) ? cw - sw : 0,
+							(dir == mxConstants.DIRECTION_SOUTH) ? ch - sh : 0,
+							sw, sh, this.stroke, this.strokewidth, directed.map);
+					}
+					else if (this.isHorizontal())
 					{
 						graph.paintTableCellLines(c, cell, 0, 0, w,
 							Math.min(start, h), this.stroke, this.strokewidth);
@@ -447,6 +1064,11 @@
 							Math.min(start, w), h, this.stroke, this.strokewidth);
 					}
 				}
+				else if (directed != null)
+				{
+					graph.paintTableCellLines(c, cell, 0, 0, directed.width,
+						directed.height, this.stroke, this.strokewidth, directed.map);
+				}
 				else
 				{
 					graph.paintTableCellLines(c, cell, 0, 0, w, h,
@@ -454,6 +1076,58 @@
 				}
 			}
 		}
+	};
+
+	/**
+	 * Returns the size of this swimlane in the coordinates of its cell and a
+	 * function that maps a point of the cell to the canvas in paintVertexShape,
+	 * or null if the shape has no direction. In paintVertexShape the canvas is
+	 * translated to the origin of the paint bounds, which have the given size,
+	 * and rotated for the direction (see mxShape.paint and updateTransform).
+	 * The map inverts the rotation of the direction with the flips of the
+	 * shape (see mxSvgCanvas2D.rotate), so the points keep the rotation of the
+	 * cell.
+	 */
+	mxSwimlane.prototype.getDirectionMap = function(w, h)
+	{
+		var theta = (this.direction == mxConstants.DIRECTION_NORTH) ? 270 :
+			((this.direction == mxConstants.DIRECTION_WEST) ? 180 :
+			((this.direction == mxConstants.DIRECTION_SOUTH) ? 90 : 0));
+		var result = null;
+
+		if (theta != 0)
+		{
+			var flipH = this.flipH;
+			var flipV = this.flipV;
+			var cw = (theta != 180) ? h : w;
+			var ch = (theta != 180) ? w : h;
+			var center = new mxPoint(w / 2, h / 2);
+
+			// The canvas is rotated by theta + 180 for two flips and reflected
+			// after a rotation by -theta for one flip, which is its own inverse
+			var rad = ((flipH && flipV) ? -theta - 180 : -theta) * Math.PI / 180;
+			var cos = Math.cos(rad);
+			var sin = Math.sin(rad);
+
+			result = {width: cw, height: ch, map: function(px, py)
+			{
+				var pt = mxUtils.getRotatedPoint(new mxPoint(center.x - cw / 2 + px,
+					center.y - ch / 2 + py), cos, sin, center);
+
+				if (flipH && !flipV)
+				{
+					pt.x = 2 * center.x - pt.x;
+				}
+				else if (flipV && !flipH)
+				{
+					pt.y = 2 * center.y - pt.y;
+				}
+
+				return pt;
+			}};
+		}
+
+		return result;
 	};
 
 	// Cube Shape, supports size style
@@ -622,6 +1296,43 @@
 	};
 
 	mxCellRenderer.registerShape('waypoint', WaypointShape);
+
+	// Tie Shape, paints a line across the lanes of the tie (see
+	// mxGraphView.updateTieLayout) with the stroke of the tie and a head at
+	// one end that scales with the stroke width
+	function TieShape()
+	{
+		mxShape.call(this);
+	};
+
+	mxUtils.extend(TieShape, mxShape);
+
+	TieShape.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		var layout = (this.state != null) ? this.state.tieLayout : null;
+		var length = (layout != null) ? layout.length : 12;
+		var sw = Math.max(0, Math.min(100, this.strokewidth));
+		var cx = x + w / 2;
+		var cy = y + h / 2;
+
+		if (layout != null)
+		{
+			c.rotate(Math.atan2(layout.direction.y, layout.direction.x) * 180 / Math.PI,
+				false, false, cx, cy);
+		}
+
+		c.setLineCap('round');
+		c.begin();
+		c.moveTo(cx, cy - length / 2);
+		c.lineTo(cx, cy + length / 2);
+		c.stroke();
+
+		c.setFillColor(this.stroke);
+		c.rect(cx - sw, cy + length / 2, 2 * sw, 1.5 * sw);
+		c.fill();
+	};
+
+	mxCellRenderer.registerShape('tie', TieShape);
 	
 	// Cube Shape, supports size style
 	function IsoRectangleShape()
@@ -1106,50 +1817,6 @@
 
 	mxCellRenderer.registerShape('folder', FolderShape);
 
-	FolderShape.prototype.getLabelMargins = function(rect)
-	{
-		if (mxUtils.getValue(this.style, 'boundedLbl', false))
-		{
-			var sizeY = mxUtils.getValue(this.style, 'tabHeight', 15) * this.scale;
-
-			if (mxUtils.getValue(this.style, 'labelInHeader', false))
-			{
-				var sizeX = mxUtils.getValue(this.style, 'tabWidth', 15) * this.scale;
-				var sizeY = mxUtils.getValue(this.style, 'tabHeight', 15) * this.scale;
-				var rounded = mxUtils.getValue(this.style, 'rounded', false);
-				var absArcSize = mxUtils.getValue(this.style, 'absoluteArcSize', false);
-				var arcSize = parseFloat(mxUtils.getValue(this.style, 'arcSize', this.arcSize));
-				
-				if (!absArcSize)
-				{
-					arcSize = Math.min(rect.width, rect.height) * arcSize;
-				}
-				
-				arcSize = Math.min(arcSize, rect.width * 0.5, (rect.height - sizeY) * 0.5);
-					
-				if (!rounded)
-				{
-					arcSize = 0;
-				}
-
-				if (mxUtils.getValue(this.style, 'tabPosition', this.tabPosition) == 'left')
-				{
-					return new mxRectangle(arcSize, 0, Math.min(rect.width, rect.width - sizeX), Math.min(rect.height, rect.height - sizeY));
-				}
-				else
-				{
-					return new mxRectangle(Math.min(rect.width, rect.width - sizeX), 0, arcSize, Math.min(rect.height, rect.height - sizeY));
-				}
-			}
-			else
-			{
-				return new mxRectangle(0, Math.min(rect.height, sizeY), 0, 0);
-			}
-		}
-		
-		return null;
-	};
-		
 	//**********************************************************************************************************************************************************
 	//UML State shape
 	//**********************************************************************************************************************************************************
@@ -1365,6 +2032,134 @@
 
 	mxCellRenderer.registerShape('card', CardShape);
 
+	/**
+	 * Returns the polar form of the given quadratic curve, which is the point
+	 * at t for u = v = t and the control point of the part of the curve
+	 * between u and v otherwise.
+	 */
+	function getQuadPolar(q, u, v)
+	{
+		var a = (1 - u) * (1 - v);
+		var b = u * (1 - v) + v * (1 - u);
+
+		return new mxPoint(a * q.p0.x + b * q.c.x + u * v * q.p1.x,
+			a * q.p0.y + b * q.c.y + u * v * q.p1.y);
+	};
+
+	/**
+	 * Adds a closed path that starts at x0, y0 to the given canvas. Each
+	 * segment is [x, y] for a line or [cx, cy, x, y] for a quadratic curve to
+	 * x, y, and a line back to x0, y0 closes the path. If rounded is true and
+	 * arcSize is greater than 0 then the corners between segments whose
+	 * tangents are not parallel are rounded with curves that keep the
+	 * tangents of the segments. The arc size is reduced to half of a line
+	 * and to half of the parameter range of a curve.
+	 */
+	function addCurvedPath(c, x0, y0, segs, rounded, arcSize)
+	{
+		if (!rounded || !(arcSize > 0))
+		{
+			c.moveTo(x0, y0);
+
+			for (var i = 0; i < segs.length; i++)
+			{
+				var s = segs[i];
+
+				if (s.length == 2)
+				{
+					c.lineTo(s[0], s[1]);
+				}
+				else
+				{
+					c.quadTo(s[0], s[1], s[2], s[3]);
+				}
+			}
+
+			c.close();
+		}
+		else
+		{
+			var last = segs[segs.length - 1];
+
+			if (last[last.length - 2] != x0 || last[last.length - 1] != y0)
+			{
+				segs = segs.concat([[x0, y0]]);
+			}
+
+			// Quadratic curves where lines have the control point in the middle
+			var curves = [];
+			var p = new mxPoint(x0, y0);
+
+			for (var i = 0; i < segs.length; i++)
+			{
+				var s = segs[i];
+				var pe = new mxPoint(s[s.length - 2], s[s.length - 1]);
+				var line = s.length == 2;
+
+				curves.push({p0: p, p1: pe, line: line, corner: false, t0: 0, t1: 0, c: (line) ?
+					new mxPoint((p.x + pe.x) / 2, (p.y + pe.y) / 2) :
+					new mxPoint(s[0], s[1])});
+				p = pe;
+			}
+
+			// Finds the corners and the parameters where they are cut off
+			for (var i = 0; i < curves.length; i++)
+			{
+				var q0 = curves[i];
+				var q1 = curves[(i + 1) % curves.length];
+				var dx0 = q0.p1.x - q0.c.x;
+				var dy0 = q0.p1.y - q0.c.y;
+				var dx1 = q1.c.x - q1.p0.x;
+				var dy1 = q1.c.y - q1.p0.y;
+				var d0 = Math.sqrt(dx0 * dx0 + dy0 * dy0);
+				var d1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+
+				if (Math.abs(dx0 * dy1 - dy0 * dx1) > 1e-6 * d0 * d1)
+				{
+					q0.corner = true;
+					q0.t1 = Math.min(0.5, arcSize / Math.max(1, 2 * d0));
+					q1.t0 = Math.min(0.5, arcSize / Math.max(1, 2 * d1));
+				}
+			}
+
+			p = getQuadPolar(curves[0], curves[0].t0, curves[0].t0);
+			c.moveTo(p.x, p.y);
+
+			for (var i = 0; i < curves.length; i++)
+			{
+				var q0 = curves[i];
+				var t = 1 - q0.t1;
+				var pe = getQuadPolar(q0, t, t);
+
+				if (q0.line)
+				{
+					c.lineTo(pe.x, pe.y);
+				}
+				else
+				{
+					var pc = getQuadPolar(q0, q0.t0, t);
+					c.quadTo(pc.x, pc.y, pe.x, pe.y);
+				}
+
+				// Replaces the parts that were cut off with a cubic curve
+				// along the tangents of the remaining parts, which is the
+				// quadratic curve to the corner point for two lines
+				if (q0.corner)
+				{
+					var q1 = curves[(i + 1) % curves.length];
+					var pn = getQuadPolar(q1, q1.t0, q1.t0);
+					var c0 = getQuadPolar(q0, t, 1);
+					var c1 = getQuadPolar(q1, 0, q1.t0);
+
+					c.curveTo(pe.x + (c0.x - pe.x) * 4 / 3, pe.y + (c0.y - pe.y) * 4 / 3,
+						pn.x + (c1.x - pn.x) * 4 / 3, pn.y + (c1.y - pn.y) * 4 / 3, pn.x, pn.y);
+				}
+			}
+
+			c.close();
+		}
+	};
+
 	// Tape shape
 	function TapeShape()
 	{
@@ -1375,19 +2170,22 @@
 
 	TapeShape.prototype.size = 0.4;
 
+	TapeShape.prototype.isRoundable = function()
+	{
+		return true;
+	};
+
 	TapeShape.prototype.redrawPath = function(c, x, y, w, h)
 	{
 		var dy = h * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'size', this.size))));
 		var fy = 1.4;
-		
-		c.moveTo(0, dy / 2);
-		c.quadTo(w / 4, dy * fy, w / 2, dy / 2);
-		c.quadTo(w * 3 / 4, dy * (1 - fy), w, dy / 2);
-		c.lineTo(w, h - dy / 2);
-		c.quadTo(w * 3 / 4, h - dy * fy, w / 2, h - dy / 2);
-		c.quadTo(w / 4, h - dy * (1 - fy), 0, h - dy / 2);
-		c.lineTo(0, dy / 2);
-		c.close();
+		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
+
+		addCurvedPath(c, 0, dy / 2, [[w / 4, dy * fy, w / 2, dy / 2],
+			[w * 3 / 4, dy * (1 - fy), w, dy / 2], [w, h - dy / 2],
+			[w * 3 / 4, h - dy * fy, w / 2, h - dy / 2],
+			[w / 4, h - dy * (1 - fy), 0, h - dy / 2], [0, dy / 2]],
+			this.isRounded, arcSize);
 		c.end();
 	};
 	
@@ -1430,6 +2228,11 @@
 
 	DocumentShape.prototype.size = 0.3;
 
+	DocumentShape.prototype.isRoundable = function()
+	{
+		return true;
+	};
+
 	DocumentShape.prototype.getLabelMargins = function(rect)
 	{
 		if (mxUtils.getValue(this.style, 'boundedLbl', false))
@@ -1445,14 +2248,14 @@
 	{
 		var dy = h * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'size', this.size))));
 		var fy = 1.4;
-		
-		c.moveTo(0, 0);
-		c.lineTo(w, 0);
-		c.lineTo(w, h - dy / 2);
-		c.quadTo(w * 3 / 4, h - dy * fy, w / 2, h - dy / 2);
-		c.quadTo(w / 4, h - dy * (1 - fy), 0, h - dy / 2);
-		c.lineTo(0, dy / 2);
-		c.close();
+		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
+
+		// Left side ends at the corner if rounded and at dy / 2 as before otherwise
+		addCurvedPath(c, 0, 0, [[w, 0], [w, h - dy / 2],
+			[w * 3 / 4, h - dy * fy, w / 2, h - dy / 2],
+			[w / 4, h - dy * (1 - fy), 0, h - dy / 2],
+			[0, (this.isRounded) ? 0 : dy / 2]],
+			this.isRounded, arcSize);
 		c.end();
 	};
 
@@ -1710,6 +2513,9 @@
 		this.canvas.arcTo = mxUtils.bind(this, HandJiggle.prototype.arcTo);
 	};
 	
+	// Maximum number of segments per line
+	HandJiggle.prototype.maxSegments = 10000;
+
 	HandJiggle.prototype.moveTo = function(endX, endY)
 	{
 		this.originalMoveTo.apply(this.canvas, arguments);
@@ -1769,7 +2575,8 @@
 				return;
 			}
 	
-			var segs = Math.round(dist / 10);
+			// Limits the number of segments for huge sizes
+			var segs = Math.min(Math.round(dist / 10), this.maxSegments);
 			var variation = this.defaultVariation;
 			
 			if (segs < 5)
@@ -2075,6 +2882,11 @@
 
 	TransparentShape.prototype.paintForeground = function(c, x, y, w, h) 	{ };
 
+	TransparentShape.prototype.isGlassable = function()
+	{
+		return false;
+	};
+
 	mxCellRenderer.registerShape('transparent', TransparentShape);
 
 	// Callout shape
@@ -2370,7 +3182,7 @@
 	var mxRhombusPaintVertexShape = mxRhombus.prototype.paintVertexShape;
 	mxRhombus.prototype.getLabelBounds = function(rect)
 	{
-		if (this.style['double'] == 1)
+		if (this.style != null && this.style['double'] == 1)
 		{
 			var margin = (Math.max(2, this.strokewidth + 1) * 2 + parseFloat(
 				this.style[mxConstants.STYLE_MARGIN] || 0)) * this.scale;
@@ -2386,9 +3198,10 @@
 		mxRhombusPaintVertexShape.apply(this, arguments);
 
 		// Stash original bounds; double-handling below mutates x, y, w, h.
+		// Indicator shapes of labels have no style.
 		var gx = x, gy = y, gw = w, gh = h;
 
-		if (!this.outline && this.style['double'] == 1)
+		if (!this.outline && this.style != null && this.style['double'] == 1)
 		{
 			var margin = Math.max(2, this.strokewidth + 1) * 2 +
 				parseFloat(this.style[mxConstants.STYLE_MARGIN] || 0);
@@ -2484,6 +3297,17 @@
 		{
 			this.paintGlassEffect(c, x, y, w, h, 0);
 		}
+	};
+
+	// Adds glass support for the paintVertexShape overrides above
+	mxEllipse.prototype.isGlassable = function()
+	{
+		return true;
+	};
+
+	mxRhombus.prototype.isGlassable = function()
+	{
+		return true;
 	};
 
 	// CompositeShape
@@ -3111,6 +3935,16 @@
 		if (size < lineEnd)
 		{
 			c.setDashed(mxUtils.getValue(this.style, 'lifelineDashed', '1') == '1');
+
+			// Optional color of the line, eg. Mermaid 12's redux themes draw a
+			// palette-colored head over a line in the ink color
+			var lifelineColor = mxUtils.getValue(this.style, 'lifelineColor', null);
+
+			if (lifelineColor != null)
+			{
+				c.setStrokeColor(lifelineColor);
+			}
+
 			c.begin();
 			c.moveTo(x + w / 2, y + size);
 			c.lineTo(x + w / 2, y + lineEnd);
@@ -3167,7 +4001,10 @@
 
 		c.setFontColor(mxUtils.getValue(this.style, mxConstants.STYLE_FONTCOLOR, 'black'));
 		c.setFontBackgroundColor(mxUtils.getValue(this.style, mxConstants.STYLE_LABEL_BACKGROUNDCOLOR, null));
-		c.setFontBorderColor(mxUtils.getValue(this.style, mxConstants.STYLE_LABEL_BORDERCOLOR, null));
+		var borderWidth = parseFloat(mxUtils.getValue(this.style, mxConstants.STYLE_LABEL_BORDER_WIDTH, 1));
+		c.setFontBorderColor((isNaN(borderWidth) || borderWidth > 0) ? mxUtils.getValue(this.style,
+			mxConstants.STYLE_LABEL_BORDERCOLOR, null) : null);
+		c.setFontBorderWidth(borderWidth);
 		c.setFontFamily(mxUtils.getValue(this.style, mxConstants.STYLE_FONTFAMILY, mxConstants.DEFAULT_FONTFAMILY));
 		c.setFontSize(parseFloat(mxUtils.getValue(this.style, mxConstants.STYLE_FONTSIZE, mxConstants.DEFAULT_FONTSIZE)));
 		c.setFontStyle(parseInt(mxUtils.getValue(this.style, mxConstants.STYLE_FONTSTYLE, 0)));
@@ -3194,10 +4031,11 @@
 		// sanitization the normal label path applies in getLabelValue, so a
 		// crafted html=1 label would inject script into the foot copy (XSS).
 		// Sanitize here to match the head label; plain text is escaped by
-		// the canvas and needs no extra handling.
+		// the canvas and needs no extra handling. Style elements are scoped
+		// as in getLabelValue, as they would apply to the whole document.
 		if (format == 'html')
 		{
-			label = Graph.sanitizeHtml(label);
+			label = Graph.scopeHtmlStyles(Graph.sanitizeHtml(label));
 		}
 
 		c.text(tx, ty, wrap ? w - spacingLeft - spacingRight : 0, 0, label,
@@ -3324,11 +4162,12 @@
 			}
 		}
 
-		var sw = (parseFloat(vertex.style[mxConstants.STYLE_STROKEWIDTH] || 1) * vertex.view.scale / 2) - 1;
+		var px = vertex.view.getPixelSize();
+		var sw = (parseFloat(vertex.style[mxConstants.STYLE_STROKEWIDTH] || 1) * vertex.view.scale / 2) - px;
 
 		if (next.x < bounds.getCenterX())
 		{
-			sw += 1;
+			sw += px;
 			sw *= -1;
 		}
 
@@ -3379,7 +4218,8 @@
 		{
 			if (x > terminal.x && x < terminal.x + terminal.width)
 			{
-				x = (side > 0) ? terminal.x + terminal.width + 1 : terminal.x - 1;
+				var px = terminal.view.getPixelSize();
+				x = (side > 0) ? terminal.x + terminal.width + px : terminal.x - px;
 			}
 		};
 
@@ -3577,11 +4417,12 @@
 
 	mxPerimeter.BackbonePerimeter = function (bounds, vertex, next, orthogonal)
 	{
-		var sw = (parseFloat(vertex.style[mxConstants.STYLE_STROKEWIDTH] || 1) * vertex.view.scale / 2) - 1;
+		var px = vertex.view.getPixelSize();
+		var sw = (parseFloat(vertex.style[mxConstants.STYLE_STROKEWIDTH] || 1) * vertex.view.scale / 2) - px;
 		
 		if (vertex.style['backboneSize'] != null)
 		{
-			sw += (parseFloat(vertex.style['backboneSize']) * vertex.view.scale / 2) - 1;
+			sw += (parseFloat(vertex.style['backboneSize']) * vertex.view.scale / 2) - px;
 		}
 		
 		if (vertex.style[mxConstants.STYLE_DIRECTION] == 'south' ||
@@ -3589,7 +4430,7 @@
 		{
 			if (next.x < bounds.getCenterX())
 			{
-				sw += 1;
+				sw += px;
 				sw *= -1;
 			}
 			
@@ -3600,7 +4441,7 @@
 		{
 			if (next.y < bounds.getCenterY())
 			{
-				sw += 1;
+				sw += px;
 				sw *= -1;
 			}
 			
@@ -3611,17 +4452,147 @@
 	
 	mxStyleRegistry.putValue('backbonePerimeter', mxPerimeter.BackbonePerimeter);
 
+	/**
+	 * Returns the outline of the given callout in the given bounds with sharp
+	 * corners and the pointer, as painted in CalloutShape.redrawPath and turned
+	 * for the direction of the shape.
+	 */
+	function getCalloutOutline(vertex, bounds)
+	{
+		var s = vertex.view.scale;
+		var direction = mxUtils.getValue(vertex.style, mxConstants.STYLE_DIRECTION, mxConstants.DIRECTION_EAST);
+		var vertical = direction == mxConstants.DIRECTION_NORTH || direction == mxConstants.DIRECTION_SOUTH;
+		var w = (vertical) ? bounds.height : bounds.width;
+		var h = (vertical) ? bounds.width : bounds.height;
+		var size = Math.max(0, Math.min(h, parseFloat(mxUtils.getValue(vertex.style, 'size',
+			CalloutShape.prototype.size)) * s));
+		var dx = w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(vertex.style, 'position',
+			CalloutShape.prototype.position))));
+		var dx2 = w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(vertex.style, 'position2',
+			CalloutShape.prototype.position2))));
+		var base = Math.max(0, Math.min(w, parseFloat(mxUtils.getValue(vertex.style, 'base',
+			CalloutShape.prototype.base)) * s));
+		var pts = [new mxPoint(0, 0), new mxPoint(w, 0), new mxPoint(w, h - size),
+			new mxPoint(Math.min(w, dx + base), h - size), new mxPoint(dx2, h),
+			new mxPoint(Math.max(0, dx), h - size), new mxPoint(0, h - size), new mxPoint(0, 0)];
+		var rot = (direction == mxConstants.DIRECTION_NORTH) ? 270 :
+			((direction == mxConstants.DIRECTION_WEST) ? 180 :
+			((direction == mxConstants.DIRECTION_SOUTH) ? 90 : 0));
+		var cos = Math.cos(mxUtils.toRadians(rot));
+		var sin = Math.sin(mxUtils.toRadians(rot));
+		var center = new mxPoint(bounds.getCenterX(), bounds.getCenterY());
+
+		for (var i = 0; i < pts.length; i++)
+		{
+			pts[i] = mxUtils.getRotatedPoint(new mxPoint(center.x + pts[i].x - w / 2,
+				center.y + pts[i].y - h / 2), cos, sin, center);
+		}
+
+		return pts;
+	};
+
 	// Callout Perimeter
 	mxPerimeter.CalloutPerimeter = function (bounds, vertex, next, orthogonal)
 	{
-		return mxPerimeter.RectanglePerimeter(mxUtils.getDirectedBounds(bounds, new mxRectangle(0, 0, 0,
-			Math.max(0, Math.min(bounds.height, parseFloat(mxUtils.getValue(vertex.style, 'size',
-			CalloutShape.prototype.size)) * vertex.view.scale))),
-			vertex.style), vertex, next, orthogonal);
+		var outline = bounds;
+		var s = vertex.view.scale;
+		var size = Math.max(0, Math.min(bounds.height, parseFloat(mxUtils.getValue(vertex.style, 'size',
+			CalloutShape.prototype.size)) * s));
+
+		// Routes are kept in model units in model coordinates, so the margin,
+		// which getDirectedBounds rounds, is rounded in model units instead
+		// of screen pixels to not depend on the scale of the validation
+		if (vertex.view.modelCoordinates)
+		{
+			var b = mxUtils.getDirectedBounds(new mxRectangle(0, 0, mxUtils.unscale(bounds.width, s),
+				mxUtils.unscale(bounds.height, s)), new mxRectangle(0, 0, 0, mxUtils.unscale(size, s)),
+				vertex.style);
+			bounds = new mxRectangle(bounds.x + b.x * s, bounds.y + b.y * s, b.width * s, b.height * s);
+		}
+		else
+		{
+			bounds = mxUtils.getDirectedBounds(bounds, new mxRectangle(0, 0, 0, size), vertex.style);
+		}
+
+		var pt = mxPerimeter.RectanglePerimeter(bounds, vertex, next, orthogonal);
+
+		// Orthogonal ends that are not horizontal or vertical on the body (eg.
+		// level with the pointer) or that end in the base of the pointer use the
+		// outline with the pointer. Other ends keep the point on the body. Callouts
+		// whose body getDirectedBounds moves for a flip are not changed, as the next
+		// point is already flipped (see mxGraphView.getPerimeterPoint).
+		var direction = mxUtils.getValue(vertex.style, mxConstants.STYLE_DIRECTION, mxConstants.DIRECTION_EAST);
+		var flipped = mxUtils.getValue(vertex.style, (direction == mxConstants.DIRECTION_NORTH ||
+			direction == mxConstants.DIRECTION_SOUTH) ? mxConstants.STYLE_FLIPH : mxConstants.STYLE_FLIPV, 0) == 1;
+
+		if (orthogonal && pt != null && !flipped)
+		{
+			var p = getOutlinePerimeterPoint(outline, getCalloutOutline(vertex, outline), next, orthogonal);
+
+			if (p != null && Math.min(Math.abs(p.x - next.x), Math.abs(p.y - next.y)) < 0.01 &&
+				Math.max(Math.abs(p.x - pt.x), Math.abs(p.y - pt.y)) > 0.5)
+			{
+				pt = p;
+			}
+		}
+
+		return pt;
 	};
 	
 	mxStyleRegistry.putValue('calloutPerimeter', mxPerimeter.CalloutPerimeter);
 	
+	/**
+	 * Returns the point where an edge to the given next point leaves the given
+	 * outline in the given bounds. For orthogonal edges, the point is on the
+	 * vertical or horizontal line through the next point. If that line does not
+	 * reach the outline between the center and the next point (eg. beside the
+	 * slanted side of a parallelogram), the point of the outline on the line
+	 * that is nearest to the next point is used, and if the line misses the
+	 * outline, the point towards the center (the center was used before, which
+	 * started the edge inside the shape). The optional range is the extent in
+	 * which the vertical and horizontal lines are used (default is the bounds).
+	 */
+	function getOutlinePerimeterPoint(bounds, points, next, orthogonal, range)
+	{
+		range = (range != null) ? range : bounds;
+		var x = range.x;
+		var y = range.y;
+		var w = range.width;
+		var h = range.height;
+		var center = new mxPoint(bounds.getCenterX(), bounds.getCenterY());
+		var result = null;
+
+		if (orthogonal)
+		{
+			var p1 = center.clone();
+
+			if (next.x < x || next.x > x + w)
+			{
+				p1.y = next.y;
+				result = mxUtils.getPerimeterPoint(points, p1, next);
+
+				if (result == null)
+				{
+					p1.x = (next.x > p1.x) ? x - 1 : x + w + 1;
+					result = mxUtils.getPerimeterPoint(points, p1, next);
+				}
+			}
+			else
+			{
+				p1.x = next.x;
+				result = mxUtils.getPerimeterPoint(points, p1, next);
+
+				if (result == null && (next.y < y || next.y > y + h))
+				{
+					p1.y = (next.y > p1.y) ? y - 1 : y + h + 1;
+					result = mxUtils.getPerimeterPoint(points, p1, next);
+				}
+			}
+		}
+
+		return (result != null) ? result : mxUtils.getPerimeterPoint(points, center, next);
+	};
+
 	// Parallelogram Perimeter
 	mxPerimeter.ParallelogramPerimeter = function (bounds, vertex, next, orthogonal)
 	{
@@ -3663,24 +4634,7 @@
 							new mxPoint(x + w - dx, y + h), new mxPoint(x, y + h), new mxPoint(x + dx, y)];
 		}	
 		
-		var cx = bounds.getCenterX();
-		var cy = bounds.getCenterY();
-		
-		var p1 = new mxPoint(cx, cy);
-		
-		if (orthogonal)
-		{
-			if (next.x < x || next.x > x + w)
-			{
-				p1.y = next.y;
-			}
-			else
-			{
-				p1.x = next.x;
-			}
-		}
-		
-		return mxUtils.getPerimeterPoint(points, p1, next);
+		return getOutlinePerimeterPoint(bounds, points, next, orthogonal);
 	};
 	
 	mxStyleRegistry.putValue('parallelogramPerimeter', mxPerimeter.ParallelogramPerimeter);
@@ -3736,24 +4690,7 @@
 						new mxPoint(x + w, y + h - dy), new mxPoint(x, y + h), new mxPoint(x, y)];
 		}		
 
-		var cx = bounds.getCenterX();
-		var cy = bounds.getCenterY();
-		
-		var p1 = new mxPoint(cx, cy);
-		
-		if (orthogonal)
-		{
-			if (next.x < x || next.x > x + w)
-			{
-				p1.y = next.y;
-			}
-			else
-			{
-				p1.x = next.x;
-			}
-		}
-
-		return mxUtils.getPerimeterPoint(points, p1, next);
+		return getOutlinePerimeterPoint(bounds, points, next, orthogonal);
 	};
 	
 	mxStyleRegistry.putValue('trapezoidPerimeter', mxPerimeter.TrapezoidPerimeter);
@@ -3816,21 +4753,7 @@
 							new mxPoint(x, y + h - dy), new mxPoint(x, y)];
 		}		
 		
-		var p1 = new mxPoint(cx, cy);
-		
-		if (orthogonal)
-		{
-			if (next.x < x || next.x > x + w)
-			{
-				p1.y = next.y;
-			}
-			else
-			{
-				p1.x = next.x;
-			}
-		}
-		
-		return mxUtils.getPerimeterPoint(points, p1, next);
+		return getOutlinePerimeterPoint(bounds, points, next, orthogonal);
 	};
 	
 	mxStyleRegistry.putValue('stepPerimeter', mxPerimeter.StepPerimeter);
@@ -3881,25 +4804,82 @@
 						new mxPoint(x, cy), new mxPoint(x + dx, y)];
 		}		
 
-		var p1 = new mxPoint(cx, cy);
-		
-		if (orthogonal)
-		{
-			if (next.x < x || next.x > x + w)
-			{
-				p1.y = next.y;
-			}
-			else
-			{
-				p1.x = next.x;
-			}
-		}
-		
-		return mxUtils.getPerimeterPoint(points, p1, next);
+		return getOutlinePerimeterPoint(bounds, points, next, orthogonal);
 	};
 	
 	mxStyleRegistry.putValue('hexagonPerimeter2', mxPerimeter.HexagonPerimeter2);
-	
+
+	// Cloud Perimeter
+	mxPerimeter.CloudPerimeter = function (bounds, vertex, next, orthogonal)
+	{
+		// Ends on the outline as painted (perimeter=cloudPerimeter), as the ellipse
+		// of ellipse;shape=cloud is far from the bumps of the cloud near its bounds.
+		// The orthogonal ranges are the extent of the bumps (see getChannelBounds).
+		var points = (vertex != null && vertex.shape != null &&
+			vertex.view.graph.getRoundedPolygonOutline != null) ?
+			vertex.view.graph.getRoundedPolygonOutline(vertex, bounds) : null;
+		var pt = (points != null) ? getOutlinePerimeterPoint(bounds, points, next, orthogonal,
+			vertex.view.graph.getOutlineBounds(points)) : null;
+
+		return (pt != null) ? pt : mxPerimeter.EllipsePerimeter.apply(this, arguments);
+	};
+
+	mxStyleRegistry.putValue('cloudPerimeter', mxPerimeter.CloudPerimeter);
+
+	// Outline Perimeter
+	mxPerimeter.OutlinePerimeter = function (bounds, vertex, next, orthogonal)
+	{
+		// Ends on the convex hull of what the shape paints (perimeter=outlinePerimeter,
+		// see Graph.getPerimeterOutline), or on the bounds if it paints nothing
+		var pts = (vertex != null && vertex.view.graph.getPerimeterOutline != null) ?
+			vertex.view.graph.getPerimeterOutline(vertex, bounds) : null;
+		var pt = null;
+
+		if (pts != null)
+		{
+			var c = new mxPoint(bounds.getCenterX(), bounds.getCenterY());
+			var b = vertex.view.graph.getOutlineBounds(pts);
+
+			if (orthogonal)
+			{
+				// Uses the extent of the outline as it may not reach the bounds
+				// (see getChannelBounds), and the axis from beyond the far side
+				// of the outline as the centre may not be inside it on the axis
+				var p1 = null;
+
+				if (next.x < b.x || next.x > b.x + b.width)
+				{
+					p1 = new mxPoint((next.x < c.x) ? b.x + b.width + 1 : b.x - 1, next.y);
+				}
+				else
+				{
+					p1 = new mxPoint(next.x, (next.y < c.y) ? b.y + b.height + 1 : b.y - 1);
+				}
+
+				pt = mxUtils.getPerimeterPoint(pts, p1, next);
+			}
+
+			// Probes with a point on the ray from the centre beyond the outline,
+			// which may reach far beyond the bounds (eg. the tail of a callout),
+			// as the next point may be on or inside the outline
+			var dx = next.x - c.x;
+			var dy = next.y - c.y;
+			var d = Math.sqrt(dx * dx + dy * dy);
+
+			if (pt == null && d > 0)
+			{
+				var f = Math.max(2 * (bounds.width + bounds.height),
+					Math.max(Math.abs(b.x - c.x), Math.abs(b.x + b.width - c.x)) +
+					Math.max(Math.abs(b.y - c.y), Math.abs(b.y + b.height - c.y)) + 1) / d;
+				pt = mxUtils.getPerimeterPoint(pts, c, new mxPoint(c.x + dx * f, c.y + dy * f));
+			}
+		}
+
+		return (pt != null) ? pt : mxPerimeter.RectanglePerimeter.apply(this, arguments);
+	};
+
+	mxStyleRegistry.putValue('outlinePerimeter', mxPerimeter.OutlinePerimeter);
+
 	// Provided Interface Shape (aka Lollipop)
 	function LollipopShape()
 	{
@@ -4496,18 +5476,20 @@
 
 	DataStorageShape.prototype.fixedSize = 20;
 
+	DataStorageShape.prototype.isRoundable = function()
+	{
+		return true;
+	};
+
 	DataStorageShape.prototype.redrawPath = function(c, x, y, w, h)
 	{
 		var fixed = mxUtils.getValue(this.style, 'fixedSize', '0') != '0';
 		var s = (fixed) ? Math.max(0, Math.min(w, parseFloat(mxUtils.getValue(this.style, 'size', this.fixedSize)))) :
 			w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'size', this.size))));
-		
-		c.moveTo(s, 0);
-		c.lineTo(w, 0);
-		c.quadTo(w - s * 2, h / 2, w, h);
-		c.lineTo(s, h);
-		c.quadTo(s - s * 2, h / 2, s, 0);
-		c.close();
+		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
+
+		addCurvedPath(c, s, 0, [[w, 0], [w - s * 2, h / 2, w, h], [s, h],
+			[s - s * 2, h / 2, s, 0]], this.isRounded, arcSize);
 		c.end();
 	};
 
@@ -4521,12 +5503,17 @@
 
 	mxUtils.extend(OrShape, mxActor);
 
+	OrShape.prototype.isRoundable = function()
+	{
+		return true;
+	};
+
 	OrShape.prototype.redrawPath = function(c, x, y, w, h)
 	{
-		c.moveTo(0, 0);
-		c.quadTo(w, 0, w, h / 2);
-		c.quadTo(w, h, 0, h);
-		c.close();
+		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
+
+		addCurvedPath(c, 0, 0, [[w, 0, w, h / 2], [w, h, 0, h]],
+			this.isRounded, arcSize);
 		c.end();
 	};
 
@@ -4540,13 +5527,17 @@
 
 	mxUtils.extend(XorShape, mxActor);
 
+	XorShape.prototype.isRoundable = function()
+	{
+		return true;
+	};
+
 	XorShape.prototype.redrawPath = function(c, x, y, w, h)
 	{
-		c.moveTo(0, 0);
-		c.quadTo(w, 0, w, h / 2);
-		c.quadTo(w, h, 0, h);
-		c.quadTo(w / 2, h / 2, 0, 0);
-		c.close();
+		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
+
+		addCurvedPath(c, 0, 0, [[w, 0, w, h / 2], [w, h, 0, h],
+			[w / 2, h / 2, 0, 0]], this.isRounded, arcSize);
 		c.end();
 	};
 
@@ -4728,6 +5719,11 @@
 		c.fillAndStroke();
 	};
 
+	CollateShape.prototype.isGlassable = function()
+	{
+		return false;
+	};
+
 	mxCellRenderer.registerShape('collate', CollateShape);
 
 	// DimensionShape
@@ -4766,6 +5762,11 @@
 		c.stroke();
 	};
 
+	DimensionShape.prototype.isGlassable = function()
+	{
+		return false;
+	};
+
 	mxCellRenderer.registerShape('dimension', DimensionShape);
 
 	// PartialRectangleShape
@@ -4777,6 +5778,11 @@
 	mxUtils.extend(PartialRectangleShape, mxEllipse);
 
 	PartialRectangleShape.prototype.drawHidden = true;
+
+	PartialRectangleShape.prototype.isGlassable = function()
+	{
+		return false;
+	};
 
 	PartialRectangleShape.prototype.paintVertexShape = function(c, x, y, w, h)
 	{
@@ -6531,6 +7537,544 @@
 	// Registers the filledEdge shape
 	mxCellRenderer.registerShape('filledEdge', FilledEdge);
 
+	// Tapered arrow shape: a band whose width changes linearly from startWidth
+	// at the source to endWidth at the target (before the marker), filled with
+	// fillColor (and gradientColor) and outlined with strokeColor
+	function TaperedArrowShape()
+	{
+		mxConnector.call(this);
+	};
+
+	mxUtils.extend(TaperedArrowShape, mxConnector);
+
+	TaperedArrowShape.prototype.defaultStartWidth = 12;
+
+	TaperedArrowShape.prototype.defaultEndWidth = 2;
+
+	TaperedArrowShape.prototype.getStartWidth = function()
+	{
+		return Math.max(0, mxUtils.getNumber(this.style, 'startWidth', this.defaultStartWidth));
+	};
+
+	TaperedArrowShape.prototype.getEndWidth = function()
+	{
+		return Math.max(0, mxUtils.getNumber(this.style, 'endWidth', this.defaultEndWidth));
+	};
+
+	TaperedArrowShape.prototype.augmentBoundingBox = function(bbox)
+	{
+		mxConnector.prototype.augmentBoundingBox.apply(this, arguments);
+
+		// Allows for the band and the markers that are scaled with the width
+		bbox.grow(Math.max(this.getStartWidth(), this.getEndWidth()) * this.scale);
+	};
+
+	TaperedArrowShape.prototype.paintLine = function(c, pts, rounded)
+	{
+		if (rounded)
+		{
+			var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE,
+				mxConstants.LINE_ARCSIZE) / 2;
+			pts = this.getRoundedPoints(pts, arcSize);
+		}
+
+		this.paintTaperedLine(c, pts);
+	};
+
+	TaperedArrowShape.prototype.paintCurvedLine = function(c, pts)
+	{
+		this.paintTaperedLine(c, Graph.getCurvePoints(pts, false));
+	};
+
+	TaperedArrowShape.prototype.paintBezierLine = function(c, pts)
+	{
+		this.paintTaperedLine(c, Graph.getCurvePoints(pts, true));
+	};
+
+	/**
+	 * Returns a fine polyline for the rounded corners that mxShape.addPoints
+	 * paints for rounded connectors (quadratic curve through each waypoint,
+	 * starting and ending arcSize away from it).
+	 */
+	TaperedArrowShape.prototype.getRoundedPoints = function(pts, arcSize)
+	{
+		var n = pts.length;
+
+		if (n < 3 || pts.indexOf(null) >= 0)
+		{
+			return pts;
+		}
+
+		var steps = 8;
+		var result = [pts[0]];
+		var pt = pts[0];
+
+		for (var i = 1; i < n - 1; i++)
+		{
+			var tmp = pts[i];
+			var dx = pt.x - tmp.x;
+			var dy = pt.y - tmp.y;
+
+			if (dx == 0 && dy == 0)
+			{
+				continue;
+			}
+
+			var dist = Math.sqrt(dx * dx + dy * dy);
+			var p1 = new mxPoint(tmp.x + dx * Math.min(arcSize, dist / 2) / dist,
+				tmp.y + dy * Math.min(arcSize, dist / 2) / dist);
+			result.push(p1);
+
+			// Uses next non-overlapping point
+			var next = pts[i + 1];
+
+			while (i < n - 2 && Math.round(next.x - tmp.x) == 0 &&
+				Math.round(next.y - tmp.y) == 0)
+			{
+				next = pts[i + 2];
+				i++;
+			}
+
+			dx = next.x - tmp.x;
+			dy = next.y - tmp.y;
+			dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+			var p2 = new mxPoint(tmp.x + dx * Math.min(arcSize, dist / 2) / dist,
+				tmp.y + dy * Math.min(arcSize, dist / 2) / dist);
+
+			for (var t = 1; t <= steps; t++)
+			{
+				var u = t / steps, iu = 1 - u;
+				result.push(new mxPoint(
+					iu * iu * p1.x + 2 * iu * u * tmp.x + u * u * p2.x,
+					iu * iu * p1.y + 2 * iu * u * tmp.y + u * u * p2.y));
+			}
+
+			pt = p2;
+		}
+
+		result.push(pts[n - 1]);
+
+		return result;
+	};
+
+	/**
+	 * Returns the point, the unit normal (screen coordinates) and the relative
+	 * position (0 at the start, 1 at the end) of the painted center line at a
+	 * short distance from its start or end, where the width handles are placed.
+	 * Returns null if the shape has not been painted.
+	 */
+	TaperedArrowShape.prototype.getWidthHandleFrame = function(start)
+	{
+		var p = this.centerLine;
+
+		if (p == null || p.length < 2 || this.centerLength == null ||
+			!(this.centerLength > 0))
+		{
+			return null;
+		}
+
+		var s = this.scale;
+		var tr = (this.state != null) ? this.state.view.translate : new mxPoint();
+		var total = this.centerLength;
+		var a = Math.min(total / 4, 24 / s);
+		var n = p.length;
+		var remaining = a;
+		var q = null;
+		var tx = 0, ty = 0;
+
+		for (var i = 0; i < n - 1 && q == null; i++)
+		{
+			var p0 = (start) ? p[i] : p[n - 1 - i];
+			var p1 = (start) ? p[i + 1] : p[n - 2 - i];
+			var dx = p1.x - p0.x;
+			var dy = p1.y - p0.y;
+			var dist = Math.sqrt(dx * dx + dy * dy);
+
+			if (dist > 0 && (dist >= remaining || i == n - 2))
+			{
+				var f = Math.min(1, remaining / dist);
+				q = new mxPoint(p0.x + dx * f, p0.y + dy * f);
+
+				// Tangent in the direction of the edge
+				tx = ((start) ? dx : -dx) / dist;
+				ty = ((start) ? dy : -dy) / dist;
+			}
+			else
+			{
+				remaining -= dist;
+			}
+		}
+
+		if (q == null)
+		{
+			return null;
+		}
+
+		return {x: (q.x + tr.x) * s, y: (q.y + tr.y) * s, nx: -ty, ny: tx,
+			t: (start) ? a / total : 1 - a / total};
+	};
+
+	TaperedArrowShape.prototype.paintTaperedLine = function(c, pts)
+	{
+		this.centerLine = null;
+		this.centerLength = null;
+
+		// Removes duplicate points
+		var p = [];
+
+		for (var i = 0; i < pts.length; i++)
+		{
+			if (pts[i] != null && (p.length == 0 ||
+				pts[i].x != p[p.length - 1].x ||
+				pts[i].y != p[p.length - 1].y))
+			{
+				p.push(pts[i]);
+			}
+		}
+
+		if (p.length < 2)
+		{
+			return;
+		}
+
+		// Normals and lengths of the segments
+		var normals = [];
+		var lengths = [0];
+
+		for (var i = 1; i < p.length; i++)
+		{
+			var dx = p[i].x - p[i - 1].x;
+			var dy = p[i].y - p[i - 1].y;
+			var dist = Math.sqrt(dx * dx + dy * dy);
+			normals.push(new mxPoint(-dy / dist, dx / dist));
+			lengths.push(lengths[i - 1] + dist);
+		}
+
+		var total = lengths[lengths.length - 1];
+
+		// Painted center line for the width handles in model units. The
+		// coordinates of the canvas include the view translate unless the
+		// shape is painted in model units, where viewTranslate is 0.
+		var tr = (this.viewTranslate != null) ? this.viewTranslate :
+			((this.state != null) ? this.state.view.translate : new mxPoint());
+		this.centerLine = [];
+
+		for (var i = 0; i < p.length; i++)
+		{
+			this.centerLine.push(new mxPoint(p[i].x - tr.x, p[i].y - tr.y));
+		}
+
+		this.centerLength = total;
+
+		var sw = this.getStartWidth();
+		var ew = this.getEndWidth();
+		var left = [];
+		var right = [];
+
+		for (var i = 0; i < p.length; i++)
+		{
+			var w = (sw + (ew - sw) * lengths[i] / total) / 2;
+			var n0 = normals[Math.max(0, i - 1)];
+			var n1 = normals[Math.min(normals.length - 1, i)];
+			var nx = n0.x + n1.x;
+			var ny = n0.y + n1.y;
+			var nl = Math.sqrt(nx * nx + ny * ny);
+
+			// Mitered offset limited to twice the width for sharp angles
+			var cos = (nl == 0) ? 0 : nl / 2;
+			var f = w / Math.max(0.5, cos);
+			nx = (nl == 0) ? n1.x : nx / nl;
+			ny = (nl == 0) ? n1.y : ny / nl;
+
+			left.push(new mxPoint(p[i].x + nx * f, p[i].y + ny * f));
+			right.push(new mxPoint(p[i].x - nx * f, p[i].y - ny * f));
+		}
+
+		// The inner side of corners and curves with a radius below the
+		// half width loops back on itself
+		var span = 2 * Math.max(sw, ew);
+		left = this.removeLoops(left, lengths, span);
+		right = this.removeLoops(right, lengths, span);
+
+		// Adds the band to the current path, which is filled and stroked in
+		// paintEdgeShape together with the filled markers
+		c.begin();
+		c.moveTo(left[0].x, left[0].y);
+
+		for (var i = 1; i < left.length; i++)
+		{
+			c.lineTo(left[i].x, left[i].y);
+		}
+
+		// Heads that are part of the outline are added between the sides
+		var endHead = (this.heads != null) ? this.heads[1] : null;
+		var startHead = (this.heads != null) ? this.heads[0] : null;
+
+		if (endHead != null)
+		{
+			c.lineTo(endHead.cl.x, endHead.cl.y);
+			c.lineTo(endHead.tip.x, endHead.tip.y);
+			c.lineTo(endHead.cr.x, endHead.cr.y);
+		}
+
+		for (var i = right.length - 1; i >= 0; i--)
+		{
+			c.lineTo(right[i].x, right[i].y);
+		}
+
+		if (startHead != null)
+		{
+			c.lineTo(startHead.cr.x, startHead.cr.y);
+			c.lineTo(startHead.tip.x, startHead.tip.y);
+			c.lineTo(startHead.cl.x, startHead.cl.y);
+		}
+
+		c.close();
+		this.bandPainted = true;
+	};
+
+	/**
+	 * Width factors of the heads that are painted as part of the outline of
+	 * the band (see mxMarker.createArrow).
+	 */
+	TaperedArrowShape.prototype.outlineHeads = {'classic': 2, 'block': 2,
+		'classicThin': 3, 'blockThin': 3};
+
+	/**
+	 * Markers are scaled with the width of the band at their end so that they
+	 * are always wider than the band. Filled classic and block heads are
+	 * stored in heads and painted as part of the outline of the band, like
+	 * the head of flexArrow, and null is returned for them.
+	 */
+	TaperedArrowShape.prototype.createMarker = function(c, pts, source)
+	{
+		var result = null;
+		var n = pts.length;
+		var type = mxUtils.getValue(this.style, (source) ?
+			mxConstants.STYLE_STARTARROW : mxConstants.STYLE_ENDARROW);
+		var p0 = (source) ? pts[1] : pts[n - 2];
+		var pe = (source) ? pts[0] : pts[n - 1];
+
+		if (type != null && p0 != null && pe != null)
+		{
+			var dx = pe.x - p0.x;
+			var dy = pe.y - p0.y;
+			var dist = Math.sqrt(dx * dx + dy * dy);
+
+			if (dist > 0)
+			{
+				var ux = dx / dist;
+				var uy = dy / dist;
+				var w = (source) ? this.getStartWidth() : this.getEndWidth();
+				var wf = (this.isMergedMarker(source)) ? this.outlineHeads[type] : null;
+				var size = mxUtils.getNumber(this.style, (source) ? mxConstants.STYLE_STARTSIZE :
+					mxConstants.STYLE_ENDSIZE, mxConstants.DEFAULT_MARKERSIZE);
+
+				if (wf != null)
+				{
+					// Same geometry as mxMarker.createArrow with the half width of
+					// the head larger than the half width of the band
+					size += w * wf / 2;
+					var sw = this.strokewidth;
+					var endOffsetX = ux * sw * 1.118;
+					var endOffsetY = uy * sw * 1.118;
+					var unitX = ux * (size + sw);
+					var unitY = uy * (size + sw);
+					var tip = new mxPoint(pe.x - endOffsetX, pe.y - endOffsetY);
+					var f = (type == mxConstants.ARROW_CLASSIC ||
+						type == mxConstants.ARROW_CLASSIC_THIN) ? 3 / 4 : 1;
+					pe.x += -unitX * f - endOffsetX;
+					pe.y += -unitY * f - endOffsetY;
+
+					var c1 = new mxPoint(tip.x - unitX - unitY / wf, tip.y - unitY + unitX / wf);
+					var c2 = new mxPoint(tip.x + unitY / wf - unitX, tip.y - unitY - unitX / wf);
+
+					// Corners on the left and right side of the band (whose direction
+					// is reversed at the start)
+					this.heads[(source) ? 0 : 1] = (source) ? {cl: c2, tip: tip, cr: c1} :
+						{cl: c1, tip: tip, cr: c2};
+				}
+				else
+				{
+					var filled = this.style[(source) ? mxConstants.STYLE_STARTFILL :
+						mxConstants.STYLE_ENDFILL] != 0;
+					result = mxMarker.createMarker(c, this, type, pe, ux, uy,
+						size + w, source, this.strokewidth, filled);
+				}
+			}
+		}
+
+		return result;
+	};
+
+	/**
+	 * Removes the local loops of the given offset polyline by cutting it at
+	 * the self-intersections whose distance along the center line (lengths
+	 * of the corresponding center points) is at most span, so that crossings
+	 * of the edge itself are kept. Loops of at most maxLoopPoints points are
+	 * cut, which limits the time for huge widths and many points.
+	 */
+	TaperedArrowShape.prototype.maxLoopPoints = 1000;
+
+	TaperedArrowShape.prototype.removeLoops = function(pts, lengths, span)
+	{
+		var n = pts.length;
+		var cur = pts[0];
+		var result = [cur];
+		var i = 0;
+
+		while (i < n - 1)
+		{
+			var ip = null;
+			var j = i + 2;
+
+			while (j < n - 1 && j < i + 2 + this.maxLoopPoints &&
+				lengths[j] - lengths[i + 1] <= span)
+			{
+				j++;
+			}
+
+			// Uses the last intersection to remove nested loops
+			for (j--; j >= i + 2 && ip == null; j--)
+			{
+				ip = mxUtils.intersection(cur.x, cur.y, pts[i + 1].x, pts[i + 1].y,
+					pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y);
+			}
+
+			if (ip != null)
+			{
+				cur = ip;
+				i = j + 1;
+			}
+			else
+			{
+				cur = pts[i + 1];
+				i++;
+			}
+
+			result.push(cur);
+		}
+
+		return result;
+	};
+
+	/**
+	 * Markers that are painted as a single closed path and can be added to
+	 * the path of the band.
+	 */
+	TaperedArrowShape.prototype.mergedMarkers = ['classic', 'classicThin', 'block',
+		'blockThin', 'diamond', 'diamondThin', 'doubleBlock', 'box'];
+
+	/**
+	 * Returns true if the given marker is added to the path of the band so it
+	 * is filled and stroked like the band (including gradients, fill styles
+	 * and opacity), as the head of flexArrow.
+	 */
+	TaperedArrowShape.prototype.isMergedMarker = function(source)
+	{
+		return mxUtils.indexOf(this.mergedMarkers, mxUtils.getValue(this.style, (source) ?
+				mxConstants.STYLE_STARTARROW : mxConstants.STYLE_ENDARROW, null)) >= 0 &&
+			mxUtils.getValue(this.style, (source) ? mxConstants.STYLE_STARTFILL :
+				mxConstants.STYLE_ENDFILL, 1) != 0 &&
+			mxUtils.getValue(this.style, (source) ? mxConstants.STYLE_STARTFILLCOLOR :
+				mxConstants.STYLE_ENDFILLCOLOR, null) == null;
+	};
+
+	/**
+	 * Fills the band with the fill color (or gradient) and strokes its outline
+	 * with the stroke color. Filled markers are part of the same path so that
+	 * gradients and fill styles continue into the marker.
+	 */
+	TaperedArrowShape.prototype.paintEdgeShape = function(c, pts)
+	{
+		this.heads = [null, null];
+		var sourceMarker = this.createMarker(c, pts, true);
+		var targetMarker = this.createMarker(c, pts, false);
+		var merged = [];
+		var separate = [];
+
+		if (sourceMarker != null)
+		{
+			((this.isMergedMarker(true)) ? merged : separate).push(
+				{paint: sourceMarker, source: true});
+		}
+
+		if (targetMarker != null)
+		{
+			((this.isMergedMarker(false)) ? merged : separate).push(
+				{paint: targetMarker, source: false});
+		}
+
+		// Makes the filled area clickable
+		var prev = c.pointerEventsValue;
+		c.pointerEventsValue = 'all';
+		this.bandPainted = false;
+		mxPolyline.prototype.paintEdgeShape.apply(this, arguments);
+		c.pointerEventsValue = 'all';
+
+		if (merged.length > 0)
+		{
+			if (!this.bandPainted)
+			{
+				c.begin();
+				this.bandPainted = true;
+			}
+
+			// Collects the paths of the markers in the current path
+			var begin = c.begin;
+			var fill = c.fill;
+			var stroke = c.stroke;
+			var fillAndStroke = c.fillAndStroke;
+			var nop = function() {};
+			c.begin = nop;
+			c.fill = nop;
+			c.stroke = nop;
+			c.fillAndStroke = nop;
+
+			try
+			{
+				for (var i = 0; i < merged.length; i++)
+				{
+					merged[i].paint();
+				}
+			}
+			finally
+			{
+				c.begin = begin;
+				c.fill = fill;
+				c.stroke = stroke;
+				c.fillAndStroke = fillAndStroke;
+			}
+		}
+
+		// Outlines (selection border and the preview of the edge handler)
+		// replace fillAndStroke with stroke
+		if (this.bandPainted)
+		{
+			c.fillAndStroke();
+		}
+
+		c.pointerEventsValue = prev;
+
+		// Other markers use the fill color of the band without gradient
+		if (separate.length > 0)
+		{
+			c.setShadow(false);
+			c.setDashed(false);
+
+			for (var i = 0; i < separate.length; i++)
+			{
+				c.setFillColor(mxUtils.getValue(this.style, (separate[i].source) ?
+					mxConstants.STYLE_STARTFILLCOLOR : mxConstants.STYLE_ENDFILLCOLOR,
+					this.fill));
+				separate[i].paint();
+			}
+		}
+	};
+
+	// Registers the tapered arrow shape
+	mxCellRenderer.registerShape('taperedArrow', TaperedArrowShape);
+
 	// Pipe shape
 	function PipeShape()
 	{
@@ -6602,6 +8146,9 @@
 
 	ZigzagShape.prototype.size = 10;
 
+	// Maximum number of full segments
+	ZigzagShape.prototype.maxSegments = 10000;
+
 	ZigzagShape.prototype.isRoundable = function()
 	{
 		return true;
@@ -6634,8 +8181,8 @@
 		var topY = inset;
 		var bottomY = h - inset;
 
-		// Number of full peak-to-peak segments, adjusted to fit width
-		var numFull = Math.max(1, Math.round(w / size) - 1);
+		// Number of full peak-to-peak segments, adjusted to fit width and limited for huge widths
+		var numFull = Math.min(Math.max(1, Math.round(w / size) - 1), this.maxSegments);
 		var halfWave = w / (numFull + 1);
 		// End segments are half-width so angle matches middle segments
 		var halfEnd = halfWave / 2;
@@ -6695,6 +8242,12 @@
 		}
 
 		c.stroke();
+
+		if (this.glass && !this.outline && this.fill != null && this.fill != mxConstants.NONE)
+		{
+			c.setShadow(false);
+			this.paintGlassEffect(c, 0, 0, w, h, 0);
+		}
 	};
 
 	mxCellRenderer.registerShape('zigzag', ZigzagShape);
@@ -7282,7 +8835,10 @@
 
 			text.setAttribute('font-size', (fontSize * s.scale) + 'px');
 			text.setAttribute('font-family', mxUtils.parseCssFontFamily(fontFamily));
-			text.setAttribute('fill', fontColor);
+
+			// Ignores colors that load resources (see mxAbstractCanvas2D.setFontColor)
+			text.setAttribute('fill', (mxUtils.hasResourceReference(fontColor)) ?
+				'#000000' : fontColor);
 
 			if ((fontStyle & mxConstants.FONT_BOLD) == mxConstants.FONT_BOLD)
 			{
@@ -7673,6 +9229,239 @@
 
 	mxCellRenderer.registerShape('mermaidOdd', OddShape);
 
+	// Person shape of mermaid's C4 diagrams and flowchart `@{shape: person}`
+	// (mermaid 11.17, rendering-elements/shapes/person.ts): a circular head
+	// drawn over a rounded body with the c4model.com proportions. The head
+	// radius is 0.23 of the width, clamped to 16..56 so that a wide body keeps
+	// a person-sized head, the head overlaps the body by 0.27 of its radius,
+	// and the body corners are 0.177 of the width (at most 0.45 of the body
+	// height). The label sits on the body, and edges end on the silhouette
+	// with perimeter=mermaidPersonPerimeter.
+	function MermaidPersonShape()
+	{
+		mxShape.call(this);
+	};
+
+	mxUtils.extend(MermaidPersonShape, mxShape);
+
+	/**
+	 * Returns the head radius, the top and height of the body and the body
+	 * corner radius for the given size.
+	 */
+	MermaidPersonShape.getGeometry = function(w, h)
+	{
+		var headRadius = Math.min(Math.max(w * 0.23, 16), 56);
+		var bodyTop = Math.min(h, 2 * headRadius - headRadius * 0.27);
+		var bodyHeight = h - bodyTop;
+
+		return {headRadius: headRadius, bodyTop: bodyTop, bodyHeight: bodyHeight,
+			bodyRadius: Math.max(0, Math.min(w * 0.177, bodyHeight * 0.45))};
+	};
+
+	MermaidPersonShape.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		var g = MermaidPersonShape.getGeometry(w, h);
+		var r = g.headRadius;
+
+		var head = function()
+		{
+			c.ellipse(x + w / 2 - r, y, 2 * r, 2 * r);
+			c.fillAndStroke();
+		};
+
+		// The head is drawn over the body so the full circle stays visible.
+		// With a shadow, the head is painted first as well so its shadow
+		// falls behind the body instead of onto it.
+		if (this.isShadow)
+		{
+			head();
+		}
+
+		c.roundrect(x, y + g.bodyTop, w, g.bodyHeight, g.bodyRadius, g.bodyRadius);
+		c.fillAndStroke();
+		c.setShadow(false);
+		head();
+	};
+
+	MermaidPersonShape.prototype.getLabelBounds = function(rect)
+	{
+		var g = MermaidPersonShape.getGeometry(rect.width / this.scale,
+			rect.height / this.scale);
+
+		return new mxRectangle(rect.x, rect.y + g.bodyTop * this.scale,
+			rect.width, g.bodyHeight * this.scale);
+	};
+
+	mxCellRenderer.registerShape('mermaidPerson', MermaidPersonShape);
+
+	// Actor of Mermaid's use case diagrams (Mermaid 12, shapes/usecaseActor.ts,
+	// usecaseActorHollow.ts and usecaseActorAwesome.ts): the paths of the 56 x 72
+	// figure, scaled to the cell. actorType selects the figure: normal (stick
+	// figure with a filled head), hollow (unfilled head over a block outline
+	// body) or awesome (filled bust). business=1 adds the slash through the
+	// head of a business actor.
+	function MermaidUsecaseActorShape()
+	{
+		mxShape.call(this);
+	};
+
+	mxUtils.extend(MermaidUsecaseActorShape, mxShape);
+
+	/**
+	 * Width and height of the figure the paths are defined in, centered at 0,0.
+	 */
+	MermaidUsecaseActorShape.prototype.figureWidth = 56;
+
+	MermaidUsecaseActorShape.prototype.figureHeight = 72;
+
+	/**
+	 * Head circle (center y and radius) of each figure. The business slash is
+	 * a chord through it.
+	 */
+	MermaidUsecaseActorShape.prototype.heads = {normal: [-24, 12], hollow: [-23, 9], awesome: [-21, 13]};
+
+	MermaidUsecaseActorShape.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		var type = mxUtils.getValue(this.style, 'actorType', 'normal');
+		type = (this.heads[type] != null) ? type : 'normal';
+		var sx = w / this.figureWidth;
+		var sy = h / this.figureHeight;
+		var cx = x + w / 2;
+		var cy = y + h / 2;
+
+		var px = function(value)
+		{
+			return cx + value * sx;
+		};
+
+		var py = function(value)
+		{
+			return cy + value * sy;
+		};
+
+		// Closed circle of four cubic arcs, as Mermaid draws the heads
+		var circle = function(ccy, r)
+		{
+			var k = r * 0.55228;
+			c.moveTo(px(0), py(ccy + r));
+			c.curveTo(px(k), py(ccy + r), px(r), py(ccy + k), px(r), py(ccy));
+			c.curveTo(px(r), py(ccy - k), px(k), py(ccy - r), px(0), py(ccy - r));
+			c.curveTo(px(-k), py(ccy - r), px(-r), py(ccy - k), px(-r), py(ccy));
+			c.curveTo(px(-r), py(ccy + k), px(-k), py(ccy + r), px(0), py(ccy + r));
+			c.close();
+		};
+
+		c.begin();
+
+		if (type == 'hollow')
+		{
+			circle(-23, 9);
+			c.moveTo(px(-22), py(-10));
+			c.lineTo(px(22), py(-10));
+			c.lineTo(px(22), py(0));
+			c.lineTo(px(6), py(0));
+			c.lineTo(px(22), py(17));
+			c.lineTo(px(13), py(28));
+			c.lineTo(px(0), py(13));
+			c.lineTo(px(-13), py(28));
+			c.lineTo(px(-22), py(17));
+			c.lineTo(px(-6), py(0));
+			c.lineTo(px(-22), py(0));
+			c.close();
+			c.stroke();
+		}
+		else if (type == 'awesome')
+		{
+			circle(-21, 13);
+			c.moveTo(px(-24), py(25));
+			c.curveTo(px(-24), py(7), px(-14), py(-3), px(0), py(-3));
+			c.curveTo(px(14), py(-3), px(24), py(7), px(24), py(25));
+			c.curveTo(px(24), py(28), px(21), py(30), px(18), py(30));
+			c.lineTo(px(-18), py(30));
+			c.curveTo(px(-21), py(30), px(-24), py(28), px(-24), py(25));
+			c.close();
+			c.fillAndStroke();
+		}
+		else
+		{
+			// The lines enclose no area, so only the head is filled
+			circle(-24, 12);
+			c.moveTo(px(0), py(-12));
+			c.lineTo(px(0), py(8));
+			c.moveTo(px(-17), py(-5));
+			c.lineTo(px(17), py(-5));
+			c.moveTo(px(0), py(8));
+			c.lineTo(px(-15), py(28));
+			c.moveTo(px(0), py(8));
+			c.lineTo(px(15), py(28));
+			c.fillAndStroke();
+		}
+
+		if (mxUtils.getValue(this.style, 'business', '0') == '1')
+		{
+			// Mermaid's businessMarkerPathForCircle: a chord at 60 degrees,
+			// offset from the center of the head by 0.6 of its radius
+			var head = this.heads[type];
+			var r = head[1];
+			var offset = r * 0.6;
+			var half = r * Math.sqrt(1 - 0.36);
+			var dx = Math.cos(Math.PI / 3);
+			var dy = -Math.sin(Math.PI / 3);
+			var mx = offset * -dy;
+			var my = head[0] + offset * dx;
+
+			c.setShadow(false);
+			c.begin();
+			c.moveTo(px(mx - half * dx), py(my - half * dy));
+			c.lineTo(px(mx + half * dx), py(my + half * dy));
+			c.stroke();
+		}
+	};
+
+	mxCellRenderer.registerShape('mermaidUsecaseActor', MermaidUsecaseActorShape);
+
+	// Person perimeter: the head's exposed arc joined to the body's rounded
+	// outline, like the intersection outline of mermaid's person shape
+	mxPerimeter.MermaidPersonPerimeter = function (bounds, vertex, next, orthogonal)
+	{
+		var s = (vertex != null) ? vertex.view.scale : 1;
+		var g = MermaidPersonShape.getGeometry(bounds.width / s, bounds.height / s);
+		var x = bounds.x;
+		var y = bounds.y;
+		var w = bounds.width;
+		var h = bounds.height;
+		var r = g.headRadius * s;
+		var top = y + g.bodyTop * s;
+		var br = g.bodyRadius * s;
+		var cx = x + w / 2;
+		var cy = y + r;
+		var points = [];
+
+		// Angles in degrees, clockwise from the positive x-axis as y points down
+		var arc = function(acx, acy, ar, from, to, n)
+		{
+			for (var i = 0; i <= n; i++)
+			{
+				var a = (from + (to - from) * i / n) * Math.PI / 180;
+				points.push(new mxPoint(acx + ar * Math.cos(a), acy + ar * Math.sin(a)));
+			}
+		};
+
+		// Where the head meets the top of the body
+		var join = Math.asin(Math.max(-1, Math.min(1, (top - cy) / r))) * 180 / Math.PI;
+
+		arc(cx, cy, r, 180 - join, 360 + join, 24);
+		arc(x + w - br, top + br, br, 270, 360, 6);
+		arc(x + w - br, y + h - br, br, 0, 90, 6);
+		arc(x + br, y + h - br, br, 90, 180, 6);
+		arc(x + br, top + br, br, 180, 270, 6);
+		points.push(points[0]);
+
+		return getOutlinePerimeterPoint(bounds, points, next, orthogonal);
+	};
+
+	mxStyleRegistry.putValue('mermaidPersonPerimeter', mxPerimeter.MermaidPersonPerimeter);
+
 	// Block-arrow shape used by the mermaid block diagram. Verbatim port
 	// of mermaid's blockArrowHelper getArrowPoints — every direction
 	// combination renders as one closed polygon.
@@ -7959,6 +9748,22 @@
 			var prevStyle = bandNode.getAttribute('style');
 			bandNode.setAttribute('style', (prevStyle != null && prevStyle != '' ?
 				prevStyle + ';' : '') + 'mix-blend-mode:multiply');
+
+			// Multiply also blends the band with the page behind the
+			// diagram, which turns it black on a dark background (dark
+			// mode, dark exports). Isolating the group of all cells keeps
+			// the page out of the blend, so overlapping bands and the cells
+			// below them still darken. In the editor the canvas writes into
+			// the shape's own node, whose parent is the view's draw pane;
+			// exports write into the group of all cells.
+			var cellsNode = (c.root == this.node) ? ((this.node != null) ?
+				this.node.parentNode : null) : c.root;
+
+			if (cellsNode != null && cellsNode.style != null &&
+				cellsNode.style.isolation != 'isolate')
+			{
+				cellsNode.style.isolation = 'isolate';
+			}
 		}
 	};
 
@@ -8259,7 +10064,61 @@
 			return Math.abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1) / Math.sqrt((y2 - y1) * (y2 - y1) + (x2 - x1) * (x2 - x1));
 		}
 
+		// Width handles of the tapered arrow at the painted start and end of the band
+		function createTaperedWidthHandle(state, start, spacing)
+		{
+			var key = (start) ? 'startWidth' : 'endWidth';
+			var getFrame = function()
+			{
+				return (state.shape != null && state.shape.getWidthHandleFrame != null) ?
+					state.shape.getWidthHandleFrame(start) : null;
+			};
+
+			return createHandle(state, [key], function(bounds)
+			{
+				var f = getFrame();
+
+				if (f != null)
+				{
+					var s = state.view.scale;
+					var tr = state.view.translate;
+					var sw = state.shape.getStartWidth();
+					var ew = state.shape.getEndWidth();
+					var w = (sw + (ew - sw) * f.t) * s / 2 + spacing;
+
+					return new mxPoint((f.x + f.nx * w) / s - tr.x,
+						(f.y + f.ny * w) / s - tr.y);
+				}
+
+				return null;
+			}, function(bounds, pt)
+			{
+				var f = getFrame();
+
+				if (f != null)
+				{
+					var s = state.view.scale;
+					var tr = state.view.translate;
+					var d = ((pt.x + tr.x) * s - f.x) * f.nx + ((pt.y + tr.y) * s - f.y) * f.ny;
+
+					// Local width at the handle and the width at the end it controls
+					var w = 2 * Math.max(0, d - spacing) / s;
+					var value = (start) ? (w - state.shape.getEndWidth() * f.t) / (1 - f.t) :
+						(w - state.shape.getStartWidth() * (1 - f.t)) / f.t;
+
+					state.style[key] = Math.min(999, Math.max(0, Math.round(value)));
+				}
+			});
+		};
+
 		var handleFactory = {
+			'taperedArrow': function(state)
+			{
+				var spacing = 5;
+
+				return [createTaperedWidthHandle(state, true, spacing),
+					createTaperedWidthHandle(state, false, spacing)];
+			},
 			'link': function(state)
 			{
 				var spacing = 10;
@@ -8601,7 +10460,7 @@
 			},
 			'dataStorage': function(state)
 			{
-				return [createHandle(state, ['size'], function(bounds)
+				var handles = [createHandle(state, ['size'], function(bounds)
 				{
 					var fixed = mxUtils.getValue(this.state.style, 'fixedSize', '0') != '0';
 					var size = parseFloat(mxUtils.getValue(this.state.style, 'size', (fixed) ? DataStorageShape.prototype.fixedSize : DataStorageShape.prototype.size));
@@ -8614,6 +10473,13 @@
 					
 					this.state.style['size'] = size;
 				}, false)];
+
+				if (mxUtils.getValue(state.style, mxConstants.STYLE_ROUNDED, false))
+				{
+					handles.push(createArcHandle(state));
+				}
+
+				return handles;
 			},
 			'callout': function(state)
 			{
@@ -8781,7 +10647,7 @@
 			},
 			'document': function(state)
 			{
-				return [createHandle(state, ['size'], function(bounds)
+				var handles = [createHandle(state, ['size'], function(bounds)
 				{
 					var size = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.state.style, 'size', DocumentShape.prototype.size))));
 
@@ -8790,10 +10656,17 @@
 				{
 					this.state.style['size'] = Math.max(0, Math.min(1, (bounds.y + bounds.height - pt.y) / bounds.height));
 				}, false)];
+
+				if (mxUtils.getValue(state.style, mxConstants.STYLE_ROUNDED, false))
+				{
+					handles.push(createArcHandle(state));
+				}
+
+				return handles;
 			},
 			'tape': function(state)
 			{
-				return [createHandle(state, ['size'], function(bounds)
+				var handles = [createHandle(state, ['size'], function(bounds)
 				{
 					var size = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.state.style, 'size', TapeShape.prototype.size))));
 
@@ -8802,6 +10675,13 @@
 				{
 					this.state.style['size'] = Math.max(0, Math.min(1, ((pt.y - bounds.y) / bounds.height) * 2));
 				}, false)];
+
+				if (mxUtils.getValue(state.style, mxConstants.STYLE_ROUNDED, false))
+				{
+					handles.push(createArcHandle(state));
+				}
+
+				return handles;
 			},
 			'isoCube2' : function(state)
 			{
@@ -8965,7 +10845,9 @@
 		{
 			var handles = vertexHandlerCreateCustomHandles.apply(this, arguments);
 			
-			if (this.graph.isCellRotatable(this.state.cell))
+			// Vertices without a geometry have no paint bounds to place the handles
+			if (this.graph.isCellRotatable(this.state.cell) &&
+				this.state.getPaintBounds() != null)
 			// LATER: Make locked state independent of rotatable flag, fix toggle if default is false
 			//if (this.graph.isCellResizable(this.state.cell) || this.graph.isCellMovable(this.state.cell))
 			{
@@ -9057,8 +10939,10 @@
 				var fontStyle = mxUtils.getValue(style,
 					mxConstants.STYLE_FONTSTYLE, 0);
 
-				var size = mxUtils.getSizeForString(label, fontSize,
-					fontFamily, null, fontStyle);
+				// The label is painted as plain text but getSizeForString
+				// measures HTML (innerHTML of an element in the document)
+				var size = mxUtils.getSizeForString(mxUtils.htmlEntities(label, false),
+					fontSize, fontFamily, null, fontStyle);
 				var width = size.width * 0.85;
 				var geo = this.model.getGeometry(cell);
 				var h = (geo != null) ? geo.height : 60;
@@ -9249,6 +11133,23 @@
 	 	return graphCreateEdgeHandler.apply(this, arguments);
 	 };
 
+	 // Isometric routes keep the angle of their segments at the ends, so the
+	 // orthogonal style does not apply to them (see StyleFormatPanel.addEffects)
+	 var graphIsOrthogonal = Graph.prototype.isOrthogonal;
+	 Graph.prototype.isOrthogonal = function(edge)
+	 {
+	 	return graphIsOrthogonal.apply(this, arguments) &&
+	 		this.view.getEdgeStyle(edge) != mxEdgeStyle.IsometricConnector;
+	 };
+
+	 // Removes duplicate waypoints of isometric routes as they are computed
+	 var mxGraphViewIsDuplicatePointsRemoved = mxGraphView.prototype.isDuplicatePointsRemoved;
+	 mxGraphView.prototype.isDuplicatePointsRemoved = function(state, edgeStyle, points)
+	 {
+	 	return edgeStyle == mxEdgeStyle.IsometricConnector ||
+	 		mxGraphViewIsDuplicatePointsRemoved.apply(this, arguments);
+	 };
+
 	// Defines connection points for all shapes
 	IsoRectangleShape.prototype.constraints = [];
 	
@@ -9258,15 +11159,16 @@
 		var tan30 = Math.tan(mxUtils.toRadians(30));
 		var tan30Dx = (0.5 - tan30) / 2;
 		var m = Math.min(w, h / (0.5 + tan30));
-		var dx = (w - m) / 2;
-		var dy = (h - m) / 2;
-
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx, dy + 0.25 * m));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx + 0.5 * m, dy + m * tan30Dx));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx + m, dy + 0.25 * m));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx + m, dy + 0.75 * m));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx + 0.5 * m, dy + (1 - tan30Dx) * m));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx, dy + 0.75 * m));
+		// The cube is centred and sized from the width, or from the height if it
+		// is less than 1.08 times the width: anchored to the middle with offsets
+		// from its size, so edges follow a resize that keeps the side it is
+		// sized from
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, -0.5 * m, -0.25 * m));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, 0, (tan30Dx - 0.5) * m));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, 0.5 * m, -0.25 * m));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, 0.5 * m, 0.25 * m));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, 0, (0.5 - tan30Dx) * m));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, -0.5 * m, 0.25 * m));
 
 		return (constr);
 	};
@@ -9276,15 +11178,20 @@
 		var constr = [];
 		var isoAngle = Math.max(0.01, Math.min(94, parseFloat(mxUtils.getValue(this.style, 'isoAngle', this.isoAngle)))) * Math.PI / 200 ;
 		var isoH = Math.min(w * Math.tan(isoAngle), h * 0.5);
-		
+		// The iso height is drawn from the width: anchored to the nearest side with
+		// the iso height as offset, so edges follow a resize that keeps the width
+		// (eg. a taller cube). An iso height that is cut off at half the height
+		// puts the corners in the middle, where they stay while it is cut off.
+		var fy = (isoH == h * 0.5) ? 0.5 : 0;
+		var dy = (isoH == h * 0.5) ? 0 : isoH;
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, isoH));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, fy), false, null, 0, dy));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, h - isoH));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 1 - fy), false, null, 0, -dy));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, h - isoH));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1 - fy), false, null, 0, -dy));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, isoH));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, fy), false, null, 0, dy));
 
 		return (constr);
 	}
@@ -9292,27 +11199,22 @@
 	CalloutShape.prototype.getConstraints = function(style, w, h)
 	{
 		var constr = [];
-		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
 		var s = Math.max(0, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'size', this.size))));
-		var dx = w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'position', this.position))));
-		var dx2 = w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'position2', this.position2))));
-		var base = Math.max(0, Math.min(w, parseFloat(mxUtils.getValue(this.style, 'base', this.base))));
+		var p2 = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'position2', this.position2))));
+		p2 = isNaN(p2) ? this.position2 : p2;
 		
+		// Relative points with the fixed pointer size as offset, so edges follow
+		// a resize
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.25, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.75, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, (h - s) * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, h - s));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx2, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, h - s));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, (h - s) * 0.5));
-		
-		if (w >= s * 2)
-		{
-			constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false));
-		}
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false, null, 0, -s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 1), false, null, 0, -s));
+		constr.push(new mxConnectionConstraint(new mxPoint(p2, 1), false));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false, null, 0, -s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null, 0, -s * 0.5));
 
 		return (constr);
 	};
@@ -9353,12 +11255,14 @@
 		var constr = [];
 		var s = Math.max(0, Math.min(w, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'size', this.size)))));
 		
+		// Relative points with the fixed fold size as offset, so edges follow a
+		// resize
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - s) * 0.5, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - s, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - s * 0.5, s * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, s));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, (h + s) * 0.5 ));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, -s * 0.5, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, -s, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, -s * 0.5, s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false, null, 0, s * 0.5));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false));
@@ -9377,12 +11281,14 @@
 		var constr = [];
 		var s = Math.max(0, Math.min(w, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'size', this.size)))));
 		
+		// Relative points with the fixed corner size as offset, so edges follow a
+		// resize
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + s) * 0.5, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, s * 0.5, 0));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, s, 0));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, s * 0.5, s * 0.5));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, s));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, (h + s) * 0.5 ));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null, 0, s * 0.5));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 1), false));
@@ -9401,18 +11307,19 @@
 		var constr = [];
 		var s = Math.max(0, Math.min(w, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'size', this.size)))));
 		
+		// Relative points with the fixed depth as offset, so edges follow a resize
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - s) * 0.5, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - s, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - s * 0.5, s * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, s));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, (h + s) * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, -s * 0.5, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, -s, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, -s * 0.5, s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false, null, 0, s * 0.5));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 1), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + s) * 0.5, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, s, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, s * 0.5, h - s * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, h - s));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, (h - s) * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false, null, s * 0.5, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false, null, s, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false, null, s * 0.5, -s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false, null, 0, -s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null, 0, -s * 0.5));
 		
 		return (constr);
 	};
@@ -9432,10 +11339,11 @@
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 1), false, null, 0, -s));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false, null, 0, -s));
 		
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, s + (h * 0.5 - s) * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, s + (h * 0.5 - s) * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, h - s - (h * 0.5 - s) * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, h - s - (h * 0.5 - s) * 0.5));
+		// Relative points with the fixed size as offset, so edges follow a resize
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.25), false, null, 0, s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.25), false, null, 0, s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.75), false, null, 0, -s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.75), false, null, 0, -s * 0.5));
 
 		constr.push(new mxConnectionConstraint(new mxPoint(0.145, 0), false, null, 0, s * 0.29));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.855, 0), false, null, 0, s * 0.29));
@@ -9458,27 +11366,29 @@
 			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx * 0.5, 0));
 			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx, 0));
 			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx, dy));
-			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + dx) * 0.5, dy));
+			constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, dx * 0.5, dy));
 		}
 		else
 		{
+			// Relative points with the fixed tab size as offsets, so edges follow
+			// a resize
 			constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false));
-			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - dx * 0.5, 0));
-			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - dx, 0));
-			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - dx, dy));
-			constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - dx) * 0.5, dy));
+			constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, -dx * 0.5, 0));
+			constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, -dx, 0));
+			constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, -dx, dy));
+			constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, -dx * 0.5, dy));
 		}
 		
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, (h - dy) * 0.25 + dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, (h - dy) * 0.5 + dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, (h - dy) * 0.75 + dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, h));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.25), false, null, 0, dy * 0.75));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false, null, 0, dy * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.75), false, null, 0, dy * 0.25));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, (h - dy) * 0.25 + dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, (h - dy) * 0.5 + dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, (h - dy) * 0.75 + dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, h));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.25), false, null, 0, dy * 0.75));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null, 0, dy * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.75), false, null, 0, dy * 0.25));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.25, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.75, 1), false));
@@ -9499,16 +11409,26 @@
 	{
 		var constr = [];
 		var dx = Math.min(w, h / 2);
-		var s = Math.min(w - dx, Math.max(0, parseFloat(mxUtils.getValue(this.style, 'size', this.size))) * w);
+		var size = parseFloat(mxUtils.getValue(this.style, 'size', this.size));
+		var s = Math.min(w - dx, Math.max(0, (isNaN(size)) ? this.size : size) * w);
+		// The left end is a fraction of the width, the curved right end follows
+		// the height: anchored to the right side, so edges follow a resize that
+		// keeps the height (eg. a longer label). Ends that are cut off stay
+		// where they are cut off while they are: a curve as wide as the shape
+		// starts at the left side and a left end at the start of the curve.
+		var cx = (dx < w) ? 1 : 0;
+		var cdx = (dx < w) ? -dx : 0;
+		var sx = (s < w - dx) ? s / w : cx;
+		var ox = (s < w - dx) ? 0 : cdx;
 		
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, s, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (s + w - dx) * 0.5, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - dx, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(sx, 0), false, null, ox, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint((sx + cx) * 0.5, 0), false, null, (ox + cdx) * 0.5, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(cx, 0), false, null, cdx, 0));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false, null));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - dx, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (s + w - dx) * 0.5, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, s, h));
+		constr.push(new mxConnectionConstraint(new mxPoint(cx, 1), false, null, cdx, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint((sx + cx) * 0.5, 1), false, null, (ox + cdx) * 0.5, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(sx, 1), false, null, ox, 0));
 		
 		return (constr);
 	};
@@ -9678,22 +11598,23 @@
 		var constr = [];
 		var dx = Math.max(0, Math.min(w, parseFloat(mxUtils.getValue(this.style, 'dx', this.dx))));
 		var dy = Math.max(0, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'dy', this.dy))));
-		var w2 = Math.abs(w - dx) / 2;
 		
+		// Relative points with the fixed bar sizes as offsets, so edges follow a
+		// resize
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, dy * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w * 0.75 + dx * 0.25, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + dx) * 0.5, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + dx) * 0.5, (h + dy) * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + dx) * 0.5, h));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, dy * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.75, 0), false, null, dx * 0.25, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, dx * 0.5, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, dx * 0.5, dy * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false, null, dx * 0.5, 0));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - dx) * 0.5, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - dx) * 0.5, (h + dy) * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - dx) * 0.5, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w * 0.25 - dx * 0.25, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false, null, -dx * 0.5, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, -dx * 0.5, dy * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, -dx * 0.5, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.25, 0), false, null, -dx * 0.25, dy));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, dy));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, dy * 0.5));
 		
@@ -9708,14 +11629,16 @@
 		
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false));
+		// Relative points with the fixed bar sizes as offsets, so edges follow a
+		// resize
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, dy * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + dx) * 0.5, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, dy * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0), false, null, 0, dy));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, dx * 0.5, dy));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx, dy));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx, (h + dy) * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, dx * 0.5, h));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null, dx, dy * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false, null, dx, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false, null, dx * 0.5, 0));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 1), false));
 		
@@ -9735,19 +11658,22 @@
 	SingleArrowShape.prototype.getConstraints = function(style, w, h)
 	{
 		var constr = [];
-		var aw = h * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowWidth', this.arrowWidth))));
-		var as = w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowSize', this.arrowSize))));
-		var at = (h - aw) / 2;
-		var ab = at + aw;
+		// Arrow width and size are fractions of the size: relative points, so
+		// edges follow a resize
+		var fw = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowWidth', this.arrowWidth))));
+		var fs = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowSize', this.arrowSize))));
+		fw = isNaN(fw) ? this.arrowWidth : fw;
+		fs = isNaN(fs) ? this.arrowSize : fs;
+		var at = (1 - fw) / 2;
 		
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, at));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - as) * 0.5, at));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - as, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, at), false));
+		constr.push(new mxConnectionConstraint(new mxPoint((1 - fs) * 0.5, at), false));
+		constr.push(new mxConnectionConstraint(new mxPoint(1 - fs, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - as, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w - as) * 0.5, h - at));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, h - at));
+		constr.push(new mxConnectionConstraint(new mxPoint(1 - fs, 1), false));
+		constr.push(new mxConnectionConstraint(new mxPoint((1 - fs) * 0.5, 1 - at), false));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 1 - at), false));
 		
 		return (constr);
 	};
@@ -9755,19 +11681,22 @@
 	DoubleArrowShape.prototype.getConstraints = function(style, w, h)
 	{
 		var constr = [];
-		var aw = h * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowWidth', SingleArrowShape.prototype.arrowWidth))));
-		var as = w * Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowSize', SingleArrowShape.prototype.arrowSize))));
-		var at = (h - aw) / 2;
-		var ab = at + aw;
+		// Arrow width and size are fractions of the size: relative points, so
+		// edges follow a resize
+		var fw = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowWidth', SingleArrowShape.prototype.arrowWidth))));
+		var fs = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(this.style, 'arrowSize', SingleArrowShape.prototype.arrowSize))));
+		fw = isNaN(fw) ? SingleArrowShape.prototype.arrowWidth : fw;
+		fs = isNaN(fs) ? SingleArrowShape.prototype.arrowSize : fs;
+		var at = (1 - fw) / 2;
 		
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, as, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w * 0.5, at));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - as, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(fs, 0), false));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, at), false));
+		constr.push(new mxConnectionConstraint(new mxPoint(1 - fs, 0), false));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w - as, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w * 0.5, h - at));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, as, h));
+		constr.push(new mxConnectionConstraint(new mxPoint(1 - fs, 1), false));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1 - at), false));
+		constr.push(new mxConnectionConstraint(new mxPoint(fs, 1), false));
 		
 		return (constr);
 	};
@@ -9777,35 +11706,35 @@
 		var constr = [];
 		var m = Math.min(h, w);
 		var size = Math.max(0, Math.min(m, m * parseFloat(mxUtils.getValue(this.style, 'size', this.size))));
-		var t = (h - size) / 2;
-		var b = t + size;
-		var l = (w - size) / 2;
-		var r = l + size;
+		// The arms are centred and as thick as a fraction of the smaller side:
+		// anchored to the middle lines with offsets from the thickness, so edges
+		// follow a resize that keeps the smaller side (eg. longer arms)
+		var s = size * 0.5;
 		
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l, t * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.25), false, null, -s, -s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, -s, 0));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, r, 0));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, r, t * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, r, t));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l, h - t * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l, h));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0), false, null, s, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.25), false, null, s, -s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, s, -s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.75), false, null, -s, s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false, null, -s, 0));
 		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, r, h));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, r, h - t * 0.5));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, r, b));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + r) * 0.5, t));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, t));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 1), false, null, s, 0));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.75), false, null, s, s * 0.5));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, s, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.75, 0.5), false, null, s * 0.5, -s));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false, null, 0, -s));
 		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, w, b));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, (w + r) * 0.5, b));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l, b));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l * 0.5, t));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, t));
+		constr.push(new mxConnectionConstraint(new mxPoint(1, 0.5), false, null, 0, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.75, 0.5), false, null, s * 0.5, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, -s, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.25, 0.5), false, null, -s * 0.5, -s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null, 0, -s));
 		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, 0, b));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l * 0.5, b));
-		constr.push(new mxConnectionConstraint(new mxPoint(0, 0), false, null, l, t));
+		constr.push(new mxConnectionConstraint(new mxPoint(0, 0.5), false, null, 0, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.25, 0.5), false, null, -s * 0.5, s));
+		constr.push(new mxConnectionConstraint(new mxPoint(0.5, 0.5), false, null, -s, -s));
 
 		return (constr);
 	};
